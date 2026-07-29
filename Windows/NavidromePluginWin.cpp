@@ -419,11 +419,9 @@ public:
         if (what != album_art_ids::cover_front) throw exception_album_art_not_found();
 
         std::string url = navidrome::SubsonicClientWin::get().coverArtURL(m_id, 0);
-        std::string err;
-        // Reuse httpGet via SubsonicClientWin
-        std::string body = navidrome::SubsonicClientWin::get().streamURL(m_id); // placeholder
-        // Fetch binary image data with WinHTTP
-        body = "";
+        // Fetch binary image data with WinHTTP (SubsonicClientWin::httpGet is private —
+        // duplicated here rather than exposed, matching the original fallback's approach).
+        std::string body;
         HINTERNET hSess = WinHttpOpen(L"foo_navidrome/1.0",
             WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
         if (hSess) {
@@ -492,31 +490,39 @@ private:
     std::string m_id;
 };
 
-class NavidromeArtFallback : public album_art_fallback {
-public:
-    album_art_extractor_instance_v2::ptr open(metadb_handle_list_cref items,
-        pfc::list_base_const_t<GUID> const&, abort_callback&) override {
-        for (t_size i = 0; i < items.get_count(); i++) {
-            const char* path = items[i]->get_path();
-            bool isNavidromeUri = strncmp(path, "navidrome://", 12) == 0;
-            if (!isNavidromeUri && !strstr(path, "/rest/stream.view"))
-                continue;
+// Prefer the album/folder coverArt id embedded at enqueue time; fall back to the song id
+// (query "id=" for legacy URLs, or the <id> path segment of navidrome://track/<id>).
+static std::string resolveArtId(const char* path) {
+    std::string id = urlParam(path, "coverArt");
+    if (id.empty()) id = urlParam(path, "id");
+    if (id.empty() && strncmp(path, "navidrome://track/", 18) == 0) {
+        const char* idStart = path + 18;
+        const char* idEnd = strchr(idStart, '?');
+        if (!idEnd) idEnd = idStart + strlen(idStart);
+        if (idEnd > idStart) id.assign(idStart, idEnd - idStart);
+    }
+    return id;
+}
 
-            // Prefer the album/folder coverArt id embedded at enqueue time;
-            // fall back to the song id (query "id=" for legacy URLs, or the
-            // <id> path segment of navidrome://track/<id>).
-            std::string id = urlParam(path, "coverArt");
-            if (id.empty()) id = urlParam(path, "id");
-            if (id.empty() && strncmp(path, "navidrome://track/", 18) == 0) {
-                const char* idStart = path + 18;
-                const char* idEnd = strchr(idStart, '?');
-                if (!idEnd) idEnd = idStart + strlen(idStart);
-                if (idEnd > idStart) id.assign(idStart, idEnd - idStart);
-            }
-            if (!id.empty())
-                return fb2k::service_new<NavidromeArtInstance>(id.c_str());
-        }
-        throw exception_album_art_not_found();
+// Registered as a full album_art_extractor (NOT album_art_fallback, which this used to be):
+// album_art_fallback only runs after every other registered source has already declined, and
+// in practice album_art_manager_v2's cold per-file query throws "Attached picture not found"
+// before fallback gets a chance — matches the reasoning already documented on the macOS side
+// (NavidromeArtExtractor.mm) for using a real extractor instead. Returning true from
+// is_our_path() guarantees foobar calls open() directly.
+class NavidromeArtExtractorWin : public album_art_extractor {
+public:
+    bool is_our_path(const char* path, const char* /*ext*/) override {
+        if (!path) return false;
+        if (strncmp(path, "navidrome://", 12) == 0) return true;
+        return strstr(path, "/rest/stream.view") != nullptr;
+    }
+
+    album_art_extractor_instance_ptr open(file_ptr /*filehint*/, const char* path,
+                                          abort_callback&) override {
+        std::string id = resolveArtId(path);
+        if (id.empty()) throw exception_album_art_not_found();
+        return fb2k::service_new<NavidromeArtInstance>(id.c_str());
     }
 };
-FB2K_SERVICE_FACTORY(NavidromeArtFallback);
+FB2K_SERVICE_FACTORY(NavidromeArtExtractorWin);
