@@ -1,6 +1,8 @@
 #pragma once
 #include "stdafx.h"
 #include "../SubsonicTypes.h"
+#include <SDK/coreDarkMode.h>
+#include <SDK/ui_element.h>
 #include <map>
 #include <memory>
 #include <vector>
@@ -58,7 +60,10 @@ struct LoadedPayload {
 // ---------------------------------------------------------------------------
 // BrowserWindow
 // ---------------------------------------------------------------------------
-class BrowserWindow : public CWindowImpl<BrowserWindow> {
+// Reads foobar's globally configured UI colors (Preferences > Display >
+// Colours and Fonts) via ui_config_manager — independent of dark mode, and
+// works from a plain window since it isn't tied to a ui_element instance.
+class BrowserWindow : public CWindowImpl<BrowserWindow>, private ui_config_callback_impl {
 public:
     static BrowserWindow& get();
     void show();
@@ -79,6 +84,9 @@ public:
         NOTIFY_CODE_HANDLER_EX(NM_DBLCLK,        OnTreeDblClick)
         NOTIFY_CODE_HANDLER_EX(NM_RETURN,        OnTreeReturn)
         MSG_WM_CONTEXTMENU(OnContextMenu)
+        MSG_WM_ERASEBKGND(OnEraseBkgnd)
+        MSG_WM_CTLCOLOREDIT(OnCtlColorEdit)
+        MSG_WM_CTLCOLORSTATIC(OnCtlColorStatic)
         COMMAND_ID_HANDLER_EX(IDC_ADD,     OnAdd)
         COMMAND_ID_HANDLER_EX(IDC_PLAY,    OnPlay)
         COMMAND_ID_HANDLER_EX(IDC_REFRESH, OnRefresh)
@@ -185,10 +193,31 @@ private:
     void    invalidatePlaylistsCategory();
     void    reloadNodeChildren(const std::shared_ptr<NavidromeNode>& node);
 
+    // ui_config_callback: fires when the user changes Colours and Fonts
+    // (or toggles dark mode) while the browser is open.
+    void    ui_colors_changed() override;
+    // Re-reads ui_color_text/background/selection/highlight and pushes them
+    // into the tree control + repaint brush. Falls back to system colors for
+    // any GUID the user hasn't overridden (query_color() returns false).
+    void    refreshThemeColors();
+    BOOL    OnEraseBkgnd(HDC dc);
+    HBRUSH  OnCtlColorEdit(HDC dc, HWND wnd);
+    HBRUSH  OnCtlColorStatic(HDC dc, HWND wnd);
+
     CTreeViewCtrl m_tree;
     CEdit         m_search;
     CButton       m_addBtn, m_playBtn, m_refreshBtn;
     CStatic       m_status;
+    fb2k::CCoreDarkModeHooks m_darkMode;
+
+    // Populated by refreshThemeColors(); *_set is false when that GUID isn't
+    // user-overridden, meaning the corresponding control should keep its
+    // native system color instead of being forced to a theme value.
+    struct ThemeColors {
+        bool     textSet = false, bgSet = false;
+        COLORREF text = 0, bg = 0;
+    } m_theme;
+    HBRUSH m_themeBgBrush = nullptr;
 
     // True when hosted inline in the prefs page (vs. the standalone window);
     // only the standalone window hides itself after an Enter "queue + play".

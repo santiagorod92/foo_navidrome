@@ -244,12 +244,73 @@ LRESULT BrowserWindow::OnCreate(LPCREATESTRUCT) {
         WS_CHILD | WS_VISIBLE | SS_LEFT, 0, IDC_STATUS);
     m_status.SetFont(hFont);
 
+    // Follow foobar's Dark Mode preference (title bar on the standalone
+    // window, control theming on both standalone and embedded mounts).
+    m_darkMode.AddDialogWithControls(*this);
+    // Follow foobar's Colours and Fonts scheme (e.g. the classic orange-on-
+    // black look), independent of Dark Mode.
+    refreshThemeColors();
+
     return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Colours and Fonts (Preferences > Display) sync
+// ---------------------------------------------------------------------------
+void BrowserWindow::refreshThemeColors() {
+    m_theme = ThemeColors{};
+
+    auto cfg = ui_config_manager::tryGet();
+    if (cfg.is_valid()) {
+        t_ui_color c = 0;
+        if (cfg->query_color(ui_color_text, c))       { m_theme.textSet = true; m_theme.text = static_cast<COLORREF>(c); }
+        if (cfg->query_color(ui_color_background, c)) { m_theme.bgSet   = true; m_theme.bg   = static_cast<COLORREF>(c); }
+    }
+
+    if (m_themeBgBrush) { ::DeleteObject(m_themeBgBrush); m_themeBgBrush = nullptr; }
+    if (m_theme.bgSet) m_themeBgBrush = ::CreateSolidBrush(m_theme.bg);
+
+    if (m_tree.IsWindow()) {
+        m_tree.SetBkColor(m_theme.bgSet ? m_theme.bg : static_cast<COLORREF>(-1));
+        m_tree.SetTextColor(m_theme.textSet ? m_theme.text : static_cast<COLORREF>(-1));
+    }
+
+    if (IsWindow()) {
+        Invalidate();
+        if (m_search.IsWindow()) m_search.Invalidate();
+        if (m_status.IsWindow()) m_status.Invalidate();
+    }
+}
+
+void BrowserWindow::ui_colors_changed() {
+    refreshThemeColors();
+}
+
+BOOL BrowserWindow::OnEraseBkgnd(HDC dc) {
+    if (!m_theme.bgSet) { SetMsgHandled(FALSE); return FALSE; }
+    RECT rc; GetClientRect(&rc);
+    ::FillRect(dc, &rc, m_themeBgBrush);
+    return TRUE;
+}
+
+HBRUSH BrowserWindow::OnCtlColorEdit(HDC dc, HWND) {
+    if (!m_theme.bgSet && !m_theme.textSet) { SetMsgHandled(FALSE); return nullptr; }
+    if (m_theme.bgSet)   ::SetBkColor(dc, m_theme.bg);
+    if (m_theme.textSet) ::SetTextColor(dc, m_theme.text);
+    return m_theme.bgSet ? m_themeBgBrush : nullptr;
+}
+
+HBRUSH BrowserWindow::OnCtlColorStatic(HDC dc, HWND) {
+    if (!m_theme.bgSet && !m_theme.textSet) { SetMsgHandled(FALSE); return nullptr; }
+    if (m_theme.bgSet)   ::SetBkColor(dc, m_theme.bg);
+    if (m_theme.textSet) ::SetTextColor(dc, m_theme.text);
+    return m_theme.bgSet ? m_themeBgBrush : nullptr;
 }
 
 void BrowserWindow::OnDestroy() {
     m_nodeMap.clear();
     m_rootNodes.clear();
+    if (m_themeBgBrush) { ::DeleteObject(m_themeBgBrush); m_themeBgBrush = nullptr; }
 }
 
 LRESULT BrowserWindow::OnSize(UINT, CSize sz) {
