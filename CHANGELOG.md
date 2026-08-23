@@ -1,3 +1,10 @@
+## [1.6.2](https://github.com/santiagorod92/foo_navidrome/compare/v1.6.1...v1.6.2) (2026-08-23)
+
+
+### Bug Fixes
+
+* sync browser colors with foobar's Colours and Fonts scheme ([027c75e](https://github.com/santiagorod92/foo_navidrome/commit/027c75e83a1aef585d4e2ebd066ee07355dd7138)), closes [#4](https://github.com/santiagorod92/foo_navidrome/issues/4)
+
 ## [1.6.1](https://github.com/santiagorod92/foo_navidrome/compare/v1.6.0...v1.6.1) (2026-08-14)
 
 
