@@ -1,3 +1,15 @@
+## [1.7.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.6.2...v1.7.0) (2026-08-24)
+
+
+### Features
+
+* add bookmarks / resume playback support ([d647547](https://github.com/santiagorod92/foo_navidrome/commit/d64754714b4f79ebdd4e0f4117afdc54c2e85e00))
+
+
+### Bug Fixes
+
+* add missing [@implementation](https://github.com/implementation) for SubsonicBookmark ([0d37e00](https://github.com/santiagorod92/foo_navidrome/commit/0d37e00017f05dbd4362bdb9173165019af3cbdb)), closes [#6](https://github.com/santiagorod92/foo_navidrome/issues/6)
+
 ## [1.6.2](https://github.com/santiagorod92/foo_navidrome/compare/v1.6.1...v1.6.2) (2026-08-23)
 
 
