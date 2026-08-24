@@ -387,10 +387,8 @@ If you fix a bug in the data layer, check whether the **macOS and Windows HTTP c
 
 ### Good places to start
 
-- Windows UI polish and feature parity with the macOS browser (the Windows side is younger than the Mac path).
-- Playlist management (e.g. create a named foobar2000 playlist per artist/album).
 - Offline / caching support for streamed tracks.
-- Porting the Windows UI to the `navidrome://` URI-scheme architecture the macOS side uses (it currently lags behind — see `CLAUDE.md`).
+- A Windows equivalent of the macOS `ui_element_mac` layout panel (dock the browser inside the main window layout, not just the standalone window / prefs page).
 
 ## Releasing
 

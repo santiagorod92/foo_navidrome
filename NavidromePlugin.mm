@@ -6,8 +6,10 @@
 #include <SDK/cfg_var.h>
 #include <SDK/library_manager.h>
 #include <SDK/play_callback.h>
+#include <SDK/ui_element_mac.h>
 #include "SubsonicTypes.h"
 #include <algorithm>
+#include <cstring>
 
 // ---------------------------------------------------------------------------
 // GUIDs — replace with your own when forking this component
@@ -25,6 +27,7 @@ static constexpr GUID guid_cfg_custom_headers = { 0xa1b2c3d4, 0x1111, 0x2222, { 
 static constexpr GUID guid_cfg_scrobble    = { 0xa1b2c3d4, 0x1111, 0x2222, { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01, 0x0b } };
 static constexpr GUID guid_cfg_stream_format = { 0xa1b2c3d4, 0x1111, 0x2222, { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01, 0x0c } };
 static constexpr GUID guid_cfg_max_bitrate = { 0xa1b2c3d4, 0x1111, 0x2222, { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01, 0x0d } };
+static constexpr GUID guid_ui_element_mac  = { 0xa1b2c3d4, 0x1111, 0x2222, { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01, 0x0e } };
 
 // ---------------------------------------------------------------------------
 // Config variables (exported so SubsonicClient.mm can access them)
@@ -234,5 +237,29 @@ public:
 };
 
 FB2K_SERVICE_FACTORY(preferences_page_navidrome_library);
+
+// ---------------------------------------------------------------------------
+// Native layout panel — lets the browser be docked inside the main window
+// layout (Preferences > Display > Layout > Edit Layout > add "Navidrome"),
+// as a third mount point alongside the standalone window and the Media
+// Library prefs sub-page above. Same VC-per-mount rule applies: the layout
+// system may instantiate() more than once (e.g. multiple splits/tabs), so
+// each call must return a fresh NavidromeBrowserController, never a shared
+// singleton.
+// ---------------------------------------------------------------------------
+
+class ui_element_mac_navidrome : public ui_element_mac {
+public:
+    service_ptr instantiate(service_ptr /*arg*/) override {
+        return fb2k::wrapNSObject([NavidromeBrowserController new]);
+    }
+    bool match_name(const char *name) override {
+        return name != nullptr && !strcmp(name, "Navidrome");
+    }
+    fb2k::stringRef get_name() override { return fb2k::makeString("Navidrome"); }
+    GUID get_guid() override { return guid_ui_element_mac; }
+};
+
+FB2K_SERVICE_FACTORY(ui_element_mac_navidrome);
 
 } // namespace
