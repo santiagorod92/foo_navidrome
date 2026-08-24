@@ -1,3 +1,10 @@
+## [1.8.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.7.0...v1.8.0) (2026-08-24)
+
+
+### Features
+
+* add ui_element_mac layout panel for macOS browser ([d30fa9b](https://github.com/santiagorod92/foo_navidrome/commit/d30fa9b47189e656294799690715e6296f696258))
+
 ## [1.7.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.6.2...v1.7.0) (2026-08-24)
 
 
