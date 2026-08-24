@@ -69,6 +69,12 @@ static void NavidromeApplyCustomHeaders(NSMutableURLRequest *req) {
 }
 @end
 
+@implementation SubsonicBookmark
+- (NSString *)description {
+    return [NSString stringWithFormat:@"<SubsonicBookmark %@ %.0fms>", _song.songId, _positionMs];
+}
+@end
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
