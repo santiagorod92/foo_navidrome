@@ -603,6 +603,43 @@ static SubsonicAlbum *parseAlbum(NSDictionary *a) {
                      error:error] != nil;
 }
 
+- (NSArray<SubsonicBookmark *> *)getBookmarksWithError:(NSError **)error {
+    NSURL *url = [self urlForEndpoint:@"getBookmarks.view" params:@""];
+    NSDictionary *root = [self fetchJSON:url error:error];
+    if (!root) return nil;
+
+    NSMutableArray<SubsonicBookmark *> *result = [NSMutableArray array];
+    for (NSDictionary *b in asArray(root[@"bookmarks"][@"bookmark"])) {
+        NSArray *entries = asArray(b[@"entry"]);
+        if (entries.count == 0) continue;
+        SubsonicBookmark *bm = [[SubsonicBookmark alloc] init];
+        bm.song       = parseSong(entries[0]);
+        bm.positionMs = [b[@"position"] doubleValue];
+        bm.comment    = b[@"comment"] ?: @"";
+        [result addObject:bm];
+    }
+    return result;
+}
+
+- (BOOL)createBookmarkForSongId:(NSString *)songId
+                      positionMs:(NSTimeInterval)positionMs
+                         comment:(NSString *)comment
+                           error:(NSError **)error {
+    if (songId.length == 0) return NO;
+    NSMutableString *params = [NSMutableString stringWithFormat:@"id=%@&position=%lld",
+                               urlEncode(songId), (long long)positionMs];
+    if (comment.length > 0) [params appendFormat:@"&comment=%@", urlEncode(comment)];
+    return [self fetchJSON:[self urlForEndpoint:@"createBookmark.view" params:params]
+                     error:error] != nil;
+}
+
+- (BOOL)deleteBookmarkForSongId:(NSString *)songId error:(NSError **)error {
+    if (songId.length == 0) return NO;
+    NSString *params = [NSString stringWithFormat:@"id=%@", urlEncode(songId)];
+    return [self fetchJSON:[self urlForEndpoint:@"deleteBookmark.view" params:params]
+                     error:error] != nil;
+}
+
 - (BOOL)scrobbleSongId:(NSString *)songId
             submission:(BOOL)submission
                  error:(NSError **)error {

@@ -75,6 +75,13 @@ public:
                         std::string& outError);
     bool deletePlaylist(const std::string& playlistId, std::string& outError);
 
+    // Saved resume positions (getBookmarks.view). createBookmark is an upsert —
+    // Subsonic overwrites any existing bookmark for the same song.
+    std::vector<Bookmark> getBookmarks(std::string& outError);
+    bool createBookmark(const std::string& songId, double positionMs,
+                        const std::string& comment, std::string& outError);
+    bool deleteBookmark(const std::string& songId, std::string& outError);
+
     // Scrobble a play: submission=false marks "now playing", submission=true
     // registers the play (play count, Last.fm / ListenBrainz relay).
     bool scrobble(const std::string& songId, bool submission, std::string& outError);

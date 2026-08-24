@@ -352,6 +352,7 @@ static std::vector<std::shared_ptr<NavidromeNode>> buildCategoryNodes() {
         { NavidromeNode::CatRandom,         "Random Albums"    },
         { NavidromeNode::CatGenres,         "Genres"           },
         { NavidromeNode::CatPlaylists,      "Playlists"        },
+        { NavidromeNode::CatBookmarks,      "Bookmarks"        },
     };
 
     std::vector<std::shared_ptr<NavidromeNode>> out;
@@ -404,7 +405,7 @@ BrowserWindow::fetchChildren(const std::shared_ptr<NavidromeNode>& node,
     auto& client = navidrome::SubsonicClientWin::get();
     std::vector<std::shared_ptr<NavidromeNode>> out;
 
-    auto addSong = [&out](const navidrome::Song& s) {
+    auto addSong = [&out](const navidrome::Song& s, double bookmarkPositionMs = 0.0) {
         auto n = std::make_shared<NavidromeNode>();
         n->type           = NavidromeNode::Song;
         n->id             = s.id;
@@ -418,6 +419,7 @@ BrowserWindow::fetchChildren(const std::shared_ptr<NavidromeNode>& node,
         n->duration       = s.duration;
         n->starred        = s.starred;
         n->rating         = s.rating;
+        n->bookmarkPositionMs = bookmarkPositionMs;
         n->childrenLoaded = true;
         out.push_back(n);
     };
@@ -471,6 +473,8 @@ BrowserWindow::fetchChildren(const std::shared_ptr<NavidromeNode>& node,
                                      (p.songCount == 1 ? " track" : " tracks");
                     out.push_back(n);
                 }
+            } else if (node->category == NavidromeNode::CatBookmarks) {
+                for (auto& b : client.getBookmarks(outError)) addSong(b.song, b.positionMs);
             } else {
                 auto type = navidrome::AlbumListType::Newest;
                 if (node->category == NavidromeNode::CatMostPlayed)
@@ -600,6 +604,12 @@ std::string BrowserWindow::labelFor(const std::shared_ptr<NavidromeNode>& node) 
     if (node->rating > 0) {
         label += "  ";
         for (int i = 0; i < node->rating; ++i) label += "★";
+    }
+    if (node->bookmarkPositionMs > 0) {
+        int totalSeconds = static_cast<int>(node->bookmarkPositionMs / 1000.0);
+        char buf[16];
+        snprintf(buf, sizeof(buf), "  ⏱ %d:%02d", totalSeconds / 60, totalSeconds % 60);
+        label += buf;
     }
     return label;
 }
@@ -762,6 +772,7 @@ void BrowserWindow::OnContextMenu(CWindow wnd, CPoint point) {
     menu.AppendMenu(MF_SEPARATOR);
     menu.AppendMenu(MF_STRING, IDC_STAR,   L"Star");
     menu.AppendMenu(MF_STRING, IDC_UNSTAR, L"Unstar");
+    menu.AppendMenu(MF_STRING, IDC_REMOVE_BOOKMARK, L"Remove Bookmark");
 
     CMenu rating;
     rating.CreatePopupMenu();
@@ -849,6 +860,37 @@ void BrowserWindow::applyStarred(bool starred) {
             for (auto& n : targets) refreshLabel(n);
             setStatus(err.empty()
                 ? (starred ? "Starred " : "Unstarred ") + std::to_string(done) + " item(s)"
+                : "Error: " + err);
+        });
+    }).detach();
+}
+
+void BrowserWindow::OnRemoveBookmark(UINT, int, HWND) { applyRemoveBookmark(); }
+
+void BrowserWindow::applyRemoveBookmark() {
+    std::vector<std::shared_ptr<NavidromeNode>> songs;
+    for (auto& n : selectedNodes())
+        if (n->type == NavidromeNode::Song) songs.push_back(n);
+    if (songs.empty()) { setStatus("Select one or more songs"); return; }
+
+    std::thread([this, songs]() {
+        std::string err;
+        std::size_t done = 0;
+        for (auto& n : songs) {
+            std::string one;
+            if (navidrome::SubsonicClientWin::get().deleteBookmark(n->id, one)) {
+                n->bookmarkPositionMs = 0.0;
+                ++done;
+            } else if (err.empty()) {
+                err = one;
+            }
+        }
+        fb2k::inMainThread([this, songs, done, err]() {
+            if (!IsWindow()) return;
+            for (auto& n : songs) refreshLabel(n);
+            invalidateBookmarksCategory();
+            setStatus(err.empty()
+                ? "Removed " + std::to_string(done) + " bookmark(s)"
                 : "Error: " + err);
         });
     }).detach();
@@ -1066,6 +1108,33 @@ void BrowserWindow::invalidatePlaylistsCategory() {
             return;
         }
     }
+}
+
+void BrowserWindow::invalidateBookmarksCategory() {
+    for (auto& root : m_rootNodes) {
+        if (root->type == NavidromeNode::Category &&
+            root->category == NavidromeNode::CatBookmarks) {
+            reloadNodeChildren(root);
+            return;
+        }
+    }
+}
+
+// playback_control::start() has just been called; the stream isn't necessarily
+// seekable the instant it begins decoding, so poll briefly before giving up.
+void BrowserWindow::seekWhenReady(double positionSeconds) {
+    std::thread([positionSeconds]() {
+        auto pc = playback_control::get();
+        for (int i = 0; i < 30; ++i) {
+            if (pc->is_playing() && pc->playback_can_seek()) {
+                fb2k::inMainThread([positionSeconds]() {
+                    playback_control::get()->playback_seek(positionSeconds);
+                });
+                return;
+            }
+            Sleep(100);
+        }
+    }).detach();
 }
 
 void BrowserWindow::OnAddToServerPlaylist(UINT, int id, HWND) {
@@ -1339,6 +1408,10 @@ void BrowserWindow::enqueueNodes(std::vector<std::shared_ptr<NavidromeNode>> son
         pm->set_playing_playlist(pl);
         pm->playlist_set_focus_item(pl, insertPos);
         playback_control::get()->start(playback_control::track_command_play);
+
+        // Resume a saved position when this was a single bookmarked song.
+        if (songs.size() == 1 && songs[0]->bookmarkPositionMs > 0)
+            seekWhenReady(songs[0]->bookmarkPositionMs / 1000.0);
     }
 
     std::string msg = "Added " + std::to_string(tracks.get_count()) + " tracks";
