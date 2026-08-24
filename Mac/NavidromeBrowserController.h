@@ -26,6 +26,7 @@ typedef NS_ENUM(NSInteger, NavidromeCategoryKind) {
     NavidromeCategoryRandom,           // getAlbumList2 random   → albums
     NavidromeCategoryPlaylists,        // getPlaylists.view      → playlists
     NavidromeCategoryGenres,           // getGenres.view         → genres
+    NavidromeCategoryBookmarks,        // getBookmarks.view      → songs
 };
 
 @interface NavidromeNode : NSObject
@@ -43,6 +44,7 @@ typedef NS_ENUM(NSInteger, NavidromeCategoryKind) {
 @property (nonatomic, assign) NavidromeCategoryKind categoryKind;  // category nodes only
 @property (nonatomic, assign) BOOL      starred;    // server-side favorite
 @property (nonatomic, assign) NSInteger rating;     // 0 = unrated, else 1-5
+@property (nonatomic, assign) NSTimeInterval bookmarkPositionMs; // > 0 when this song has a saved resume position
 
 // True if children have been loaded (may still be empty)
 @property (nonatomic, assign) BOOL childrenLoaded;
@@ -55,6 +57,7 @@ typedef NS_ENUM(NSInteger, NavidromeCategoryKind) {
 + (instancetype)artistNode:(SubsonicArtist *)artist;
 + (instancetype)albumNode:(SubsonicAlbum *)album;
 + (instancetype)songNode:(SubsonicSong *)song;
++ (instancetype)bookmarkNode:(SubsonicBookmark *)bookmark;
 + (instancetype)playlistNode:(SubsonicPlaylist *)playlist;
 + (instancetype)genreNode:(SubsonicGenre *)genre;
 + (instancetype)categoryNode:(NavidromeCategoryKind)kind title:(NSString *)title;

@@ -57,6 +57,14 @@
 @property (nonatomic, assign) NSInteger albumCount;
 @end
 
+// A saved resume position (getBookmarks.view). Subsonic embeds the full song
+// object per bookmark and reports position in milliseconds.
+@interface SubsonicBookmark : NSObject
+@property (nonatomic, strong) SubsonicSong *song;
+@property (nonatomic, assign) NSTimeInterval positionMs;
+@property (nonatomic, copy) NSString *comment;
+@end
+
 // Item kinds accepted by star.view / unstar.view — Subsonic names the query
 // parameter differently per kind (id / albumId / artistId).
 typedef NS_ENUM(NSInteger, SubsonicStarKind) {
@@ -136,6 +144,15 @@ typedef NS_ENUM(NSInteger, SubsonicStarKind) {
                 toName:(NSString *)name
                  error:(NSError **)error;
 - (BOOL)deletePlaylist:(NSString *)playlistId error:(NSError **)error;
+
+// Saved resume positions (getBookmarks.view). createBookmark is an upsert —
+// Subsonic overwrites any existing bookmark for the same song.
+- (NSArray<SubsonicBookmark *> *)getBookmarksWithError:(NSError **)error;
+- (BOOL)createBookmarkForSongId:(NSString *)songId
+                      positionMs:(NSTimeInterval)positionMs
+                         comment:(NSString *)comment
+                           error:(NSError **)error;
+- (BOOL)deleteBookmarkForSongId:(NSString *)songId error:(NSError **)error;
 
 // Scrobble a play to the server: submission=NO marks "now playing",
 // submission=YES registers the play (play count, Last.fm / ListenBrainz).

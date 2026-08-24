@@ -53,6 +53,8 @@ static constexpr GUID guid_cfg_salt       = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xb
 static constexpr GUID guid_prefs_page     = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x05} };
 static constexpr GUID guid_mainmenu_group = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x06} };
 static constexpr GUID guid_mainmenu_cmd   = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x07} };
+static constexpr GUID guid_mainmenu_bookmark_cmd =
+    { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x0e} };
 static constexpr GUID guid_cfg_custom_headers = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x0a} };
 static constexpr GUID guid_cfg_scrobble   = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x0b} };
 static constexpr GUID guid_cfg_stream_format = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x0c} };
@@ -517,17 +519,20 @@ FB2K_SERVICE_FACTORY(NavidromeLibraryPrefsFactory);
 // ---------------------------------------------------------------------------
 class NavidromeMenuCmd : public mainmenu_commands {
 public:
-    t_uint32 get_command_count() override { return 1; }
+    t_uint32 get_command_count() override { return 2; }
     GUID     get_command(t_uint32 i) override {
         if (i == 0) return guid_mainmenu_cmd;
+        if (i == 1) return guid_mainmenu_bookmark_cmd;
         throw pfc::exception_invalid_params();
     }
     void get_name(t_uint32 i, pfc::string_base& out) override {
         if (i == 0) { out = "Open Navidrome Browser"; return; }
+        if (i == 1) { out = "Bookmark Current Position"; return; }
         throw pfc::exception_invalid_params();
     }
     bool get_description(t_uint32 i, pfc::string_base& out) override {
         if (i == 0) { out = "Browse and stream from Navidrome"; return true; }
+        if (i == 1) { out = "Save the current playback position to resume later"; return true; }
         return false;
     }
     GUID     get_parent() override { return mainmenu_groups::file; }
@@ -536,8 +541,33 @@ public:
         get_name(i, out); flags = 0; return true;
     }
     void execute(t_uint32 i, service_ptr_t<service_base>) override {
-        if (i != 0) throw pfc::exception_invalid_params();
-        fb2k::inMainThread([] { BrowserWindow::get().show(); });
+        if (i == 0) { fb2k::inMainThread([] { BrowserWindow::get().show(); }); return; }
+        if (i == 1) { bookmarkCurrentPosition(); return; }
+        throw pfc::exception_invalid_params();
+    }
+
+private:
+    // Saves the currently-playing track's position as a Navidrome bookmark.
+    // createBookmark.view is an upsert, so this also updates any existing one.
+    static void bookmarkCurrentPosition() {
+        metadb_handle_ptr track;
+        auto pc = playback_control::get();
+        if (!pc->get_now_playing(track) || track.is_empty()) {
+            console::print("Navidrome: no track is currently playing");
+            return;
+        }
+        std::string songId = navidrome::trackIdFromURI(track->get_path());
+        if (songId.empty()) {
+            console::print("Navidrome: current track isn't from Navidrome");
+            return;
+        }
+        double positionMs = pc->playback_get_position() * 1000.0;
+        std::thread([songId, positionMs]() {
+            std::string err;
+            navidrome::SubsonicClientWin::get().createBookmark(songId, positionMs, "", err);
+            if (!err.empty())
+                console::printf("Navidrome: failed to save bookmark: %s", err.c_str());
+        }).detach();
     }
 };
 FB2K_SERVICE_FACTORY(NavidromeMenuCmd);

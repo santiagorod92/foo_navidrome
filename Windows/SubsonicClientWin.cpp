@@ -661,6 +661,47 @@ bool navidrome::SubsonicClientWin::deletePlaylist(const std::string& playlistId,
     return !checkResponse(body, outError).empty();
 }
 
+std::vector<navidrome::Bookmark>
+navidrome::SubsonicClientWin::getBookmarks(std::string& outError) {
+    std::string body = httpGet(buildURL("getBookmarks.view"), outError);
+    if (body.empty()) return {};
+    auto root = checkResponse(body, outError);
+    if (root.empty()) return {};
+
+    std::vector<Bookmark> result;
+    for (auto& b : jarr(root, "bookmark")) {
+        auto entries = jarr(b, "entry");
+        if (entries.empty()) continue;
+        Bookmark bm;
+        bm.song       = parseSongObj(entries[0]);
+        bm.positionMs = jdbl(b, "position");
+        bm.comment    = jstr(b, "comment");
+        result.push_back(std::move(bm));
+    }
+    return result;
+}
+
+bool navidrome::SubsonicClientWin::createBookmark(const std::string& songId, double positionMs,
+                                                   const std::string& comment,
+                                                   std::string& outError) {
+    if (songId.empty()) return false;
+    std::string params = "id=" + urlEncode(songId) +
+                         "&position=" + std::to_string(static_cast<long long>(positionMs));
+    if (!comment.empty()) params += "&comment=" + urlEncode(comment);
+    std::string body = httpGet(buildURL("createBookmark.view", params), outError);
+    if (body.empty()) return false;
+    return !checkResponse(body, outError).empty();
+}
+
+bool navidrome::SubsonicClientWin::deleteBookmark(const std::string& songId,
+                                                   std::string& outError) {
+    if (songId.empty()) return false;
+    std::string body = httpGet(buildURL("deleteBookmark.view", "id=" + urlEncode(songId)),
+                               outError);
+    if (body.empty()) return false;
+    return !checkResponse(body, outError).empty();
+}
+
 bool navidrome::SubsonicClientWin::scrobble(const std::string& songId, bool submission,
                                              std::string& outError) {
     if (songId.empty()) return false;

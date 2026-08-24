@@ -60,6 +60,15 @@ struct Genre {
     int albumCount = 0;
 };
 
+// A saved resume position (getBookmarks.view). Subsonic embeds the full song
+// object per bookmark, same shape playlists/starred already use, and reports
+// position in milliseconds.
+struct Bookmark {
+    Song   song;
+    double positionMs = 0.0;
+    std::string comment;
+};
+
 struct SearchResults {
     std::vector<Artist> artists;
     std::vector<Album>  albums;

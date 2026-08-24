@@ -29,6 +29,7 @@ struct NavidromeNode {
         CatRandom,           // getAlbumList2 random   → albums
         CatGenres,           // getGenres.view         → genres
         CatPlaylists,        // getPlaylists.view      → playlists
+        CatBookmarks,        // getBookmarks.view      → songs
     };
 
     Type        type         = Loading;
@@ -44,6 +45,7 @@ struct NavidromeNode {
     double      duration     = 0.0;
     bool        starred      = false;   // server-side favorite
     int         rating       = 0;       // 0 = unrated, else 1-5
+    double      bookmarkPositionMs = 0.0; // > 0 when this song has a saved resume position
     bool        childrenLoaded = false;
     bool        isLoading    = false;
     HTREEITEM   hItem        = nullptr;
@@ -98,6 +100,7 @@ public:
         COMMAND_ID_HANDLER_EX(IDC_RENAME_PLAYLIST,  OnRenamePlaylist)
         COMMAND_ID_HANDLER_EX(IDC_DELETE_PLAYLIST,  OnDeletePlaylist)
         COMMAND_ID_HANDLER_EX(IDC_DOWNLOAD,         OnDownload)
+        COMMAND_ID_HANDLER_EX(IDC_REMOVE_BOOKMARK,  OnRemoveBookmark)
         COMMAND_RANGE_HANDLER_EX(IDC_RATE_0, IDC_RATE_5, OnRate)
         // One id per server playlist in the "Add to Navidrome Playlist" submenu.
         COMMAND_RANGE_HANDLER_EX(IDC_PLAYLIST_FIRST, IDC_PLAYLIST_LAST,
@@ -124,6 +127,7 @@ private:
         IDC_RENAME_PLAYLIST = 1018,
         IDC_DELETE_PLAYLIST = 1019,
         IDC_DOWNLOAD        = 1020,
+        IDC_REMOVE_BOOKMARK = 1021,
         // One id per entry in the server-playlist submenu; the offset from
         // IDC_PLAYLIST_FIRST indexes m_serverPlaylists.
         IDC_PLAYLIST_FIRST = 1100,
@@ -156,6 +160,7 @@ private:
     void    OnRenamePlaylist(UINT, int, HWND);
     void    OnDeletePlaylist(UINT, int, HWND);
     void    OnDownload(UINT, int, HWND);
+    void    OnRemoveBookmark(UINT, int, HWND);
 
     void    loadArtists();
     void    populateRoot(LoadedPayload* payload);
@@ -191,7 +196,14 @@ private:
     // Drop cached children so the next expand refetches from the server.
     void    invalidatePlaylistNode(const std::string& playlistId);
     void    invalidatePlaylistsCategory();
+    void    invalidateBookmarksCategory();
     void    reloadNodeChildren(const std::shared_ptr<NavidromeNode>& node);
+    void    applyRemoveBookmark();
+    // Polls playback_can_seek() briefly on a background thread, then seeks on
+    // the main thread. Used to resume into a bookmarked position right after
+    // enqueueNodes() calls playback_control::start() — the stream isn't
+    // necessarily seekable the instant playback starts.
+    static void seekWhenReady(double positionSeconds);
 
     // ui_config_callback: fires when the user changes Colours and Fonts
     // (or toggles dark mode) while the browser is open.
