@@ -516,6 +516,20 @@ bool navidrome::SubsonicClientWin::setStarred(bool starred, const std::string& i
     return !checkResponse(body, outError).empty();
 }
 
+bool navidrome::SubsonicClientWin::getSong(const std::string& songId, Song& out,
+                                            std::string& outError) {
+    if (songId.empty()) return false;
+    std::string body = httpGet(buildURL("getSong.view", "id=" + urlEncode(songId)), outError);
+    if (body.empty()) return false;
+    auto root = checkResponse(body, outError);
+    if (root.empty()) return false;
+    // jarr also matches a bare object, which is what getSong returns.
+    auto songs = jarr(root, "song");
+    if (songs.empty()) return false;
+    out = parseSongObj(songs.front());
+    return true;
+}
+
 bool navidrome::SubsonicClientWin::setRating(int rating, const std::string& songId,
                                               std::string& outError) {
     if (songId.empty()) return false;

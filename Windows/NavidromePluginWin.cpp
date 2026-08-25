@@ -2,6 +2,7 @@
 #include "BrowserWindow.h"
 #include "SubsonicClientWin.h"
 #include "MediaEnrichmentLogic.h"
+#include "../NavidromePlaylistSync.h"
 #include "EsLyricBridge.h"
 #include <SDK/cfg_var.h>
 #include <SDK/album_art.h>
@@ -696,10 +697,17 @@ public:
         m_songId.clear();
         m_submitted = false;
         m_length    = 0.0;
-        if (track.is_empty() || !navidrome::cfg_scrobble.get()) return;
+        if (track.is_empty()) return;
 
-        m_songId = navidrome::trackIdFromURI(track->get_path());
-        if (m_songId.empty()) return;   // not one of ours
+        const std::string songId = navidrome::trackIdFromURI(track->get_path());
+        if (songId.empty()) return;   // not one of ours
+
+        // Deliberately ahead of the scrobble gate: this is a display refresh,
+        // not a play report, so it must not follow the scrobbling preference.
+        refreshRatingAsync(songId);
+
+        if (!navidrome::cfg_scrobble.get()) return;
+        m_songId = songId;
         m_length = track->get_length();
         scrobbleAsync(m_songId, false);
     }
@@ -737,11 +745,94 @@ private:
         }).detach();
     }
 
+    // One extra request per played track. That's the only moment we can pick up
+    // a rating changed outside foobar (the Navidrome web UI, another client)
+    // without polling every playlist entry — Subsonic has no bulk rating
+    // lookup, so a whole-playlist refresh would be one request per track.
+    static void refreshRatingAsync(std::string songId) {
+        std::thread([songId]() {
+            std::string err;
+            navidrome::Song song;
+            if (!navidrome::SubsonicClientWin::get().getSong(songId, song, err)) return;
+            navidrome::RatingUpdate u;
+            u.songId  = songId;
+            u.rating  = song.rating;
+            u.starred = song.starred;
+            std::vector<navidrome::RatingUpdate> updates;
+            updates.push_back(std::move(u));
+            navidrome::syncRatingsToPlaylists(std::move(updates));
+        }).detach();
+    }
+
     std::string m_songId;
     double      m_length    = 0.0;
     bool        m_submitted = false;
 };
 static play_callback_static_factory_t<NavidromeScrobbler> g_navidrome_scrobbler_factory;
+
+// Startup refresh — mirrors navidromeRefreshRatingsOnStart() in
+// NavidromePlugin.mm.
+
+static void navidromeRefreshRatingsOnStart() {
+    // Main thread: walking the playlists is a main-thread operation.
+    navidrome::PlaylistAlbumScan scan = navidrome::scanPlaylistAlbums();
+
+
+    // Nothing of ours in any playlist — the only exit that stays quiet. Every
+    // other one says why, because "hook never fired" and "hook fired and found
+    // nothing" are otherwise indistinguishable from the outside.
+    if (scan.entries == 0) return;
+
+    if (!navidrome::refreshRatingsOnStartEnabled()) return;
+    if (!navidrome::SubsonicClientWin::get().isConfigured()) return;
+
+    // Skipping coverage silently is how a partial refresh gets mistaken for a
+    // complete one, so the two outcomes that leave entries behind say so.
+    if (scan.albumIds.empty()) {
+        std::string msg = "Navidrome: " + std::to_string(scan.entries) +
+            " playlist entry/entries carry no album id (added by an older version)"
+            " — open their album in the browser to refresh them";
+        console::print(msg.c_str());
+        return;
+    }
+
+    const std::size_t ungrouped = scan.ungrouped;
+    std::thread([albumIds = std::move(scan.albumIds), ungrouped]() {
+        std::vector<navidrome::RatingUpdate> updates;
+        std::size_t failed = 0;
+        for (const auto& albumId : albumIds) {
+            std::string err;
+            auto songs = navidrome::SubsonicClientWin::get().getSongsForAlbum(albumId, err);
+            if (!err.empty()) { ++failed; continue; }
+            for (const auto& song : songs) {
+                if (song.id.empty()) continue;
+                navidrome::RatingUpdate u;
+                u.songId  = song.id;
+                u.rating  = song.rating;
+                u.starred = song.starred;
+                updates.push_back(std::move(u));
+            }
+        }
+        // One sync for everything: it walks every playlist once, so doing it per
+        // album would repeat that walk for no gain.
+        const std::size_t ok = albumIds.size() - failed;
+        navidrome::syncRatingsToPlaylists(std::move(updates));
+
+        std::string msg = "Navidrome: refreshed ratings from " + std::to_string(ok) + " album(s)";
+        if (failed > 0)    msg += ", " + std::to_string(failed) + " album(s) failed";
+        if (ungrouped > 0) msg += ", " + std::to_string(ungrouped) +
+            " entry/entries skipped (no album id, added by an older version)";
+        console::print(msg.c_str());
+    }).detach();
+}
+
+// initquit on both platforms — see NavidromePlugin.mm.
+class NavidromeStartupRefresh : public initquit {
+public:
+    void on_init() override { navidromeRefreshRatingsOnStart(); }
+};
+
+static initquit_factory_t<NavidromeStartupRefresh> g_navidrome_startup_refresh_factory;
 
 // ---------------------------------------------------------------------------
 // Init/quit — installs/refreshes the ESLyric bridge on startup so lyrics work

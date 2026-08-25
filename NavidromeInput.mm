@@ -2,6 +2,7 @@
 #import "NavidromeInput.h"
 #import "SubsonicClient.h"
 #import "SubsonicTypes.h"
+#import "NavidromePlaylistSync.h"
 #import <Foundation/Foundation.h>
 #include <SDK/input_impl.h>
 #include <SDK/file.h>
@@ -65,6 +66,14 @@ public:
         }
         if (m_duration > 0) p_info.set_length(m_duration);
         if (!m_suffix.is_empty()) p_info.info_set("codec", m_suffix);
+        // Server-side per-user state, snapshotted into the URI at enqueue time.
+        // Left unset when absent so old URIs and unrated tracks render as empty
+        // rather than "0" in a custom column.
+        if (m_rating > 0) {
+            pfc::string_formatter r; r << m_rating;
+            p_info.meta_set(navidrome::kRatingTag, r);
+        }
+        if (m_starred) p_info.meta_set(navidrome::kStarredTag, "1");
     }
 
     t_filestats2 get_stats2(uint32_t /*flags*/, abort_callback & /*p_abort*/) {
@@ -186,6 +195,8 @@ private:
                 else if ([k isEqualToString:@"duration"])    m_duration = v.doubleValue;
                 else if ([k isEqualToString:@"coverArt"])    m_cover_art_id = [v UTF8String];
                 else if ([k isEqualToString:@"suffix"])      m_suffix = [v UTF8String];
+                else if ([k isEqualToString:@"rating"])      m_rating = v.intValue;
+                else if ([k isEqualToString:@"starred"])     m_starred = (v.intValue != 0);
             }
         }
     }
@@ -200,6 +211,8 @@ private:
     int          m_track    = 0;
     int          m_year     = 0;
     double       m_duration = 0.0;
+    int          m_rating   = 0;      // 0 = unrated (also: param absent)
+    bool         m_starred  = false;
 
     pfc::string8 m_resolved_url;
     service_ptr_t<input_decoder> m_decoder;
@@ -222,7 +235,10 @@ NSString *NavidromeMakeTrackURIWithFields(NSString *songId,
                                           NSInteger year,
                                           NSTimeInterval duration,
                                           NSString *coverArtId,
-                                          NSString *suffix) {
+                                          NSString *suffix,
+                                          NSInteger rating,
+                                          BOOL starred,
+                                          NSString *albumId) {
     if (!songId || songId.length == 0) return nil;
 
     NSMutableArray<NSString *> *q = [NSMutableArray array];
@@ -242,6 +258,14 @@ NSString *NavidromeMakeTrackURIWithFields(NSString *songId,
         [q addObject:[NSString stringWithFormat:@"coverArt=%@", encodeQuery(coverArtId)]];
     if (suffix.length)
         [q addObject:[NSString stringWithFormat:@"suffix=%@", encodeQuery(suffix)]];
+    // Omitted when unset, so the URI of an unrated track is byte-identical to
+    // what earlier versions produced.
+    if (rating > 0)
+        [q addObject:[NSString stringWithFormat:@"rating=%ld", (long)rating]];
+    if (starred)
+        [q addObject:@"starred=1"];
+    if (albumId.length)
+        [q addObject:[NSString stringWithFormat:@"albumId=%@", encodeQuery(albumId)]];
 
     NSString *query = [q componentsJoinedByString:@"&"];
     NSString *idPart = encodeQuery(songId);
@@ -259,5 +283,8 @@ NSString *NavidromeMakeTrackURI(SubsonicSong *song) {
                                            song.year,
                                            song.duration,
                                            song.coverArtId,
-                                           song.suffix);
+                                           song.suffix,
+                                           song.rating,
+                                           song.starred,
+                                           song.albumId);
 }

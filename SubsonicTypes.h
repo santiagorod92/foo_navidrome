@@ -157,6 +157,31 @@ inline std::string sanitizeFileName(const std::string& name) {
     return out.empty() ? std::string("untitled") : out;
 }
 
+// Percent-decode a URI component. Ids are opaque server strings that may have
+// been escaped; a stray '%' that isn't a valid escape is passed through rather
+// than dropped.
+inline std::string percentDecode(const std::string& in) {
+    std::string out;
+    for (size_t i = 0; i < in.size(); ++i) {
+        if (in[i] == '%' && i + 2 < in.size()) {
+            auto hex = [](char c) -> int {
+                if (c >= '0' && c <= '9') return c - '0';
+                if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+                if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+                return -1;
+            };
+            int hi = hex(in[i + 1]), lo = hex(in[i + 2]);
+            if (hi >= 0 && lo >= 0) {
+                out.push_back(static_cast<char>((hi << 4) | lo));
+                i += 2;
+                continue;
+            }
+        }
+        out.push_back(in[i]);
+    }
+    return out;
+}
+
 // Extract the song id from a navidrome://track/<id>?... URI. Returns "" when
 // the path isn't one of ours. Shared so the scrobbler on both platforms maps a
 // playing metadb handle back to a Subsonic song id the same way.
@@ -168,27 +193,30 @@ inline std::string trackIdFromURI(const std::string& uri) {
     std::string id = uri.substr(prefix.size());
     size_t q = id.find('?');
     if (q != std::string::npos) id.erase(q);
+    return percentDecode(id);
+}
 
-    // Percent-decode; ids are opaque server strings that may have been escaped.
-    std::string out;
-    for (size_t i = 0; i < id.size(); ++i) {
-        if (id[i] == '%' && i + 2 < id.size()) {
-            auto hex = [](char c) -> int {
-                if (c >= '0' && c <= '9') return c - '0';
-                if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-                if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-                return -1;
-            };
-            int hi = hex(id[i + 1]), lo = hex(id[i + 2]);
-            if (hi >= 0 && lo >= 0) {
-                out.push_back(static_cast<char>((hi << 4) | lo));
-                i += 2;
-                continue;
-            }
-        }
-        out.push_back(id[i]);
+// Read one query parameter out of a navidrome://track/<id>?... URI. Returns ""
+// when the URI isn't ours or the parameter is absent — which is also what a URI
+// written by an older version looks like, so callers treat "" as "unknown",
+// never as a value.
+inline std::string queryParamFromURI(const std::string& uri, const std::string& key) {
+    static const std::string prefix = "navidrome://track/";
+    if (uri.compare(0, prefix.size(), prefix) != 0) return std::string();
+
+    size_t q = uri.find('?');
+    if (q == std::string::npos) return std::string();
+
+    const std::string needle = key + "=";
+    for (size_t pos = q + 1; pos < uri.size();) {
+        size_t amp  = uri.find('&', pos);
+        size_t end  = (amp == std::string::npos) ? uri.size() : amp;
+        if (uri.compare(pos, needle.size(), needle) == 0)
+            return percentDecode(uri.substr(pos + needle.size(), end - pos - needle.size()));
+        if (amp == std::string::npos) break;
+        pos = amp + 1;
     }
-    return out;
+    return std::string();
 }
 
 // Parse a multiline custom-headers blob (one "Name: Value" per line) into

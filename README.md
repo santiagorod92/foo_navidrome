@@ -14,7 +14,7 @@ A [foobar2000](https://www.foobar2000.org/) component that lets you browse and s
 - Browse your entire music library: Artists → Albums → Songs
 - **Smart lists** at the top of the tree: ★ Starred, Recently Added, Most Played, Recently Played, Random Albums, **Genres**, and your **server-side playlists**
 - **Scrobbling**: plays are reported back to Navidrome, so play counts, "Recently Played" and any Last.fm / ListenBrainz relay the server has configured stay in sync (toggle in Preferences)
-- **Favorites and ratings** from the right-click menu — Star / Unstar and a 0-5 star rating, stored per-user on the server so they show up in the web UI and on your phone
+- **Favorites and ratings** from the right-click menu — Star / Unstar and a 0-5 star rating, stored per-user on the server so they show up in the web UI and on your phone, and available in the playlist as `%navidrome_rating%` / `%navidrome_starred%` for a custom column
 - **Manage server playlists** from the right-click menu — add the selection to any existing playlist or a **New Playlist…**, remove tracks, rename, delete. Changes land on the server, so they show up everywhere
 - **Send Active Playlist to Navidrome** from the right-click menu — uploads the active foobar2000 playlist under the same name
 - **Streaming quality**: ask the server to transcode on the fly (MP3 / Opus / AAC) and cap the bitrate — useful on slow links. Set in Preferences; "Original" always sends the stored file
@@ -145,6 +145,50 @@ Then:
 Any of those actions work on whole albums or artists too — the component expands
 the selection to tracks for you. Ratings apply to songs only, which is what
 Subsonic supports.
+
+#### Showing ratings in the playlist
+
+The server-side rating and favorite flag travel with the track into foobar's
+playlist, as the title-formatting fields `%navidrome_rating%` (1-5) and
+`%navidrome_starred%` (`1` when starred). Add a column for them under
+*Preferences › Display › Playlist View › Custom Playlist Columns*:
+
+| Name | Pattern |
+| --- | --- |
+| Navidrome Rating | `$if(%navidrome_rating%,$repeat(★,%navidrome_rating%),)` |
+| Navidrome Starred | `[%navidrome_starred%]` |
+
+Both fields are absent for unrated / unstarred tracks, so `$if()` and
+`[%navidrome_rating%]` behave as you would expect. They are deliberately not
+called `%rating%` — that name belongs to foobar2000's own Playback Statistics,
+which stores a separate local rating.
+
+Playlist entries follow the server. The value in the playlist is refreshed in
+place — same entry, no duplicate — whenever the component learns a newer one:
+
+- **you rate or star a track** from the browser's right-click menu
+- **you open the album** in the browser (or search, or expand a playlist or
+  genre) — the browse response already carries the current values, so this costs
+  no extra request
+- **the track starts playing** — one lookup per played track. This is how a
+  rating you changed in the Navidrome web UI reaches a playlist you never
+  browsed.
+
+- **foobar2000 starts** — a full refresh of every playlist, so a rating column
+  can be sorted on rather than being right only for the tracks you happened to
+  play. This is grouped by album: one request per distinct album across all
+  playlists, not one per track. An album-shaped playlist costs a handful of
+  requests; one spanning your whole library costs as many as it has albums, so
+  it can be turned off under *Preferences › Advanced › Tools › Navidrome:
+  refresh ratings on startup*.
+
+**Upgrading:** tracks that were already in a playlist before this version don't
+carry the album id the startup refresh groups by, so that one pass skips them
+and says how many it skipped. They are not stuck — the other three triggers
+still reach them, and opening their album in the browser updates them
+immediately, no re-adding needed. Re-adding a track is only needed if you want
+that entry to take part in the *startup* pass as well, since the album id is
+written into the URI when the track is added.
 
 #### Managing server playlists
 

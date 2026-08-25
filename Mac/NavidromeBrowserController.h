@@ -38,6 +38,7 @@ typedef NS_ENUM(NSInteger, NavidromeCategoryKind) {
 @property (nonatomic, copy)   NSString *displayName;
 @property (nonatomic, copy)   NSString *subtitle;       // artist (for albums/songs)
 @property (nonatomic, copy)   NSString *albumName;      // album name (for song nodes)
+@property (nonatomic, copy)   NSString *albumId;        // album id (song nodes; startup refresh)
 @property (nonatomic, assign) NSInteger trackNumber;
 @property (nonatomic, assign) NSInteger year;
 @property (nonatomic, assign) NSTimeInterval duration;

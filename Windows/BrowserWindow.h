@@ -47,6 +47,7 @@ struct NavidromeNode {
     int         track        = 0;
     int         year         = 0;
     double      duration     = 0.0;
+    std::string albumId;               // album id (song nodes; startup refresh)
     bool        starred      = false;   // server-side favorite
     int         rating       = 0;       // 0 = unrated, else 1-5
     double      bookmarkPositionMs = 0.0; // > 0 when this song has a saved resume position

@@ -2,6 +2,7 @@
 #include "BrowserWindow.h"
 #include "SubsonicClientWin.h"
 #include "NavidromeInputWin.h"
+#include "../NavidromePlaylistSync.h"
 #include <SDK/playlist.h>
 #include <SDK/metadb.h>
 #include <SDK/playable_location.h>
@@ -766,6 +767,24 @@ void BrowserWindow::loadArtists() {
     }).detach();
 }
 
+// Pushes the freshly fetched server-side rating / favorite of these nodes onto
+// any matching playlist entry, so a value changed elsewhere (the Navidrome web
+// UI, another client) catches up as soon as the user looks at the album here.
+// Costs no extra request — the values arrived with the browse response.
+static void syncSongNodesToPlaylists(
+        const std::vector<std::shared_ptr<NavidromeNode>>& nodes) {
+    std::vector<navidrome::RatingUpdate> updates;
+    for (auto& n : nodes) {
+        if (!n || n->type != NavidromeNode::Song || n->id.empty()) continue;
+        navidrome::RatingUpdate u;
+        u.songId  = n->id;
+        u.rating  = n->rating;
+        u.starred = n->starred;
+        updates.push_back(std::move(u));
+    }
+    navidrome::syncRatingsToPlaylists(std::move(updates));
+}
+
 // ---------------------------------------------------------------------------
 // Child fetch (synchronous \u2014 background thread only)
 // ---------------------------------------------------------------------------
@@ -782,6 +801,7 @@ BrowserWindow::fetchChildren(const std::shared_ptr<NavidromeNode>& node,
         n->displayName    = s.title;
         n->subtitle       = s.artist;
         n->album          = s.album;
+        n->albumId        = s.albumId;
         n->coverArtId     = s.coverArtId;
         n->suffix         = s.suffix;
         n->track          = s.track;
@@ -871,6 +891,7 @@ BrowserWindow::fetchChildren(const std::shared_ptr<NavidromeNode>& node,
     }
 
     if (!outError.empty()) out.clear();
+    else                   syncSongNodesToPlaylists(out);
     return out;
 }
 
@@ -1273,6 +1294,7 @@ void BrowserWindow::applyStarred(bool starred) {
                 err = one;
             }
         }
+        syncSongNodesToPlaylists(targets);
         fb2k::inMainThread([this, targets, starred, done, err]() {
             if (!IsWindow()) return;
             for (auto& n : targets) refreshLabel(n);
@@ -1333,6 +1355,7 @@ void BrowserWindow::OnRate(UINT, int id, HWND) {
             else if (err.empty())
                 err = one;
         }
+        syncSongNodesToPlaylists(songs);
         fb2k::inMainThread([this, songs, err]() {
             if (!IsWindow()) return;
             for (auto& n : songs) refreshLabel(n);
@@ -1839,6 +1862,7 @@ void BrowserWindow::OnSearchChanged(UINT, int, HWND) {
             n->displayName    = s.title + " — " + s.artist;
             n->subtitle       = s.artist;
             n->album          = s.album;
+            n->albumId        = s.albumId;
             n->coverArtId     = s.coverArtId;
             n->suffix         = s.suffix;
             n->track          = s.track;
@@ -1849,6 +1873,7 @@ void BrowserWindow::OnSearchChanged(UINT, int, HWND) {
             n->childrenLoaded = true;
             payload->nodes.push_back(n);
         }
+        syncSongNodesToPlaylists(payload->nodes);
         PostMessage(WM_NAVIDROME_LOADED, reinterpret_cast<WPARAM>(payload), 0);
     }).detach();
 }
@@ -1910,7 +1935,8 @@ void BrowserWindow::enqueueNodes(std::vector<std::shared_ptr<NavidromeNode>> son
         // time, and metadata renders without a network round-trip.
         std::string uri = navidrome::makeTrackURI(node->id, node->displayName,
             node->subtitle, node->album, node->track, node->year,
-            node->duration, node->coverArtId, node->suffix);
+            node->duration, node->coverArtId, node->suffix,
+            node->rating, node->starred, node->albumId);
         if (uri.empty()) continue;
 
         loc.set_path(uri.c_str());
@@ -1925,6 +1951,11 @@ void BrowserWindow::enqueueNodes(std::vector<std::shared_ptr<NavidromeNode>> son
         if (node->track > 0)            info.meta_set("tracknumber", pfc::format_int(node->track));
         if (node->year > 0)             info.meta_set("date",   pfc::format_int(node->year));
         if (node->duration > 0)         info.set_length(node->duration);
+        // The hint pre-populates metadb, so get_info() is not called for a
+        // freshly enqueued track — the rating has to be set here too or the
+        // column stays empty until an info reload.
+        if (node->rating > 0)           info.meta_set(navidrome::kRatingTag, pfc::format_int(node->rating));
+        if (node->starred)              info.meta_set(navidrome::kStarredTag, "1");
         hints->add_hint(handle, info, filestats_invalid, true);
     }
     hints->on_done();

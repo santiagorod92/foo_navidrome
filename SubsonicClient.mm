@@ -473,6 +473,16 @@ static SubsonicAlbum *parseAlbum(NSDictionary *a) {
     return [self fetchJSON:url error:error] != nil;
 }
 
+- (SubsonicSong *)getSongWithId:(NSString *)songId error:(NSError **)error {
+    if (songId.length == 0) return nil;
+    NSString *params = [NSString stringWithFormat:@"id=%@", urlEncode(songId)];
+    NSURL *url = [self urlForEndpoint:@"getSong.view" params:params];
+    NSDictionary *root = [self fetchJSON:url error:error];
+    if (!root) return nil;
+    NSDictionary *s = root[@"song"];
+    return [s isKindOfClass:[NSDictionary class]] ? parseSong(s) : nil;
+}
+
 - (BOOL)setRating:(NSInteger)rating forSongId:(NSString *)songId error:(NSError **)error {
     if (songId.length == 0) return NO;
     NSString *params = [NSString stringWithFormat:@"id=%@&rating=%ld",

@@ -52,6 +52,11 @@ public:
     // rating 1-5; 0 clears the rating.
     bool setRating(int rating, const std::string& songId, std::string& outError);
 
+    // Single song lookup (getSong.view). Used to refresh the per-user rating of
+    // a track that is already playing, without re-browsing its album. Returns
+    // false and sets outError when the song can't be read.
+    bool getSong(const std::string& songId, Song& out, std::string& outError);
+
     // Server-side playlists
     std::vector<Playlist> getPlaylists(std::string& outError);
     std::vector<Song>     getPlaylistSongs(const std::string& playlistId,
