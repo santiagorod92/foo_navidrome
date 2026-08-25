@@ -770,6 +770,19 @@ private:
 };
 static play_callback_static_factory_t<NavidromeScrobbler> g_navidrome_scrobbler_factory;
 
+// Client calls behind the shared playlist context menu (main.cpp). Background
+// thread only — the menu marshals them off the UI thread itself.
+bool navidrome::setRatingOnServer(const std::string& songId, int rating) {
+    std::string err;
+    return navidrome::SubsonicClientWin::get().setRating(rating, songId, err);
+}
+
+bool navidrome::setStarredOnServer(const std::string& songId, bool starred) {
+    std::string err;
+    return navidrome::SubsonicClientWin::get().setStarred(
+        starred, songId, navidrome::StarKind::Song, err);
+}
+
 // Startup refresh — mirrors navidromeRefreshRatingsOnStart() in
 // NavidromePlugin.mm.
 

@@ -241,6 +241,28 @@ public:
 static initquit_factory_t<navidrome_startup_refresh> g_navidrome_startup_refresh_factory;
 
 } // namespace
+// Client calls behind the shared playlist context menu (main.cpp). Background
+// thread only — the menu marshals them off the UI thread itself.
+bool navidrome::setRatingOnServer(const std::string &songId, int rating) {
+    @autoreleasepool {
+        NSError *err = nil;
+        return [SubsonicClient.sharedClient
+            setRating:rating
+            forSongId:[NSString stringWithUTF8String:songId.c_str()]
+                error:&err] ? true : false;
+    }
+}
+
+bool navidrome::setStarredOnServer(const std::string &songId, bool starred) {
+    @autoreleasepool {
+        NSError *err = nil;
+        return [SubsonicClient.sharedClient
+            setStarred:starred ? YES : NO
+                 forId:[NSString stringWithUTF8String:songId.c_str()]
+                  kind:SubsonicStarKindSong
+                 error:&err] ? true : false;
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Preferences page (Mac)

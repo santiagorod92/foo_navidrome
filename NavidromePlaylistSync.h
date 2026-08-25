@@ -47,4 +47,10 @@ PlaylistAlbumScan scanPlaylistAlbums();
 // Startup-refresh switch, under Preferences › Advanced › Tools. Default on.
 bool refreshRatingsOnStartEnabled();
 
+// Implemented per platform, because only the HTTP client differs. Both are
+// called off the main thread and return false when the server rejected the
+// change. Back the playlist context menu in main.cpp.
+bool setRatingOnServer(const std::string& songId, int rating);
+bool setStarredOnServer(const std::string& songId, bool starred);
+
 } // namespace navidrome

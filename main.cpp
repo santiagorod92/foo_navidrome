@@ -4,10 +4,13 @@
 #include <SDK/metadb.h>
 #include <SDK/playlist.h>
 #include <SDK/advconfig.h>
+#include <SDK/contextmenu.h>
 #include <helpers/advconfig_impl.h>
 #include <unordered_map>
 #include <unordered_set>
 #include <cstring>
+#include <cstdlib>
+#include <thread>
 #if __has_include("version_generated.h")
 #  include "version_generated.h"
 #endif
@@ -143,3 +146,111 @@ navidrome::PlaylistAlbumScan navidrome::scanPlaylistAlbums() {
     }
     return scan;
 }
+
+// ---------------------------------------------------------------------------
+// Playlist context menu — rate / star without going back to the browser tree.
+// Pure SDK apart from the two client calls, so it isn't written twice. Hides
+// itself when nothing in the selection is one of ours.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+static constexpr GUID guid_ctx_group =
+    { 0xa1b2c3d4, 0x1111, 0x2222, { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x03, 0x00 } };
+
+static contextmenu_group_popup_factory g_ctx_group(
+    guid_ctx_group, contextmenu_groups::root, "Navidrome", 0.0);
+
+// 0-5 set that rating (0 clears it), 6 stars, 7 unstars.
+constexpr unsigned kRatingItems = 6;
+constexpr unsigned kItemStar    = 6;
+constexpr unsigned kItemUnstar  = 7;
+
+class navidrome_context_menu : public contextmenu_item_simple {
+public:
+    GUID get_parent() override { return guid_ctx_group; }
+
+    unsigned get_num_items() override { return 8; }
+
+    void get_item_name(unsigned index, pfc::string_base& out) override {
+        if (index == kItemStar)   { out = "Star";      return; }
+        if (index == kItemUnstar) { out = "Unstar";    return; }
+        if (index == 0)           { out = "No rating"; return; }
+        // No "Rating:" prefix — the submenu is already called Navidrome and the
+        // stars say the rest.
+        pfc::string_formatter name;
+        for (unsigned i = 0; i < index; ++i) name << "\xE2\x98\x85";   // ★
+        out = name;
+    }
+
+    bool get_item_description(unsigned index, pfc::string_base& out) override {
+        (void)index;
+        out = "Applies to the selected Navidrome tracks, server-side.";
+        return true;
+    }
+
+    GUID get_item_guid(unsigned index) override {
+        GUID g = { 0xa1b2c3d4, 0x1111, 0x2222,
+                   { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x03, 0x01 } };
+        g.Data4[7] = static_cast<unsigned char>(0x01 + index);
+        return g;
+    }
+
+    // Returning false hides the item, so a playlist of local files never shows
+    // a Navidrome submenu.
+    bool context_get_display(unsigned index, metadb_handle_list_cref data,
+                             pfc::string_base& out, unsigned& flags,
+                             const GUID& caller) override {
+        (void)flags; (void)caller;
+        bool anyOurs = false;
+        for (t_size i = 0; i < data.get_count() && !anyOurs; ++i)
+            anyOurs = !navidrome::trackIdFromURI(data[i]->get_path()).empty();
+        if (!anyOurs) return false;
+        get_item_name(index, out);
+        return true;
+    }
+
+    void context_command(unsigned index, metadb_handle_list_cref data,
+                         const GUID& caller) override {
+        (void)caller;
+        // Seed from what the entries currently show, then change only the field
+        // this command is about — setRating must not clear a star, and vice
+        // versa. Reading metadb is main-thread work, so it happens here rather
+        // than in the worker.
+        std::vector<navidrome::RatingUpdate> updates;
+        for (t_size i = 0; i < data.get_count(); ++i) {
+            navidrome::RatingUpdate u;
+            u.songId = navidrome::trackIdFromURI(data[i]->get_path());
+            if (u.songId.empty()) continue;   // local file in a mixed playlist
+
+            file_info_impl info;
+            if (data[i]->get_info(info)) {
+                if (info.meta_get_count_by_name(navidrome::kRatingTag) > 0)
+                    u.rating = atoi(info.meta_get(navidrome::kRatingTag, 0));
+                u.starred = info.meta_get_count_by_name(navidrome::kStarredTag) > 0;
+            }
+
+            if (index < kRatingItems) u.rating  = static_cast<int>(index);
+            else                      u.starred = (index == kItemStar);
+            updates.push_back(std::move(u));
+        }
+        if (updates.empty()) return;
+
+        const bool rating = index < kRatingItems;
+        std::thread([updates = std::move(updates), rating]() mutable {
+            std::vector<navidrome::RatingUpdate> done;
+            for (auto& u : updates) {
+                const bool ok = rating ? navidrome::setRatingOnServer(u.songId, u.rating)
+                                       : navidrome::setStarredOnServer(u.songId, u.starred);
+                if (ok) done.push_back(std::move(u));
+            }
+            // Only what the server accepted reaches the playlist, so a failed
+            // call leaves the old value visible instead of a hopeful one.
+            navidrome::syncRatingsToPlaylists(std::move(done));
+        }).detach();
+    }
+};
+
+static contextmenu_item_factory_t<navidrome_context_menu> g_navidrome_context_menu;
+
+} // namespace
