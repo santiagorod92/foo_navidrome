@@ -75,6 +75,12 @@ static void NavidromeApplyCustomHeaders(NSMutableURLRequest *req) {
 }
 @end
 
+@implementation SubsonicRadioStation
+- (NSString *)description {
+    return [NSString stringWithFormat:@"<SubsonicRadioStation %@ %@>", _stationId, _name];
+}
+@end
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -606,6 +612,64 @@ static SubsonicAlbum *parseAlbum(NSDictionary *a) {
     if (playlistId.length == 0) return NO;
     NSString *params = [NSString stringWithFormat:@"id=%@", urlEncode(playlistId)];
     return [self fetchJSON:[self urlForEndpoint:@"deletePlaylist.view" params:params]
+                     error:error] != nil;
+}
+
+- (NSArray<SubsonicRadioStation *> *)getRadioStationsWithError:(NSError **)error {
+    NSURL *url = [self urlForEndpoint:@"getInternetRadioStations.view" params:@""];
+    NSDictionary *root = [self fetchJSON:url error:error];
+    if (!root) return nil;
+
+    NSMutableArray<SubsonicRadioStation *> *result = [NSMutableArray array];
+    for (NSDictionary *s in asArray(root[@"internetRadioStations"][@"internetRadioStation"])) {
+        SubsonicRadioStation *station = [[SubsonicRadioStation alloc] init];
+        station.stationId   = s[@"id"] ?: @"";
+        station.name        = s[@"name"] ?: @"Unnamed station";
+        station.streamUrl   = s[@"streamUrl"] ?: @"";
+        station.homePageUrl = s[@"homePageUrl"] ?: @"";
+        [result addObject:station];
+    }
+    return result;
+}
+
+- (NSString *)createRadioStationWithStreamURL:(NSString *)streamUrl
+                                          name:(NSString *)name
+                                   homePageUrl:(NSString *)homePageUrl
+                                         error:(NSError **)error {
+    if (streamUrl.length == 0 || name.length == 0) return nil;
+    NSMutableString *params = [NSMutableString stringWithFormat:@"streamUrl=%@&name=%@",
+                               urlEncode(streamUrl), urlEncode(name)];
+    if (homePageUrl.length > 0)
+        [params appendFormat:@"&homePageUrl=%@", urlEncode(homePageUrl)];
+
+    NSDictionary *root = [self fetchJSON:[self urlForEndpoint:@"createInternetRadioStation.view"
+                                                       params:params]
+                                   error:error];
+    if (!root) return nil;
+    // Unlike createPlaylist.view, Subsonic's create-station endpoint doesn't
+    // echo the new station's id back. Report success with an empty id rather
+    // than a phantom failure — callers must check *error, not this string.
+    return @"";
+}
+
+- (BOOL)updateRadioStation:(NSString *)stationId
+                  streamURL:(NSString *)streamUrl
+                       name:(NSString *)name
+                homePageUrl:(NSString *)homePageUrl
+                      error:(NSError **)error {
+    if (stationId.length == 0 || streamUrl.length == 0 || name.length == 0) return NO;
+    NSMutableString *params = [NSMutableString stringWithFormat:@"id=%@&streamUrl=%@&name=%@",
+                               urlEncode(stationId), urlEncode(streamUrl), urlEncode(name)];
+    if (homePageUrl.length > 0)
+        [params appendFormat:@"&homePageUrl=%@", urlEncode(homePageUrl)];
+    return [self fetchJSON:[self urlForEndpoint:@"updateInternetRadioStation.view" params:params]
+                     error:error] != nil;
+}
+
+- (BOOL)deleteRadioStation:(NSString *)stationId error:(NSError **)error {
+    if (stationId.length == 0) return NO;
+    NSString *params = [NSString stringWithFormat:@"id=%@", urlEncode(stationId)];
+    return [self fetchJSON:[self urlForEndpoint:@"deleteInternetRadioStation.view" params:params]
                      error:error] != nil;
 }
 

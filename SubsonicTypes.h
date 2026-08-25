@@ -60,6 +60,16 @@ struct Genre {
     int albumCount = 0;
 };
 
+// An internet radio station (getInternetRadioStations.view). Unlike every
+// other browsable item, playback uses streamUrl directly — no navidrome://
+// URI, no transcoding, no server-side resolution needed for a live stream.
+struct RadioStation {
+    std::string id;
+    std::string name;
+    std::string streamUrl;
+    std::string homePageUrl;   // optional, may be empty
+};
+
 // A saved resume position (getBookmarks.view). Subsonic embeds the full song
 // object per bookmark, same shape playlists/starred already use, and reports
 // position in milliseconds.

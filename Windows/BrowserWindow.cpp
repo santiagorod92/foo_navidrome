@@ -150,6 +150,150 @@ private:
     bool         m_done     = false;
 };
 
+// ---------------------------------------------------------------------------
+// Modal 3-field prompt for New/Edit Radio Station (name / stream URL / home
+// page URL). Same message-pump-driven popup technique as TextPromptWindow,
+// just with three stacked labeled edits instead of one.
+// ---------------------------------------------------------------------------
+class RadioStationPromptWindow : public CWindowImpl<RadioStationPromptWindow> {
+public:
+    DECLARE_WND_CLASS(L"foo_navidrome_RadioPromptWnd")
+
+    static bool run(HWND owner, const wchar_t* title,
+                    const std::wstring& initialName,
+                    const std::wstring& initialStreamURL,
+                    const std::wstring& initialHomePageURL,
+                    std::wstring& outName, std::wstring& outStreamURL,
+                    std::wstring& outHomePageURL) {
+        RadioStationPromptWindow w;
+        w.m_name        = initialName;
+        w.m_streamURL   = initialStreamURL;
+        w.m_homePageURL = initialHomePageURL;
+
+        w.Create(owner, CWindow::rcDefault, title,
+                 WS_POPUP | WS_CAPTION | WS_SYSMENU, WS_EX_DLGMODALFRAME);
+        if (!w.IsWindow()) return false;
+
+        RECT rcOwner{};
+        if (owner && ::GetWindowRect(owner, &rcOwner)) {
+            int x = rcOwner.left + ((rcOwner.right - rcOwner.left) - 360) / 2;
+            int y = rcOwner.top + ((rcOwner.bottom - rcOwner.top) - 220) / 2;
+            w.SetWindowPos(nullptr, x, y, 360, 220, SWP_NOZORDER);
+        } else {
+            w.SetWindowPos(nullptr, 0, 0, 360, 220, SWP_NOMOVE | SWP_NOZORDER);
+        }
+
+        if (owner) ::EnableWindow(owner, FALSE);
+        w.ShowWindow(SW_SHOW);
+        w.m_nameEdit.SetFocus();
+
+        MSG msg;
+        while (!w.m_done) {
+            BOOL got = ::GetMessageW(&msg, nullptr, 0, 0);
+            if (got == 0) {
+                ::PostQuitMessage(static_cast<int>(msg.wParam));
+                break;
+            }
+            if (got == -1) break;
+            if (!::IsDialogMessageW(w.m_hWnd, &msg)) {
+                ::TranslateMessage(&msg);
+                ::DispatchMessageW(&msg);
+            }
+        }
+        if (owner) { ::EnableWindow(owner, TRUE); ::SetForegroundWindow(owner); }
+        if (w.IsWindow()) w.DestroyWindow();
+
+        outName        = w.m_name;
+        outStreamURL   = w.m_streamURL;
+        outHomePageURL = w.m_homePageURL;
+        return w.m_accepted;
+    }
+
+    BEGIN_MSG_MAP(RadioStationPromptWindow)
+        MSG_WM_CREATE(OnCreate)
+        MSG_WM_CLOSE(OnClose)
+        COMMAND_ID_HANDLER_EX(IDOK,     OnOk)
+        COMMAND_ID_HANDLER_EX(IDCANCEL, OnCancel)
+    END_MSG_MAP()
+
+private:
+    enum {
+        IDC_NAME_LABEL = 4011, IDC_NAME_EDIT = 4012,
+        IDC_URL_LABEL  = 4013, IDC_URL_EDIT  = 4014,
+        IDC_HOME_LABEL = 4015, IDC_HOME_EDIT = 4016,
+    };
+
+    LRESULT OnCreate(LPCREATESTRUCT) {
+        HFONT f = reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+        auto setFont = [&](HWND h) { SendMessageW(h, WM_SETFONT, reinterpret_cast<WPARAM>(f), 0); };
+
+        setFont(CreateWindowW(L"STATIC", L"Name:", WS_CHILD | WS_VISIBLE,
+            12, 12, 330, 18, *this,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_NAME_LABEL)), nullptr, nullptr));
+        m_nameEdit.Create(*this, CWindow::rcDefault, nullptr,
+            WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL,
+            0, IDC_NAME_EDIT);
+        m_nameEdit.SetWindowPos(nullptr, 12, 34, 330, 22, SWP_NOZORDER);
+        m_nameEdit.SetFont(f);
+        m_nameEdit.SetWindowText(m_name.c_str());
+        m_nameEdit.SetSel(0, -1);
+
+        setFont(CreateWindowW(L"STATIC", L"Stream URL:", WS_CHILD | WS_VISIBLE,
+            12, 66, 330, 18, *this,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_URL_LABEL)), nullptr, nullptr));
+        m_urlEdit.Create(*this, CWindow::rcDefault, nullptr,
+            WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL,
+            0, IDC_URL_EDIT);
+        m_urlEdit.SetWindowPos(nullptr, 12, 88, 330, 22, SWP_NOZORDER);
+        m_urlEdit.SetFont(f);
+        m_urlEdit.SetWindowText(m_streamURL.c_str());
+
+        setFont(CreateWindowW(L"STATIC", L"Home page URL (optional):", WS_CHILD | WS_VISIBLE,
+            12, 120, 330, 18, *this,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_HOME_LABEL)), nullptr, nullptr));
+        m_homeEdit.Create(*this, CWindow::rcDefault, nullptr,
+            WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL,
+            0, IDC_HOME_EDIT);
+        m_homeEdit.SetWindowPos(nullptr, 12, 142, 330, 22, SWP_NOZORDER);
+        m_homeEdit.SetFont(f);
+        m_homeEdit.SetWindowText(m_homePageURL.c_str());
+
+        setFont(CreateWindowW(L"BUTTON", L"OK",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
+            180, 178, 76, 26, *this,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDOK)), nullptr, nullptr));
+        setFont(CreateWindowW(L"BUTTON", L"Cancel",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+            264, 178, 76, 26, *this,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDCANCEL)), nullptr, nullptr));
+        return 0;
+    }
+
+    static std::wstring textOf(CEdit& edit) {
+        int len = edit.GetWindowTextLength();
+        std::wstring buf(static_cast<std::size_t>(len) + 1, L'\0');
+        edit.GetWindowText(&buf[0], len + 1);
+        buf.resize(static_cast<std::size_t>(len));
+        return buf;
+    }
+
+    void OnOk(UINT, int, HWND) {
+        m_name        = textOf(m_nameEdit);
+        m_streamURL   = textOf(m_urlEdit);
+        m_homePageURL = textOf(m_homeEdit);
+        m_accepted    = true;
+        m_done        = true;
+    }
+
+    void OnCancel(UINT, int, HWND) { m_done = true; }
+    void OnClose()                 { m_done = true; }
+
+    CEdit        m_nameEdit, m_urlEdit, m_homeEdit;
+    std::wstring m_name, m_streamURL, m_homePageURL;
+    bool         m_accepted = false;
+    bool         m_done     = false;
+};
+
 // Folder chooser for "Download Original Files". SHBrowseForFolder keeps this to
 // one call with no COM object lifetime to manage.
 bool pickFolder(HWND owner, std::wstring& outPath) {
@@ -173,6 +317,230 @@ bool pickFolder(HWND owner, std::wstring& outPath) {
     if (SUCCEEDED(co)) ::CoUninitialize();
     return ok;
 }
+
+// ---------------------------------------------------------------------------
+// Preferences > Media Library > Navidrome > Radio Stations — dedicated
+// sub-page nested under the main Navidrome credentials page (guid_prefs_page)
+// so it shows as a child entry, not a sibling under Tools. Lists the
+// server's configured stations with Add/Edit/Delete, entirely independent of
+// any open BrowserWindow (own fetch, own cached station list). Reuses
+// RadioStationPromptWindow as-is for the Add/Edit modal.
+// ---------------------------------------------------------------------------
+class NavidromeRadioPrefsInstance : public CWindowImpl<NavidromeRadioPrefsInstance>,
+                                    public preferences_page_instance {
+public:
+    DECLARE_WND_CLASS(L"foo_navidrome_RadioPrefsWnd")
+
+    explicit NavidromeRadioPrefsInstance(preferences_page_callback::ptr cb) : m_cb(cb) {}
+
+    // Read-only management view — nothing here is "applied", every action is
+    // a live server request, so this page never reports itself as changed.
+    HWND     get_wnd() override { return m_hWnd; }
+    t_uint32 get_state() override { return 0; }
+    void     apply() override {}
+    void     reset() override {}
+
+    enum { WM_RADIO_LOADED = WM_USER + 200 };
+
+    BEGIN_MSG_MAP(NavidromeRadioPrefsInstance)
+        MSG_WM_CREATE(OnCreate)
+        MSG_WM_SIZE(OnSize)
+        MESSAGE_HANDLER_EX(WM_RADIO_LOADED, OnRadioLoaded)
+        COMMAND_ID_HANDLER_EX(IDC_NEW,    OnNew)
+        COMMAND_ID_HANDLER_EX(IDC_EDIT,   OnEdit)
+        COMMAND_ID_HANDLER_EX(IDC_DELETE, OnDelete)
+    END_MSG_MAP()
+
+private:
+    enum { IDC_LIST = 5001, IDC_NEW = 5002, IDC_EDIT = 5003, IDC_DELETE = 5004, IDC_STATUS = 5005 };
+
+    LRESULT OnCreate(LPCREATESTRUCT) {
+        m_list.Create(*this, CWindow::rcDefault, nullptr,
+            WS_CHILD | WS_VISIBLE | WS_BORDER | LVS_REPORT | LVS_SINGLESEL | WS_TABSTOP,
+            WS_EX_CLIENTEDGE, IDC_LIST);
+        m_list.SetExtendedListViewStyle(LVS_EX_FULLROWSELECT);
+        m_list.InsertColumn(0, L"Name", LVCFMT_LEFT, 150);
+        m_list.InsertColumn(1, L"Stream URL", LVCFMT_LEFT, 260);
+        m_list.InsertColumn(2, L"Home Page", LVCFMT_LEFT, 180);
+
+        HFONT f = reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+        auto mkButton = [&](int id, const wchar_t* text) {
+            HWND h = CreateWindowW(L"BUTTON", text, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+                0, 0, 90, 26, *this, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), nullptr, nullptr);
+            SendMessageW(h, WM_SETFONT, reinterpret_cast<WPARAM>(f), 0);
+            return h;
+        };
+        m_newBtn    = mkButton(IDC_NEW, L"New…");
+        m_editBtn   = mkButton(IDC_EDIT, L"Edit…");
+        m_deleteBtn = mkButton(IDC_DELETE, L"Delete…");
+
+        m_status = CreateWindowW(L"STATIC", L"", WS_CHILD | WS_VISIBLE,
+            0, 0, 0, 0, *this, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_STATUS)), nullptr, nullptr);
+        SendMessageW(m_status, WM_SETFONT, reinterpret_cast<WPARAM>(f), 0);
+
+        refresh();
+        return 0;
+    }
+
+    void OnSize(UINT, CSize sz) {
+        const int btnW = 90, btnH = 26, gap = 8, pad = 8;
+        int listH = sz.cy - btnH - pad * 3;
+        if (listH < 0) listH = 0;
+        m_list.SetWindowPos(nullptr, pad, pad, sz.cx - pad * 2, listH, SWP_NOZORDER);
+        int y = pad * 2 + listH;
+        ::SetWindowPos(m_newBtn,    nullptr, pad,                   y, btnW, btnH, SWP_NOZORDER);
+        ::SetWindowPos(m_editBtn,   nullptr, pad + btnW + gap,      y, btnW, btnH, SWP_NOZORDER);
+        ::SetWindowPos(m_deleteBtn, nullptr, pad + 2 * (btnW + gap),y, btnW, btnH, SWP_NOZORDER);
+        int statusX = pad + 3 * (btnW + gap);
+        ::SetWindowPos(m_status, nullptr, statusX, y + 5,
+            (sz.cx - statusX - pad) > 0 ? sz.cx - statusX - pad : 0, btnH, SWP_NOZORDER);
+    }
+
+    void setStatus(const std::string& s) { ::SetWindowTextW(m_status, u8ToWide(s).c_str()); }
+
+    void refresh() {
+        if (!navidrome::SubsonicClientWin::get().isConfigured()) { setStatus("Not configured"); return; }
+        setStatus("Loading…");
+        std::thread([this]() {
+            std::string err;
+            auto stations = navidrome::SubsonicClientWin::get().getRadioStations(err);
+            auto* payload = err.empty()
+                ? new std::vector<navidrome::RadioStation>(std::move(stations))
+                : nullptr;
+            if (!PostMessage(WM_RADIO_LOADED, reinterpret_cast<WPARAM>(payload), 0))
+                delete payload;   // window already gone
+        }).detach();
+    }
+
+    LRESULT OnRadioLoaded(UINT, WPARAM wParam, LPARAM) {
+        auto* stations = reinterpret_cast<std::vector<navidrome::RadioStation>*>(wParam);
+        if (stations) {
+            m_stations = std::move(*stations);
+            delete stations;
+            populateList();
+            setStatus(m_stations.empty() ? "No radio stations" : "");
+        } else {
+            setStatus("Failed to load radio stations");
+        }
+        return 0;
+    }
+
+    void populateList() {
+        m_list.DeleteAllItems();
+        int i = 0;
+        for (auto& s : m_stations) {
+            m_list.InsertItem(i, u8ToWide(s.name).c_str());
+            m_list.SetItemText(i, 1, u8ToWide(s.streamUrl).c_str());
+            m_list.SetItemText(i, 2, u8ToWide(s.homePageUrl).c_str());
+            ++i;
+        }
+    }
+
+    int selectedIndex() { return m_list.GetNextItem(-1, LVNI_SELECTED); }
+
+    void OnNew(UINT, int, HWND) {
+        std::wstring name, streamUrl, homePageUrl;
+        if (!RadioStationPromptWindow::run(*this, L"New Radio Station", L"", L"", L"",
+                                           name, streamUrl, homePageUrl))
+            return;
+        std::string nameU8 = wToU8(name), urlU8 = wToU8(streamUrl), homeU8 = wToU8(homePageUrl);
+        if (nameU8.empty() || urlU8.empty()) { setStatus("Name and stream URL are required"); return; }
+
+        setStatus("Creating…");
+        std::thread([this, nameU8, urlU8, homeU8]() {
+            std::string err;
+            std::string result = navidrome::SubsonicClientWin::get()
+                                      .createRadioStation(urlU8, nameU8, homeU8, err);
+            bool ok = err.empty();
+            fb2k::inMainThread([this, ok, err]() {
+                if (!IsWindow()) return;
+                if (ok) refresh();
+                else setStatus("Failed: " + (err.empty() ? "unknown error" : err));
+            });
+        }).detach();
+    }
+
+    void OnEdit(UINT, int, HWND) {
+        int idx = selectedIndex();
+        if (idx < 0 || static_cast<std::size_t>(idx) >= m_stations.size()) {
+            setStatus("Select a station"); return;
+        }
+        navidrome::RadioStation station = m_stations[static_cast<std::size_t>(idx)];
+
+        std::wstring name, streamUrl, homePageUrl;
+        if (!RadioStationPromptWindow::run(*this, L"Edit Radio Station",
+                                           u8ToWide(station.name), u8ToWide(station.streamUrl),
+                                           u8ToWide(station.homePageUrl),
+                                           name, streamUrl, homePageUrl))
+            return;
+        std::string nameU8 = wToU8(name), urlU8 = wToU8(streamUrl), homeU8 = wToU8(homePageUrl);
+        if (nameU8.empty() || urlU8.empty()) { setStatus("Name and stream URL are required"); return; }
+
+        std::string id = station.id;
+        setStatus("Updating…");
+        std::thread([this, id, nameU8, urlU8, homeU8]() {
+            std::string err;
+            bool ok = navidrome::SubsonicClientWin::get().updateRadioStation(id, urlU8, nameU8, homeU8, err);
+            fb2k::inMainThread([this, ok, err]() {
+                if (!IsWindow()) return;
+                if (ok) refresh();
+                else setStatus("Failed: " + (err.empty() ? "unknown error" : err));
+            });
+        }).detach();
+    }
+
+    void OnDelete(UINT, int, HWND) {
+        int idx = selectedIndex();
+        if (idx < 0 || static_cast<std::size_t>(idx) >= m_stations.size()) {
+            setStatus("Select a station"); return;
+        }
+        navidrome::RadioStation station = m_stations[static_cast<std::size_t>(idx)];
+
+        std::wstring prompt = L"Delete \"" + u8ToWide(station.name) + L"\" from the server?\r\n\r\n"
+                              L"The station is removed for every client.";
+        if (MessageBoxW(prompt.c_str(), L"Delete radio station",
+                        MB_ICONWARNING | MB_YESNO | MB_DEFBUTTON2) != IDYES)
+            return;
+
+        std::string id = station.id;
+        setStatus("Deleting…");
+        std::thread([this, id]() {
+            std::string err;
+            bool ok = navidrome::SubsonicClientWin::get().deleteRadioStation(id, err);
+            fb2k::inMainThread([this, ok, err]() {
+                if (!IsWindow()) return;
+                if (ok) refresh();
+                else setStatus("Failed: " + (err.empty() ? "unknown error" : err));
+            });
+        }).detach();
+    }
+
+    CListViewCtrl m_list;
+    HWND m_newBtn = nullptr, m_editBtn = nullptr, m_deleteBtn = nullptr, m_status = nullptr;
+    std::vector<navidrome::RadioStation> m_stations;
+    preferences_page_callback::ptr m_cb;
+};
+
+class NavidromeRadioPrefsFactory : public preferences_page_v3 {
+public:
+    preferences_page_instance::ptr instantiate(HWND parent,
+        preferences_page_callback::ptr cb) override {
+        auto inst = fb2k::service_new<NavidromeRadioPrefsInstance>(cb);
+        inst->Create(parent);
+        return inst;
+    }
+    const char* get_name() override { return "Radio Stations"; }
+    GUID        get_guid() override {
+        return { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x0f} };
+    }
+    // Nested under the main Navidrome credentials page (guid_prefs_page,
+    // tail 0x05), not guid_tools — makes this a child sub-page under
+    // "Navidrome" rather than a sibling of it.
+    GUID        get_parent_guid() override {
+        return { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x05} };
+    }
+};
+FB2K_SERVICE_FACTORY(NavidromeRadioPrefsFactory);
 
 } // namespace
 
@@ -353,6 +721,7 @@ static std::vector<std::shared_ptr<NavidromeNode>> buildCategoryNodes() {
         { NavidromeNode::CatGenres,         "Genres"           },
         { NavidromeNode::CatPlaylists,      "Playlists"        },
         { NavidromeNode::CatBookmarks,      "Bookmarks"        },
+        { NavidromeNode::CatRadio,          "Radio"            },
     };
 
     std::vector<std::shared_ptr<NavidromeNode>> out;
@@ -374,6 +743,7 @@ void BrowserWindow::loadArtists() {
     // Warm the cache the "Add to Navidrome Playlist" submenu reads from, so the
     // first right-click already lists the server's playlists.
     refreshServerPlaylists();
+    refreshRadioStations();
 
     std::thread([this]() {
         auto* payload = new LoadedPayload{};
@@ -475,6 +845,16 @@ BrowserWindow::fetchChildren(const std::shared_ptr<NavidromeNode>& node,
                 }
             } else if (node->category == NavidromeNode::CatBookmarks) {
                 for (auto& b : client.getBookmarks(outError)) addSong(b.song, b.positionMs);
+            } else if (node->category == NavidromeNode::CatRadio) {
+                for (auto& s : client.getRadioStations(outError)) {
+                    auto n = std::make_shared<NavidromeNode>();
+                    n->type          = NavidromeNode::Radio;
+                    n->id            = s.id;
+                    n->displayName   = s.name;
+                    n->subtitle      = s.homePageUrl;
+                    n->childrenLoaded = true;
+                    out.push_back(n);
+                }
             } else {
                 auto type = navidrome::AlbumListType::Newest;
                 if (node->category == NavidromeNode::CatMostPlayed)
@@ -533,6 +913,36 @@ void BrowserWindow::refreshServerPlaylists() {
         if (!PostMessage(WM_NAVIDROME_PLAYLISTS, reinterpret_cast<WPARAM>(payload), 0))
             delete payload;   // window already gone
     }).detach();
+}
+
+LRESULT BrowserWindow::OnNavidromeRadio(UINT, WPARAM wParam, LPARAM, BOOL&) {
+    auto* stations = reinterpret_cast<std::vector<navidrome::RadioStation>*>(wParam);
+    m_radioLoading = false;
+    if (stations) { m_radioStations = std::move(*stations); delete stations; }
+    return 0;
+}
+
+// Refresh the cached station list the enqueue path resolves streamUrl from.
+// Cheap enough to re-run after every mutation, same as refreshServerPlaylists.
+void BrowserWindow::refreshRadioStations() {
+    if (m_radioLoading || !navidrome::SubsonicClientWin::get().isConfigured()) return;
+    m_radioLoading = true;
+
+    std::thread([this]() {
+        std::string err;
+        auto stations = navidrome::SubsonicClientWin::get().getRadioStations(err);
+        auto* payload = err.empty()
+            ? new std::vector<navidrome::RadioStation>(std::move(stations))
+            : nullptr;
+        if (!PostMessage(WM_NAVIDROME_RADIO, reinterpret_cast<WPARAM>(payload), 0))
+            delete payload;   // window already gone
+    }).detach();
+}
+
+std::string BrowserWindow::radioStationURL(const std::string& stationId) {
+    for (auto& s : m_radioStations)
+        if (s.id == stationId) return s.streamUrl;
+    return "";
 }
 
 void BrowserWindow::populateRoot(LoadedPayload* payload) {
@@ -632,6 +1042,7 @@ HTREEITEM BrowserWindow::insertNode(HTREEITEM hParent,
     tvi.item.lParam       = reinterpret_cast<LPARAM>(node.get());
     // Show expand arrow for artists and albums
     tvi.item.cChildren    = (node->type == NavidromeNode::Song   ||
+                              node->type == NavidromeNode::Radio  ||
                               node->type == NavidromeNode::Error  ||
                               node->type == NavidromeNode::Loading) ? 0 : 1;
 
@@ -681,7 +1092,7 @@ LRESULT BrowserWindow::OnTreeDblClick(LPNMHDR) {
     if (!hSel) return 0;
     auto node = nodeForItem(hSel);
     if (!node) return 0;
-    if (node->type == NavidromeNode::Song)
+    if (node->type == NavidromeNode::Song || node->type == NavidromeNode::Radio)
         enqueueNodes({ node }, true);
     else if (m_tree.GetItemState(hSel, TVIS_EXPANDED) & TVIS_EXPANDED)
         m_tree.Expand(hSel, TVE_COLLAPSE);
@@ -812,6 +1223,12 @@ void BrowserWindow::OnContextMenu(CWindow wnd, CPoint point) {
     menu.AppendMenu(MF_STRING, IDC_RENAME_PLAYLIST, L"Rename Playlist…");
     menu.AppendMenu(MF_STRING, IDC_DELETE_PLAYLIST, L"Delete Playlist…");
 
+    // Internet radio stations. Unlike playlists, "New" needs no selection.
+    menu.AppendMenu(MF_SEPARATOR);
+    menu.AppendMenu(MF_STRING, IDC_NEW_RADIO,    L"New Radio Station…");
+    menu.AppendMenu(MF_STRING, IDC_EDIT_RADIO,   L"Edit Radio Station…");
+    menu.AppendMenu(MF_STRING, IDC_DELETE_RADIO, L"Delete Radio Station…");
+
     menu.AppendMenu(MF_SEPARATOR);
     menu.AppendMenu(MF_STRING, IDC_SEND_PLAYLIST,
                     L"Send Active Playlist to Navidrome");
@@ -821,6 +1238,7 @@ void BrowserWindow::OnContextMenu(CWindow wnd, CPoint point) {
 
     // A stale cache is only visible once — refresh for the next open.
     refreshServerPlaylists();
+    refreshRadioStations();
 }
 
 // ---------------------------------------------------------------------------
@@ -1292,6 +1710,109 @@ void BrowserWindow::OnDeletePlaylist(UINT, int, HWND) {
     }).detach();
 }
 
+// ---------------------------------------------------------------------------
+// Radio station management
+// ---------------------------------------------------------------------------
+std::shared_ptr<NavidromeNode> BrowserWindow::singleSelectedRadioStation() {
+    auto sel = selectedNodes();
+    if (sel.size() != 1 || sel[0]->type != NavidromeNode::Radio) return nullptr;
+    return sel[0];
+}
+
+void BrowserWindow::invalidateRadioCategory() {
+    for (auto& root : m_rootNodes) {
+        if (root->type == NavidromeNode::Category &&
+            root->category == NavidromeNode::CatRadio) {
+            reloadNodeChildren(root);
+            return;
+        }
+    }
+}
+
+// Unlike a new playlist, creating a station needs no selection.
+void BrowserWindow::OnNewRadioStation(UINT, int, HWND) {
+    std::wstring name, streamUrl, homePageUrl;
+    if (!RadioStationPromptWindow::run(*this, L"New Radio Station", L"", L"", L"",
+                                       name, streamUrl, homePageUrl))
+        return;
+    std::string nameU8 = wToU8(name), urlU8 = wToU8(streamUrl), homeU8 = wToU8(homePageUrl);
+    if (nameU8.empty() || urlU8.empty()) {
+        setStatus("Name and stream URL are required");
+        return;
+    }
+
+    setStatus("Creating radio station…");
+    std::thread([this, nameU8, urlU8, homeU8]() {
+        std::string err;
+        std::string result = navidrome::SubsonicClientWin::get()
+                                  .createRadioStation(urlU8, nameU8, homeU8, err);
+        bool ok = err.empty();
+        fb2k::inMainThread([this, nameU8, ok, err]() {
+            if (!IsWindow()) return;
+            setStatus(ok ? "Created \"" + nameU8 + "\""
+                         : "Failed: " + (err.empty() ? "unknown error" : err));
+            if (ok) { invalidateRadioCategory(); refreshRadioStations(); }
+        });
+    }).detach();
+}
+
+void BrowserWindow::OnEditRadioStation(UINT, int, HWND) {
+    auto node = singleSelectedRadioStation();
+    if (!node) { setStatus("Select a single radio station"); return; }
+
+    std::string currentUrl = radioStationURL(node->id);
+    std::wstring name, streamUrl, homePageUrl;
+    if (!RadioStationPromptWindow::run(*this, L"Edit Radio Station",
+                                       u8ToWide(node->displayName),
+                                       u8ToWide(currentUrl),
+                                       u8ToWide(node->subtitle),
+                                       name, streamUrl, homePageUrl))
+        return;
+    std::string nameU8 = wToU8(name), urlU8 = wToU8(streamUrl), homeU8 = wToU8(homePageUrl);
+    if (nameU8.empty() || urlU8.empty()) {
+        setStatus("Name and stream URL are required");
+        return;
+    }
+
+    const std::string stationId = node->id;
+    std::thread([this, stationId, nameU8, urlU8, homeU8]() {
+        std::string err;
+        bool ok = navidrome::SubsonicClientWin::get()
+                      .updateRadioStation(stationId, urlU8, nameU8, homeU8, err);
+        fb2k::inMainThread([this, nameU8, ok, err]() {
+            if (!IsWindow()) return;
+            setStatus(ok ? "Updated \"" + nameU8 + "\""
+                         : "Failed: " + (err.empty() ? "unknown error" : err));
+            if (ok) { invalidateRadioCategory(); refreshRadioStations(); }
+        });
+    }).detach();
+}
+
+void BrowserWindow::OnDeleteRadioStation(UINT, int, HWND) {
+    auto node = singleSelectedRadioStation();
+    if (!node) { setStatus("Select a single radio station"); return; }
+
+    std::wstring prompt = L"Delete \"" + u8ToWide(node->displayName) +
+                          L"\" from the server?\r\n\r\n"
+                          L"The station is removed for every client.";
+    if (MessageBoxW(prompt.c_str(), L"Delete radio station",
+                    MB_ICONWARNING | MB_YESNO | MB_DEFBUTTON2) != IDYES)
+        return;
+
+    const std::string stationId = node->id;
+    const std::string name      = node->displayName;
+    std::thread([this, stationId, name]() {
+        std::string err;
+        bool ok = navidrome::SubsonicClientWin::get().deleteRadioStation(stationId, err);
+        fb2k::inMainThread([this, name, ok, err]() {
+            if (!IsWindow()) return;
+            setStatus(ok ? "Deleted \"" + name + "\""
+                         : "Failed: " + (err.empty() ? "unknown error" : err));
+            if (ok) { invalidateRadioCategory(); refreshRadioStations(); }
+        });
+    }).detach();
+}
+
 void BrowserWindow::OnRefresh(UINT, int, HWND) {
     m_search.SetWindowText(L"");
     loadArtists();
@@ -1339,7 +1860,9 @@ void BrowserWindow::OnSearchChanged(UINT, int, HWND) {
 // reusing already-expanded children and fetching the rest on demand.
 void BrowserWindow::collectSongsDeep(std::shared_ptr<NavidromeNode> node,
                                      std::vector<std::shared_ptr<NavidromeNode>>& out) {
-    if (node->type == NavidromeNode::Song) { out.push_back(node); return; }
+    if (node->type == NavidromeNode::Song || node->type == NavidromeNode::Radio) {
+        out.push_back(node); return;
+    }
     if (node->type == NavidromeNode::Loading || node->type == NavidromeNode::Error) return;
 
     if (node->childrenLoaded && !node->children.empty()) {
@@ -1362,6 +1885,26 @@ void BrowserWindow::enqueueNodes(std::vector<std::shared_ptr<NavidromeNode>> son
     auto hints = metadb_io_v2::get()->create_hint_list();
 
     for (auto& node : songs) {
+        metadb_handle_ptr handle;
+        playable_location_impl loc;
+
+        if (node->type == NavidromeNode::Radio) {
+            // Raw stream URL — bypasses navidrome:// entirely; foobar's stock
+            // HTTP input plays it (and handles Shoutcast/Icecast metadata)
+            // with no involvement from NavidromeInputWin.
+            std::string url = radioStationURL(node->id);
+            if (url.empty()) continue;
+            loc.set_path(url.c_str());
+            loc.set_subsong(0);
+            metadb::get()->handle_create(handle, loc);
+            tracks += handle;
+
+            file_info_impl info;
+            if (!node->displayName.empty()) info.meta_set("title", node->displayName.c_str());
+            hints->add_hint(handle, info, filestats_invalid, true);
+            continue;
+        }
+
         // Enqueue a navidrome://track/<id>?... URI (not the raw HTTP URL) so the
         // input handler resolves the stream — with custom headers — at decode
         // time, and metadata renders without a network round-trip.
@@ -1370,8 +1913,6 @@ void BrowserWindow::enqueueNodes(std::vector<std::shared_ptr<NavidromeNode>> son
             node->duration, node->coverArtId, node->suffix);
         if (uri.empty()) continue;
 
-        metadb_handle_ptr handle;
-        playable_location_impl loc;
         loc.set_path(uri.c_str());
         loc.set_subsong(0);
         metadb::get()->handle_create(handle, loc);

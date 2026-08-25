@@ -57,6 +57,15 @@
 @property (nonatomic, assign) NSInteger albumCount;
 @end
 
+// An internet radio station (getInternetRadioStations.view). Playback uses
+// streamUrl directly — no navidrome:// URI, no transcoding.
+@interface SubsonicRadioStation : NSObject
+@property (nonatomic, copy) NSString *stationId;
+@property (nonatomic, copy) NSString *name;
+@property (nonatomic, copy) NSString *streamUrl;
+@property (nonatomic, copy) NSString *homePageUrl;
+@end
+
 // A saved resume position (getBookmarks.view). Subsonic embeds the full song
 // object per bookmark and reports position in milliseconds.
 @interface SubsonicBookmark : NSObject
@@ -144,6 +153,23 @@ typedef NS_ENUM(NSInteger, SubsonicStarKind) {
                 toName:(NSString *)name
                  error:(NSError **)error;
 - (BOOL)deletePlaylist:(NSString *)playlistId error:(NSError **)error;
+
+// Internet radio stations (getInternetRadioStations.view + CRUD). Playback
+// uses SubsonicRadioStation.streamUrl directly.
+- (NSArray<SubsonicRadioStation *> *)getRadioStationsWithError:(NSError **)error;
+// Creates a new station. Subsonic's create endpoint doesn't echo the new
+// station's id back (unlike createPlaylist.view), so this returns @"" on
+// success and nil on failure — check *error, not the returned string.
+- (NSString *)createRadioStationWithStreamURL:(NSString *)streamUrl
+                                          name:(NSString *)name
+                                   homePageUrl:(NSString *)homePageUrl
+                                         error:(NSError **)error;
+- (BOOL)updateRadioStation:(NSString *)stationId
+                  streamURL:(NSString *)streamUrl
+                       name:(NSString *)name
+                homePageUrl:(NSString *)homePageUrl
+                      error:(NSError **)error;
+- (BOOL)deleteRadioStation:(NSString *)stationId error:(NSError **)error;
 
 // Saved resume positions (getBookmarks.view). createBookmark is an upsert —
 // Subsonic overwrites any existing bookmark for the same song.

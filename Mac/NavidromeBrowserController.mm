@@ -84,6 +84,17 @@ static NSString *formatDuration(NSTimeInterval secs) {
     return n;
 }
 
++ (instancetype)radioStationNode:(SubsonicRadioStation *)station {
+    NavidromeNode *n = [NavidromeNode new];
+    n.type         = NavidromeNodeTypeRadioStation;
+    n.nodeId       = station.stationId;
+    n.displayName  = station.name;
+    n.subtitle     = station.homePageUrl;
+    n.children     = [NSMutableArray array];
+    n.childrenLoaded = YES;  // Radio stations are always leaves
+    return n;
+}
+
 + (instancetype)categoryNode:(NavidromeCategoryKind)kind title:(NSString *)title {
     NavidromeNode *n = [NavidromeNode new];
     n.type         = NavidromeNodeTypeCategory;
@@ -112,6 +123,7 @@ static NSString *formatDuration(NSTimeInterval secs) {
 }
 
 - (BOOL)isLeaf { return self.type == NavidromeNodeTypeSong ||
+                        self.type == NavidromeNodeTypeRadioStation ||
                         self.type == NavidromeNodeTypeLoading ||
                         self.type == NavidromeNodeTypeError; }
 
@@ -173,6 +185,10 @@ static NSString *formatDuration(NSTimeInterval secs) {
 @property (nonatomic, strong) NSMenu *playlistsMenu;
 @property (nonatomic, strong) NSArray<SubsonicPlaylist *> *serverPlaylists;
 @property (nonatomic, assign) BOOL playlistsLoading;
+// Cached radio stations, refreshed alongside serverPlaylists — lets the
+// enqueue path resolve a station's streamUrl from just its id without a
+// network round-trip.
+@property (nonatomic, strong) NSArray<SubsonicRadioStation *> *radioStations;
 @end
 
 @implementation NavidromeBrowserController
@@ -288,6 +304,21 @@ static NSString *formatDuration(NSTimeInterval secs) {
                                                 action:@selector(deletePlaylist:)
                                          keyEquivalent:@""];
     deleteItem.target = self;
+
+    // Internet radio stations. Unlike playlists, "New" needs no selection.
+    [rowMenu addItem:[NSMenuItem separatorItem]];
+    NSMenuItem *newRadioItem = [rowMenu addItemWithTitle:@"New Radio Station…"
+                                                  action:@selector(newRadioStation:)
+                                           keyEquivalent:@""];
+    newRadioItem.target = self;
+    NSMenuItem *editRadioItem = [rowMenu addItemWithTitle:@"Edit Radio Station…"
+                                                   action:@selector(editRadioStation:)
+                                            keyEquivalent:@""];
+    editRadioItem.target = self;
+    NSMenuItem *deleteRadioItem = [rowMenu addItemWithTitle:@"Delete Radio Station…"
+                                                     action:@selector(deleteRadioStation:)
+                                              keyEquivalent:@""];
+    deleteRadioItem.target = self;
 
     [rowMenu addItem:[NSMenuItem separatorItem]];
     NSMenuItem *uploadItem = [rowMenu addItemWithTitle:@"Send Active Playlist to Navidrome"
@@ -409,6 +440,7 @@ static NSString *formatDuration(NSTimeInterval secs) {
         [NavidromeNode categoryNode:NavidromeCategoryRandom         title:@"Random Albums"],
         [NavidromeNode categoryNode:NavidromeCategoryGenres         title:@"Genres"],
         [NavidromeNode categoryNode:NavidromeCategoryPlaylists      title:@"Playlists"],
+        [NavidromeNode categoryNode:NavidromeCategoryRadio          title:@"Radio"],
     ];
 }
 
@@ -424,6 +456,7 @@ static NSString *formatDuration(NSTimeInterval secs) {
     // Warm the cache the "Add to Navidrome Playlist" submenu reads from, so the
     // first right-click already lists the server's playlists.
     [self refreshServerPlaylists];
+    [self refreshRadioStations];
 
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         NSError *err = nil;
@@ -487,6 +520,9 @@ static NSString *formatDuration(NSTimeInterval secs) {
             } else if (node.categoryKind == NavidromeCategoryGenres) {
                 for (SubsonicGenre *g in [client getGenresWithError:outError])
                     [childNodes addObject:[NavidromeNode genreNode:g]];
+            } else if (node.categoryKind == NavidromeCategoryRadio) {
+                for (SubsonicRadioStation *s in [client getRadioStationsWithError:outError])
+                    [childNodes addObject:[NavidromeNode radioStationNode:s]];
             } else {
                 NSString *type = @"newest";
                 if (node.categoryKind == NavidromeCategoryMostPlayed)     type = @"frequent";
@@ -670,7 +706,7 @@ static NSString *formatDuration(NSTimeInterval secs) {
 - (void)collectSongsDeep:(NavidromeNode *)node
                     into:(NSMutableArray<NavidromeNode *> *)songs
                    error:(NSError **)outError {
-    if (node.type == NavidromeNodeTypeSong) {
+    if (node.type == NavidromeNodeTypeSong || node.type == NavidromeNodeTypeRadioStation) {
         [songs addObject:node];
         return;
     }
@@ -709,6 +745,28 @@ static NSString *formatDuration(NSTimeInterval secs) {
     auto hintList = metadb_io_v2::get()->create_hint_list();
 
     for (NavidromeNode *node in songNodes) {
+        metadb_handle_ptr handle;
+        playable_location_impl loc;
+
+        if (node.type == NavidromeNodeTypeRadioStation) {
+            // Raw stream URL, not a navidrome:// URI — foobar's stock HTTP
+            // input plays a live radio stream natively (incl. Shoutcast/
+            // Icecast metadata); there's no server-side transcoding or
+            // credential resolution to redirect through for radio.
+            NSString *streamUrl = [self radioStationForId:node.nodeId].streamUrl;
+            if (streamUrl.length == 0) continue;
+            loc.set_path([streamUrl UTF8String]);
+            loc.set_subsong(0);
+            metadb::get()->handle_create(handle, loc);
+            tracks += handle;
+
+            file_info_impl info;
+            if (node.displayName.length)
+                info.meta_set("title", [node.displayName UTF8String]);
+            hintList->add_hint(handle, info, filestats_invalid, true);
+            continue;
+        }
+
         NSString *uri = NavidromeMakeTrackURIWithFields(node.nodeId,
                                                         node.displayName,
                                                         node.subtitle,
@@ -720,8 +778,6 @@ static NSString *formatDuration(NSTimeInterval secs) {
                                                         node.suffix ?: @"");
         if (!uri) continue;
 
-        metadb_handle_ptr handle;
-        playable_location_impl loc;
         loc.set_path([uri UTF8String]);
         loc.set_subsong(0);
         metadb::get()->handle_create(handle, loc);
@@ -1319,6 +1375,232 @@ static NSString *formatDuration(NSTimeInterval secs) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Internet radio station management
+// ---------------------------------------------------------------------------
+
+// Refresh the cached station list the enqueue path resolves streamUrl from.
+// Cheap enough to re-run after every mutation, same as refreshServerPlaylists.
+- (void)refreshRadioStations {
+    if (![SubsonicClient.sharedClient isConfigured]) return;
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSError *err = nil;
+        NSArray<SubsonicRadioStation *> *stations =
+            [SubsonicClient.sharedClient getRadioStationsWithError:&err];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (!err && stations) _radioStations = stations;
+        });
+    });
+}
+
+- (SubsonicRadioStation *)radioStationForId:(NSString *)stationId {
+    for (SubsonicRadioStation *s in _radioStations)
+        if ([s.stationId isEqualToString:stationId]) return s;
+    return nil;
+}
+
+// Exactly one radio station row selected, or nil.
+- (NavidromeNode *)singleSelectedRadioStation {
+    NSArray<NavidromeNode *> *sel = [self selectedNodes];
+    if (sel.count != 1) return nil;
+    return sel[0].type == NavidromeNodeTypeRadioStation ? sel[0] : nil;
+}
+
+// Drop the whole Radio category — used when a station appears/vanishes/changes.
+- (void)invalidateRadioCategory {
+    for (NavidromeNode *root in _rootNodes) {
+        if (root.type != NavidromeNodeTypeCategory ||
+            root.categoryKind != NavidromeCategoryRadio) continue;
+        [root.children removeAllObjects];
+        root.childrenLoaded = NO;
+        [_outlineView collapseItem:root];
+        [_outlineView reloadItem:root reloadChildren:YES];
+        return;
+    }
+}
+
+- (IBAction)newRadioStation:(id)sender {
+    // Unlike a new playlist, creating a station needs no selection.
+    NSString *name = nil, *streamUrl = nil, *homePageUrl = nil;
+    if (![self promptForRadioStationWithTitle:@"New Radio Station"
+                                          name:&name
+                                     streamURL:&streamUrl
+                                   homePageURL:&homePageUrl])
+        return;
+    if (name.length == 0 || streamUrl.length == 0) {
+        _statusLabel.stringValue = @"Name and stream URL are required";
+        return;
+    }
+
+    _statusLabel.stringValue = @"Creating radio station…";
+    [_spinner startAnimation:nil];
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSError *err = nil;
+        NSString *result = [SubsonicClient.sharedClient createRadioStationWithStreamURL:streamUrl
+                                                                                    name:name
+                                                                             homePageUrl:homePageUrl
+                                                                                   error:&err];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self->_spinner stopAnimation:nil];
+            self->_statusLabel.stringValue = result
+                ? [NSString stringWithFormat:@"Created “%@”", name]
+                : [NSString stringWithFormat:@"Failed: %@",
+                   err.localizedDescription ?: @"unknown error"];
+            if (result) {
+                [self invalidateRadioCategory];
+                [self refreshRadioStations];
+            }
+        });
+    });
+}
+
+- (IBAction)editRadioStation:(id)sender {
+    NavidromeNode *node = [self singleSelectedRadioStation];
+    if (!node) { _statusLabel.stringValue = @"Select a single radio station"; return; }
+    SubsonicRadioStation *current = [self radioStationForId:node.nodeId];
+
+    NSString *name = nil, *streamUrl = nil, *homePageUrl = nil;
+    if (![self promptForRadioStationWithTitle:@"Edit Radio Station"
+                            initialName:current.name ?: node.displayName
+                       initialStreamURL:current.streamUrl ?: @""
+                     initialHomePageURL:current.homePageUrl ?: @""
+                                   name:&name
+                              streamURL:&streamUrl
+                            homePageURL:&homePageUrl])
+        return;
+    if (name.length == 0 || streamUrl.length == 0) {
+        _statusLabel.stringValue = @"Name and stream URL are required";
+        return;
+    }
+
+    NSString *stationId = node.nodeId;
+    [_spinner startAnimation:nil];
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSError *err = nil;
+        BOOL ok = [SubsonicClient.sharedClient updateRadioStation:stationId
+                                                          streamURL:streamUrl
+                                                               name:name
+                                                        homePageUrl:homePageUrl
+                                                              error:&err];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self->_spinner stopAnimation:nil];
+            self->_statusLabel.stringValue = ok
+                ? [NSString stringWithFormat:@"Updated “%@”", name]
+                : [NSString stringWithFormat:@"Failed: %@",
+                   err.localizedDescription ?: @"unknown error"];
+            if (ok) {
+                [self invalidateRadioCategory];
+                [self refreshRadioStations];
+            }
+        });
+    });
+}
+
+- (IBAction)deleteRadioStation:(id)sender {
+    NavidromeNode *node = [self singleSelectedRadioStation];
+    if (!node) { _statusLabel.stringValue = @"Select a single radio station"; return; }
+
+    NSAlert *confirm = [[NSAlert alloc] init];
+    confirm.messageText = [NSString stringWithFormat:@"Delete “%@” from the server?",
+                           node.displayName];
+    confirm.informativeText = @"The station is removed for every client.";
+    confirm.alertStyle = NSAlertStyleWarning;
+    [confirm addButtonWithTitle:@"Delete"];
+    [confirm addButtonWithTitle:@"Cancel"];
+    if ([confirm runModal] != NSAlertFirstButtonReturn) return;
+
+    NSString *stationId = node.nodeId;
+    NSString *stationName = node.displayName;
+    [_spinner startAnimation:nil];
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSError *err = nil;
+        BOOL ok = [SubsonicClient.sharedClient deleteRadioStation:stationId error:&err];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self->_spinner stopAnimation:nil];
+            self->_statusLabel.stringValue = ok
+                ? [NSString stringWithFormat:@"Deleted “%@”", stationName]
+                : [NSString stringWithFormat:@"Failed: %@",
+                   err.localizedDescription ?: @"unknown error"];
+            if (ok) {
+                [self invalidateRadioCategory];
+                [self refreshRadioStations];
+            }
+        });
+    });
+}
+
+// Modal 3-field prompt (name / stream URL / home page URL). Returns NO if
+// cancelled, in which case the out params are left untouched.
+- (BOOL)promptForRadioStationWithTitle:(NSString *)title
+                                   name:(NSString **)outName
+                              streamURL:(NSString **)outStreamURL
+                            homePageURL:(NSString **)outHomePageURL {
+    return [self promptForRadioStationWithTitle:title
+                                     initialName:@""
+                                initialStreamURL:@""
+                              initialHomePageURL:@""
+                                            name:outName
+                                       streamURL:outStreamURL
+                                     homePageURL:outHomePageURL];
+}
+
+- (BOOL)promptForRadioStationWithTitle:(NSString *)title
+                            initialName:(NSString *)initialName
+                       initialStreamURL:(NSString *)initialStreamURL
+                     initialHomePageURL:(NSString *)initialHomePageURL
+                                   name:(NSString **)outName
+                              streamURL:(NSString **)outStreamURL
+                            homePageURL:(NSString **)outHomePageURL {
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = title;
+    alert.informativeText = @"Name and stream URL are required. Home page URL is optional.";
+    [alert addButtonWithTitle:@"OK"];
+    [alert addButtonWithTitle:@"Cancel"];
+
+    CGFloat fieldWidth = 260, rowHeight = 24, rowGap = 6, labelHeight = 16;
+    NSView *container = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, fieldWidth, 3 * (rowHeight + labelHeight + rowGap))];
+
+    NSTextField *nameLabel = [NSTextField labelWithString:@"Name:"];
+    NSTextField *nameField = [[NSTextField alloc] init];
+    nameField.stringValue = initialName ?: @"";
+
+    NSTextField *urlLabel = [NSTextField labelWithString:@"Stream URL:"];
+    NSTextField *urlField = [[NSTextField alloc] init];
+    urlField.stringValue = initialStreamURL ?: @"";
+
+    NSTextField *homeLabel = [NSTextField labelWithString:@"Home page URL (optional):"];
+    NSTextField *homeField = [[NSTextField alloc] init];
+    homeField.stringValue = initialHomePageURL ?: @"";
+
+    CGFloat y = 3 * (rowHeight + labelHeight + rowGap) - labelHeight;
+    for (NSArray *pair in @[@[nameLabel, nameField], @[urlLabel, urlField], @[homeLabel, homeField]]) {
+        NSTextField *label = pair[0];
+        NSTextField *field = pair[1];
+        label.frame = NSMakeRect(0, y, fieldWidth, labelHeight);
+        [container addSubview:label];
+        y -= (rowHeight + 2);
+        field.frame = NSMakeRect(0, y, fieldWidth, rowHeight);
+        [container addSubview:field];
+        y -= rowGap;
+    }
+
+    alert.accessoryView = container;
+    [alert layout];
+    [alert.window setInitialFirstResponder:nameField];
+
+    if ([alert runModal] != NSAlertFirstButtonReturn) return NO;
+
+    [nameField validateEditing];
+    [urlField validateEditing];
+    [homeField validateEditing];
+
+    NSCharacterSet *ws = [NSCharacterSet whitespaceAndNewlineCharacterSet];
+    if (outName)        *outName        = [nameField.stringValue stringByTrimmingCharactersInSet:ws];
+    if (outStreamURL)   *outStreamURL   = [urlField.stringValue stringByTrimmingCharactersInSet:ws];
+    if (outHomePageURL) *outHomePageURL = [homeField.stringValue stringByTrimmingCharactersInSet:ws];
+    return YES;
+}
+
 // Modal single-line prompt. NSAlert is the only sheet-free way to ask for text
 // that works both in the standalone window and inside the prefs page.
 - (NSString *)promptForText:(NSString *)title
@@ -1350,7 +1632,7 @@ static NSString *formatDuration(NSTimeInterval secs) {
     NavidromeNode *node = [_outlineView itemAtRow:row];
     if (!node) return;
 
-    if (node.type == NavidromeNodeTypeSong) {
+    if (node.type == NavidromeNodeTypeSong || node.type == NavidromeNodeTypeRadioStation) {
         [self addNodesToPlaylist:@[node] play:YES];
     } else {
         // Toggle expand/collapse
