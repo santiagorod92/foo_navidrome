@@ -1,3 +1,10 @@
+## [1.9.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.8.0...v1.9.0) (2026-08-25)
+
+
+### Features
+
+* add internet radio station browsing, playback, and CRUD ([2326783](https://github.com/santiagorod92/foo_navidrome/commit/2326783fa77ae189438824a955bdcd509c98af9b))
+
 ## [1.8.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.7.0...v1.8.0) (2026-08-24)
 
 
