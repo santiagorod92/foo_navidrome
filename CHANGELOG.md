@@ -1,3 +1,11 @@
+## [1.10.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.9.0...v1.10.0) (2026-08-25)
+
+
+### Features
+
+* expose the Navidrome rating as a playlist tag and keep it current ([2f502a0](https://github.com/santiagorod92/foo_navidrome/commit/2f502a0f2c78387a82544f5b14e187b85c1bc1b3))
+* rate and star from the playlist context menu ([5fc3369](https://github.com/santiagorod92/foo_navidrome/commit/5fc33692a3f518a88f6176444f0c9f7604e8b7dd))
+
 ## [1.9.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.8.0...v1.9.0) (2026-08-25)
 
 
