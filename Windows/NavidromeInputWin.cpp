@@ -2,6 +2,7 @@
 #include "NavidromeInputWin.h"
 #include "SubsonicClientWin.h"
 #include "MediaEnrichmentLogic.h"
+#include "../NavidromePlaylistSync.h"
 #include <SDK/cfg_var.h>
 #include <SDK/input_impl.h>
 #include <SDK/file.h>
@@ -49,6 +50,11 @@ public:
         if (m_year > 0)        info.meta_set("date",   pfc::format_int(m_year));
         if (m_duration > 0)    info.set_length(m_duration);
         if (!m_suffix.empty()) info.info_set("codec", m_suffix.c_str());
+        // Server-side per-user state, snapshotted into the URI at enqueue time.
+        // Left unset when absent so old URIs and unrated tracks render as empty
+        // rather than "0" in a custom column.
+        if (m_rating > 0)      info.meta_set(navidrome::kRatingTag, pfc::format_int(m_rating));
+        if (m_starred)         info.meta_set(navidrome::kStarredTag, "1");
     }
 
     t_filestats2 get_stats2(uint32_t, abort_callback&) { return filestats2_invalid; }
@@ -146,6 +152,8 @@ private:
             else if (k == "duration")    m_duration = atof(v.c_str());
             else if (k == "coverArt")    m_cover_art_id = v;
             else if (k == "suffix")      m_suffix = v;
+            else if (k == "rating")      m_rating = atoi(v.c_str());
+            else if (k == "starred")     m_starred = (atoi(v.c_str()) != 0);
             if (amp == std::string::npos) break;
             pos = amp + 1;
         }
@@ -154,6 +162,8 @@ private:
     std::string  m_path, m_song_id, m_cover_art_id, m_title, m_artist, m_album, m_suffix;
     pfc::string8 m_resolved_url;
     int          m_track = 0, m_year = 0;
+    int          m_rating = 0;      // 0 = unrated (also: param absent)
+    bool         m_starred = false;
     double       m_duration = 0.0;
     service_ptr_t<input_decoder> m_decoder;
 };
@@ -174,7 +184,10 @@ std::string navidrome::makeTrackURI(const std::string& id,
                                     int year,
                                     double duration,
                                     const std::string& coverArtId,
-                                    const std::string& suffix) {
+                                    const std::string& suffix,
+                                    int rating,
+                                    bool starred,
+                                    const std::string& albumId) {
     if (id.empty()) return "";
     std::string uri = std::string(kPrefix) + navidrome::uriEncode(id);
 
@@ -191,6 +204,11 @@ std::string navidrome::makeTrackURI(const std::string& id,
     }
     if (!coverArtId.empty()) q.push_back("coverArt=" + navidrome::uriEncode(coverArtId));
     if (!suffix.empty())     q.push_back("suffix="   + navidrome::uriEncode(suffix));
+    // Omitted when unset, so the URI of an unrated track is byte-identical to
+    // what earlier versions produced.
+    if (rating > 0)          q.push_back("rating="   + std::to_string(rating));
+    if (starred)             q.push_back("starred=1");
+    if (!albumId.empty())    q.push_back("albumId=" + navidrome::uriEncode(albumId));
 
     for (size_t i = 0; i < q.size(); ++i) {
         uri += (i == 0 ? "?" : "&");

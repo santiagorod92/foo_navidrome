@@ -1,6 +1,7 @@
 #import "NavidromeBrowserController.h"
 #import "../NavidromeInput.h"
 #include "../SubsonicTypes.h"
+#include "../NavidromePlaylistSync.h"
 #include <SDK/playlist.h>
 #include <SDK/metadb.h>
 #include <SDK/playable_location.h>
@@ -50,6 +51,7 @@ static NSString *formatDuration(NSTimeInterval secs) {
     n.displayName  = s.title;
     n.subtitle     = s.artist;
     n.albumName    = s.album;
+    n.albumId      = s.albumId;
     n.trackNumber  = s.track;
     n.year         = s.year;
     n.duration     = s.duration;
@@ -538,7 +540,25 @@ static NSString *formatDuration(NSTimeInterval secs) {
     }
 
     if (outError && *outError) [childNodes removeAllObjects];
+    else                       syncSongNodesToPlaylists(childNodes);
     return childNodes;
+}
+
+// Pushes the freshly fetched server-side rating / favorite of these nodes onto
+// any matching playlist entry, so a value changed elsewhere (the Navidrome web
+// UI, another client) catches up as soon as the user looks at the album here.
+// Costs no extra request — the values arrived with the browse response.
+static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
+    std::vector<navidrome::RatingUpdate> updates;
+    for (NavidromeNode *n in nodes) {
+        if (n.type != NavidromeNodeTypeSong || n.nodeId.length == 0) continue;
+        navidrome::RatingUpdate u;
+        u.songId  = [n.nodeId UTF8String];
+        u.rating  = (int)n.rating;
+        u.starred = n.starred ? true : false;
+        updates.push_back(std::move(u));
+    }
+    navidrome::syncRatingsToPlaylists(std::move(updates));
 }
 
 - (void)loadChildrenOfNode:(NavidromeNode *)node inOutlineView:(NSOutlineView *)ov {
@@ -603,6 +623,7 @@ static NSString *formatDuration(NSTimeInterval secs) {
             NSArray<SubsonicSong *> *songs = results[@"songs"];
             for (SubsonicSong *s in songs)
                 [_filteredNodes addObject:[NavidromeNode songNode:s]];
+            syncSongNodesToPlaylists(_filteredNodes);
 
             NSUInteger total = [results[@"artists"] count] + [results[@"albums"] count] + songs.count;
             _statusLabel.stringValue = [NSString stringWithFormat:@"%lu songs found", (unsigned long)songs.count];
@@ -775,7 +796,10 @@ static NSString *formatDuration(NSTimeInterval secs) {
                                                         node.year,
                                                         node.duration,
                                                         node.coverArtId ?: @"",
-                                                        node.suffix ?: @"");
+                                                        node.suffix ?: @"",
+                                                        node.rating,
+                                                        node.starred,
+                                                        node.albumId ?: @"");
         if (!uri) continue;
 
         loc.set_path([uri UTF8String]);
@@ -797,6 +821,13 @@ static NSString *formatDuration(NSTimeInterval secs) {
             info.meta_set("date", pfc::format_int(node.year));
         if (node.duration > 0)
             info.set_length(node.duration);
+        // The hint pre-populates metadb, so get_info() is not called for a
+        // freshly enqueued track — the rating has to be set here too or the
+        // column stays empty until an info reload.
+        if (node.rating > 0)
+            info.meta_set(navidrome::kRatingTag, pfc::format_int(node.rating));
+        if (node.starred)
+            info.meta_set(navidrome::kStarredTag, "1");
 
         hintList->add_hint(handle, info, filestats_invalid, true);
     }
@@ -889,6 +920,7 @@ static NSString *formatDuration(NSTimeInterval secs) {
                 err = one;
             }
         }
+        syncSongNodesToPlaylists(targets);
         dispatch_async(dispatch_get_main_queue(), ^{
             [_spinner stopAnimation:nil];
             if (err) {
@@ -925,6 +957,7 @@ static NSString *formatDuration(NSTimeInterval secs) {
             else if (!err)
                 err = one;
         }
+        syncSongNodesToPlaylists(songs);
         dispatch_async(dispatch_get_main_queue(), ^{
             [_spinner stopAnimation:nil];
             _statusLabel.stringValue = err

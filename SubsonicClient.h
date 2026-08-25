@@ -132,6 +132,10 @@ typedef NS_ENUM(NSInteger, SubsonicStarKind) {
 // rating 1-5; 0 clears the rating.
 - (BOOL)setRating:(NSInteger)rating forSongId:(NSString *)songId error:(NSError **)error;
 
+// Single song lookup (getSong.view). Used to refresh the per-user rating of a
+// track that is already playing, without re-browsing its album.
+- (SubsonicSong *)getSongWithId:(NSString *)songId error:(NSError **)error;
+
 // Server-side playlists
 - (NSArray<SubsonicPlaylist *> *)getPlaylistsWithError:(NSError **)error;
 - (NSArray<SubsonicSong *> *)getPlaylistSongs:(NSString *)playlistId error:(NSError **)error;

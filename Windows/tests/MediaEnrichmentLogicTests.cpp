@@ -179,6 +179,35 @@ void testFileNames() {
         "non-ASCII names survive untouched");
 }
 
+void testQueryParams() {
+    using navidrome::queryParamFromURI;
+    const std::string uri =
+        "navidrome://track/abc?title=Song&album=Live%20Set&rating=4&starred=1"
+        "&albumId=alb%2F42";
+
+    check(queryParamFromURI(uri, "rating") == "4", "a middle parameter is read");
+    check(queryParamFromURI(uri, "albumId") == "alb/42",
+        "the last parameter is read and percent-decoded");
+    // "album=" is a prefix of "albumId=" and vice versa — a naive find() would
+    // return the wrong one of the two.
+    check(queryParamFromURI(uri, "album") == "Live Set",
+        "a parameter whose name prefixes another is not confused with it");
+    check(queryParamFromURI(uri, "coverArt").empty(),
+        "an absent parameter reads as empty, never as a value");
+    check(queryParamFromURI("navidrome://track/abc", "albumId").empty(),
+        "a URI with no query at all reads as empty (pre-albumId playlists)");
+    check(queryParamFromURI("https://server/music.mp3?albumId=x", "albumId").empty(),
+        "a foreign URI is never parsed");
+    check(queryParamFromURI("navidrome://track/abc?albumId=", "albumId").empty(),
+        "an empty value is indistinguishable from absent, and must stay so");
+
+    // trackIdFromURI shares the percent-decoder; guard the seam.
+    check(navidrome::trackIdFromURI("navidrome://track/song%252Fraw?rating=3") ==
+        "song%2Fraw", "the song id is decoded exactly once, query stripped");
+    check(navidrome::trackIdFromURI("https://server/music.mp3").empty(),
+        "a foreign URI yields no song id");
+}
+
 } // namespace
 
 int main() {
@@ -189,6 +218,7 @@ int main() {
     testConfig();
     testTranscodeParams();
     testFileNames();
+    testQueryParams();
     if (failures != 0) {
         std::cerr << failures << " test(s) failed\n";
         return 1;

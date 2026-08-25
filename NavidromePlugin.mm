@@ -6,8 +6,10 @@
 #include <SDK/cfg_var.h>
 #include <SDK/library_manager.h>
 #include <SDK/play_callback.h>
+#include <SDK/initquit.h>
 #include <SDK/ui_element_mac.h>
 #include "SubsonicTypes.h"
+#include "NavidromePlaylistSync.h"
 #include <algorithm>
 #include <cstring>
 
@@ -83,10 +85,17 @@ public:
         m_songId.clear();
         m_submitted = false;
         m_length    = 0.0;
-        if (track.is_empty() || !navidrome::cfg_scrobble.get()) return;
+        if (track.is_empty()) return;
 
-        m_songId = navidrome::trackIdFromURI(track->get_path());
-        if (m_songId.empty()) return;   // not one of ours
+        const std::string songId = navidrome::trackIdFromURI(track->get_path());
+        if (songId.empty()) return;   // not one of ours
+
+        // Deliberately ahead of the scrobble gate: this is a display refresh,
+        // not a play report, so it must not follow the scrobbling preference.
+        refreshRatingAsync(songId);
+
+        if (!navidrome::cfg_scrobble.get()) return;
+        m_songId = songId;
         m_length = track->get_length();
         scrobbleAsync(m_songId, NO);
     }
@@ -127,6 +136,27 @@ private:
         });
     }
 
+    // One extra request per played track. That's the only moment we can pick up
+    // a rating changed outside foobar (the Navidrome web UI, another client)
+    // without polling every playlist entry — Subsonic has no bulk rating
+    // lookup, so a whole-playlist refresh would be one request per track.
+    static void refreshRatingAsync(std::string songId) {
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            NSError *err = nil;
+            SubsonicSong *song = [SubsonicClient.sharedClient
+                getSongWithId:[NSString stringWithUTF8String:songId.c_str()]
+                        error:&err];
+            if (!song) return;
+            navidrome::RatingUpdate u;
+            u.songId  = songId;
+            u.rating  = (int)song.rating;
+            u.starred = song.starred ? true : false;
+            std::vector<navidrome::RatingUpdate> updates;
+            updates.push_back(std::move(u));
+            navidrome::syncRatingsToPlaylists(std::move(updates));
+        });
+    }
+
     std::string m_songId;
     double      m_length    = 0.0;
     bool        m_submitted = false;
@@ -134,7 +164,105 @@ private:
 
 static play_callback_static_factory_t<navidrome_scrobbler> g_navidrome_scrobbler_factory;
 
+// ---------------------------------------------------------------------------
+// Startup refresh — brings every playlist entry up to date once per session, so
+// a rating column can be sorted on. Grouped by album; see CLAUDE.md for why
+// that grouping is what makes it affordable.
+// ---------------------------------------------------------------------------
+
+static void navidromeRefreshRatingsOnStart() {
+    // Main thread: walking the playlists is a main-thread operation.
+    navidrome::PlaylistAlbumScan scan = navidrome::scanPlaylistAlbums();
+
+
+    // Nothing of ours in any playlist — the only exit that stays quiet. Every
+    // other one says why, because "hook never fired" and "hook fired and found
+    // nothing" are otherwise indistinguishable from the outside.
+    if (scan.entries == 0) return;
+
+    if (!navidrome::refreshRatingsOnStartEnabled()) return;
+    if (![SubsonicClient.sharedClient isConfigured]) return;
+
+    // Skipping coverage silently is how a partial refresh gets mistaken for a
+    // complete one, so the two outcomes that leave entries behind say so.
+    if (scan.albumIds.empty()) {
+        pfc::string_formatter msg;
+        msg << "Navidrome: " << scan.entries << " playlist entry/entries carry no "
+               "album id (added by an older version) — open their album in the "
+               "browser to refresh them";
+        console::print(msg.c_str());
+        return;
+    }
+
+    auto albumIds = std::move(scan.albumIds);
+    const size_t ungrouped = scan.ungrouped;
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
+        @autoreleasepool {
+            std::vector<navidrome::RatingUpdate> updates;
+            size_t failed = 0;
+            for (const std::string &albumId : albumIds) {
+                NSError *err = nil;
+                NSArray<SubsonicSong *> *songs = [SubsonicClient.sharedClient
+                    getSongsForAlbum:[NSString stringWithUTF8String:albumId.c_str()]
+                               error:&err];
+                if (err) { failed++; continue; }
+                for (SubsonicSong *song in songs) {
+                    if (song.songId.length == 0) continue;
+                    navidrome::RatingUpdate u;
+                    u.songId  = [song.songId UTF8String];
+                    u.rating  = (int)song.rating;
+                    u.starred = song.starred ? true : false;
+                    updates.push_back(std::move(u));
+                }
+            }
+            // One sync for everything: it walks every playlist once, so doing it
+            // per album would repeat that walk for no gain.
+            navidrome::syncRatingsToPlaylists(std::move(updates));
+
+            pfc::string_formatter msg;
+            msg << "Navidrome: refreshed ratings from " << (albumIds.size() - failed)
+                << " album(s)";
+            if (failed > 0)    msg << ", " << failed << " album(s) failed";
+            if (ungrouped > 0) msg << ", " << ungrouped
+                                   << " entry/entries skipped (no album id, added by an "
+                                      "older version)";
+            console::print(msg.c_str());
+        }
+    });
+}
+
+// initquit, not init_stage_callback: the macOS core never dispatches init
+// stages, and the failure mode is silence (see CLAUDE.md).
+class navidrome_startup_refresh : public initquit {
+public:
+    void on_init() override { navidromeRefreshRatingsOnStart(); }
+};
+
+static initquit_factory_t<navidrome_startup_refresh> g_navidrome_startup_refresh_factory;
+
 } // namespace
+// Client calls behind the shared playlist context menu (main.cpp). Background
+// thread only — the menu marshals them off the UI thread itself.
+bool navidrome::setRatingOnServer(const std::string &songId, int rating) {
+    @autoreleasepool {
+        NSError *err = nil;
+        return [SubsonicClient.sharedClient
+            setRating:rating
+            forSongId:[NSString stringWithUTF8String:songId.c_str()]
+                error:&err] ? true : false;
+    }
+}
+
+bool navidrome::setStarredOnServer(const std::string &songId, bool starred) {
+    @autoreleasepool {
+        NSError *err = nil;
+        return [SubsonicClient.sharedClient
+            setStarred:starred ? YES : NO
+                 forId:[NSString stringWithUTF8String:songId.c_str()]
+                  kind:SubsonicStarKindSong
+                 error:&err] ? true : false;
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Preferences page (Mac)
