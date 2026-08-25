@@ -13,12 +13,15 @@
 // Background refresh of the server playlist list backing the "Add to Navidrome
 // Playlist" submenu. wParam owns a heap std::vector<navidrome::Playlist>.
 #define WM_NAVIDROME_PLAYLISTS (WM_USER + 103)
+// Background refresh of the radio station list backing the enqueue-time
+// streamUrl lookup. wParam owns a heap std::vector<navidrome::RadioStation>.
+#define WM_NAVIDROME_RADIO (WM_USER + 104)
 
 // ---------------------------------------------------------------------------
 // Tree node
 // ---------------------------------------------------------------------------
 struct NavidromeNode {
-    enum Type { Artist, Album, Song, Category, Playlist, Genre, Loading, Error };
+    enum Type { Artist, Album, Song, Category, Playlist, Genre, Radio, Loading, Error };
     // Smart-list roots shown above the artist list; each maps to one Subsonic
     // endpoint (see BrowserWindow::fetchChildren).
     enum CategoryKind {
@@ -30,6 +33,7 @@ struct NavidromeNode {
         CatGenres,           // getGenres.view         → genres
         CatPlaylists,        // getPlaylists.view      → playlists
         CatBookmarks,        // getBookmarks.view      → songs
+        CatRadio,            // getInternetRadioStations.view → stations
     };
 
     Type        type         = Loading;
@@ -82,6 +86,7 @@ public:
         MESSAGE_HANDLER(WM_NAVIDROME_LOADED,    OnNavidromeLoaded)
         MESSAGE_HANDLER(WM_NAVIDROME_CHILDREN,  OnNavidromeChildren)
         MESSAGE_HANDLER(WM_NAVIDROME_PLAYLISTS, OnNavidromePlaylists)
+        MESSAGE_HANDLER(WM_NAVIDROME_RADIO,      OnNavidromeRadio)
         NOTIFY_CODE_HANDLER_EX(TVN_ITEMEXPANDING, OnTreeExpanding)
         NOTIFY_CODE_HANDLER_EX(NM_DBLCLK,        OnTreeDblClick)
         NOTIFY_CODE_HANDLER_EX(NM_RETURN,        OnTreeReturn)
@@ -101,6 +106,9 @@ public:
         COMMAND_ID_HANDLER_EX(IDC_DELETE_PLAYLIST,  OnDeletePlaylist)
         COMMAND_ID_HANDLER_EX(IDC_DOWNLOAD,         OnDownload)
         COMMAND_ID_HANDLER_EX(IDC_REMOVE_BOOKMARK,  OnRemoveBookmark)
+        COMMAND_ID_HANDLER_EX(IDC_NEW_RADIO,    OnNewRadioStation)
+        COMMAND_ID_HANDLER_EX(IDC_EDIT_RADIO,   OnEditRadioStation)
+        COMMAND_ID_HANDLER_EX(IDC_DELETE_RADIO, OnDeleteRadioStation)
         COMMAND_RANGE_HANDLER_EX(IDC_RATE_0, IDC_RATE_5, OnRate)
         // One id per server playlist in the "Add to Navidrome Playlist" submenu.
         COMMAND_RANGE_HANDLER_EX(IDC_PLAYLIST_FIRST, IDC_PLAYLIST_LAST,
@@ -128,6 +136,9 @@ private:
         IDC_DELETE_PLAYLIST = 1019,
         IDC_DOWNLOAD        = 1020,
         IDC_REMOVE_BOOKMARK = 1021,
+        IDC_NEW_RADIO       = 1022,
+        IDC_EDIT_RADIO      = 1023,
+        IDC_DELETE_RADIO    = 1024,
         // One id per entry in the server-playlist submenu; the offset from
         // IDC_PLAYLIST_FIRST indexes m_serverPlaylists.
         IDC_PLAYLIST_FIRST = 1100,
@@ -142,6 +153,7 @@ private:
     LRESULT OnNavidromeLoaded(UINT, WPARAM, LPARAM, BOOL&);
     LRESULT OnNavidromeChildren(UINT, WPARAM, LPARAM, BOOL&);
     LRESULT OnNavidromePlaylists(UINT, WPARAM, LPARAM, BOOL&);
+    LRESULT OnNavidromeRadio(UINT, WPARAM, LPARAM, BOOL&);
     LRESULT OnTreeExpanding(LPNMHDR);
     LRESULT OnTreeDblClick(LPNMHDR);
     LRESULT OnTreeReturn(LPNMHDR);
@@ -161,6 +173,9 @@ private:
     void    OnDeletePlaylist(UINT, int, HWND);
     void    OnDownload(UINT, int, HWND);
     void    OnRemoveBookmark(UINT, int, HWND);
+    void    OnNewRadioStation(UINT, int, HWND);
+    void    OnEditRadioStation(UINT, int, HWND);
+    void    OnDeleteRadioStation(UINT, int, HWND);
 
     void    loadArtists();
     void    populateRoot(LoadedPayload* payload);
@@ -199,6 +214,14 @@ private:
     void    invalidateBookmarksCategory();
     void    reloadNodeChildren(const std::shared_ptr<NavidromeNode>& node);
     void    applyRemoveBookmark();
+
+    // Radio station management. "New" needs no selection (unlike playlists);
+    // Edit/Delete require exactly one selected station.
+    void    refreshRadioStations();
+    // Empty string if the id isn't cached (e.g. stale selection).
+    std::string radioStationURL(const std::string& stationId);
+    std::shared_ptr<NavidromeNode> singleSelectedRadioStation();
+    void    invalidateRadioCategory();
     // Polls playback_can_seek() briefly on a background thread, then seeks on
     // the main thread. Used to resume into a bookmarked position right after
     // enqueueNodes() calls playback_control::start() — the stream isn't
@@ -243,4 +266,10 @@ private:
     // so opening the menu never blocks on the network.
     std::vector<navidrome::Playlist> m_serverPlaylists;
     bool                             m_playlistsLoading = false;
+
+    // Cached radio stations, refreshed alongside m_serverPlaylists — lets the
+    // enqueue path resolve a station's streamUrl from just its id without a
+    // network round-trip.
+    std::vector<navidrome::RadioStation> m_radioStations;
+    bool                                  m_radioLoading = false;
 };

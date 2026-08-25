@@ -75,6 +75,19 @@ public:
                         std::string& outError);
     bool deletePlaylist(const std::string& playlistId, std::string& outError);
 
+    // Internet radio stations (getInternetRadioStations.view + CRUD). Playback
+    // uses RadioStation::streamUrl directly.
+    std::vector<RadioStation> getRadioStations(std::string& outError);
+    // Creates a station. Subsonic's create endpoint doesn't echo the new
+    // station's id back (unlike createPlaylist.view), so this returns "" on
+    // success — check outError, not the returned string.
+    std::string createRadioStation(const std::string& streamUrl, const std::string& name,
+                                   const std::string& homePageUrl, std::string& outError);
+    bool updateRadioStation(const std::string& id, const std::string& streamUrl,
+                            const std::string& name, const std::string& homePageUrl,
+                            std::string& outError);
+    bool deleteRadioStation(const std::string& id, std::string& outError);
+
     // Saved resume positions (getBookmarks.view). createBookmark is an upsert —
     // Subsonic overwrites any existing bookmark for the same song.
     std::vector<Bookmark> getBookmarks(std::string& outError);

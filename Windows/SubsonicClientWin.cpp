@@ -661,6 +661,62 @@ bool navidrome::SubsonicClientWin::deletePlaylist(const std::string& playlistId,
     return !checkResponse(body, outError).empty();
 }
 
+std::vector<navidrome::RadioStation>
+navidrome::SubsonicClientWin::getRadioStations(std::string& outError) {
+    std::string body = httpGet(buildURL("getInternetRadioStations.view"), outError);
+    if (body.empty()) return {};
+    auto root = checkResponse(body, outError);
+    if (root.empty()) return {};
+
+    std::vector<RadioStation> result;
+    for (auto& s : jarr(root, "internetRadioStation")) {
+        RadioStation st;
+        st.id          = jstr(s, "id");
+        st.name        = jstr(s, "name", "Unnamed station");
+        st.streamUrl   = jstr(s, "streamUrl");
+        st.homePageUrl = jstr(s, "homePageUrl");
+        result.push_back(std::move(st));
+    }
+    return result;
+}
+
+std::string navidrome::SubsonicClientWin::createRadioStation(
+        const std::string& streamUrl, const std::string& name,
+        const std::string& homePageUrl, std::string& outError) {
+    if (streamUrl.empty() || name.empty()) return "";
+    std::string params = "streamUrl=" + urlEncode(streamUrl) + "&name=" + urlEncode(name);
+    if (!homePageUrl.empty()) params += "&homePageUrl=" + urlEncode(homePageUrl);
+
+    std::string body = httpGet(buildURL("createInternetRadioStation.view", params), outError);
+    if (body.empty()) return "";
+    if (checkResponse(body, outError).empty()) return "";
+    // Unlike createPlaylist.view, Subsonic's create-station endpoint doesn't
+    // echo the new station's id back. Report success with an empty id rather
+    // than a phantom failure — callers must check outError, not this string.
+    return "";
+}
+
+bool navidrome::SubsonicClientWin::updateRadioStation(
+        const std::string& id, const std::string& streamUrl, const std::string& name,
+        const std::string& homePageUrl, std::string& outError) {
+    if (id.empty() || streamUrl.empty() || name.empty()) return false;
+    std::string params = "id=" + urlEncode(id) + "&streamUrl=" + urlEncode(streamUrl) +
+                          "&name=" + urlEncode(name);
+    if (!homePageUrl.empty()) params += "&homePageUrl=" + urlEncode(homePageUrl);
+    std::string body = httpGet(buildURL("updateInternetRadioStation.view", params), outError);
+    if (body.empty()) return false;
+    return !checkResponse(body, outError).empty();
+}
+
+bool navidrome::SubsonicClientWin::deleteRadioStation(const std::string& id,
+                                                       std::string& outError) {
+    if (id.empty()) return false;
+    std::string body = httpGet(buildURL("deleteInternetRadioStation.view", "id=" + urlEncode(id)),
+                               outError);
+    if (body.empty()) return false;
+    return !checkResponse(body, outError).empty();
+}
+
 std::vector<navidrome::Bookmark>
 navidrome::SubsonicClientWin::getBookmarks(std::string& outError) {
     std::string body = httpGet(buildURL("getBookmarks.view"), outError);
