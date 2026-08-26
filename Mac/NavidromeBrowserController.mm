@@ -167,7 +167,7 @@ static NSString *formatDuration(NSTimeInterval secs) {
 }
 @end
 
-@interface NavidromeBrowserController ()
+@interface NavidromeBrowserController () <NSSearchFieldDelegate>
 // Root artist nodes
 @property (nonatomic, strong) NSMutableArray<NavidromeNode *> *rootNodes;
 // YES when hosted in the standalone NSWindow (vs. embedded in the prefs page);
@@ -181,6 +181,12 @@ static NSString *formatDuration(NSTimeInterval secs) {
 // Filtered nodes when searching
 @property (nonatomic, strong) NSMutableArray<NavidromeNode *> *filteredNodes;
 @property (nonatomic, assign) BOOL isSearching;
+// Debounces live-as-you-type search: a keystroke (re)arms this timer rather
+// than firing a request per character.
+@property (nonatomic, strong) NSTimer *searchDebounceTimer;
+// Bumped on every dispatch (including clearing the box) so a search response
+// that arrives after a later keystroke is dropped instead of clobbering it.
+@property (nonatomic, assign) NSUInteger searchGeneration;
 // "Add to Navidrome Playlist" submenu, populated from _serverPlaylists when the
 // menu opens. Fetching the list on demand would block the main thread, so the
 // cache is refreshed in the background at load time and after every mutation.
@@ -221,6 +227,9 @@ static NSString *formatDuration(NSTimeInterval secs) {
     _searchField.placeholderString = @"Search artists, albums, songs…";
     _searchField.target = self;
     _searchField.action = @selector(searchChanged:);
+    // NSSearchField's action alone only fires on Enter/Cancel — live typing
+    // goes through -controlTextDidChange: below.
+    _searchField.delegate = self;
     [content addSubview:_searchField];
 
     // ── Spinner (top-right corner) ───────────────────────────────────────
@@ -593,12 +602,40 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
 // Search
 // ---------------------------------------------------------------------------
 
+// NSSearchField's action alone only fires on Enter or the Cancel button —
+// this covers those, and dispatches immediately (no debounce wait).
 - (void)searchChanged:(id)sender {
+    [_searchDebounceTimer invalidate];
+    [self dispatchSearch];
+}
+
+// Fires on every keystroke. Live-as-you-type search would otherwise hit the
+// server once per character, so this just (re)arms a short debounce timer;
+// -dispatchSearch runs once typing pauses.
+- (void)controlTextDidChange:(NSNotification *)note {
+    if (note.object != _searchField) return;
+    [_searchDebounceTimer invalidate];
+    __weak typeof(self) weakSelf = self;
+    _searchDebounceTimer = [NSTimer scheduledTimerWithTimeInterval:0.3
+                                                             repeats:NO
+                                                               block:^(NSTimer *timer) {
+        [weakSelf dispatchSearch];
+    }];
+}
+
+- (void)dispatchSearch {
+    _searchDebounceTimer = nil;
     NSString *query = [_searchField stringValue];
+    // Any dispatch — including clearing the box — invalidates whatever
+    // search request is still in flight, so a stale response can't land on
+    // top of newer results.
+    NSUInteger generation = ++_searchGeneration;
+
     if (query.length < 2) {
         _isSearching = NO;
         [_filteredNodes removeAllObjects];
         [_outlineView reloadData];
+        _statusLabel.stringValue = @"";
         return;
     }
 
@@ -610,6 +647,10 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
         NSError *err = nil;
         NSDictionary *results = [SubsonicClient.sharedClient search:query error:&err];
         dispatch_async(dispatch_get_main_queue(), ^{
+            // Superseded by a later keystroke/clear while this request was
+            // in flight — drop it instead of clobbering newer results.
+            if (generation != self->_searchGeneration) return;
+
             [_spinner stopAnimation:nil];
             [_filteredNodes removeAllObjects];
 
@@ -625,9 +666,7 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
                 [_filteredNodes addObject:[NavidromeNode songNode:s]];
             syncSongNodesToPlaylists(_filteredNodes);
 
-            NSUInteger total = [results[@"artists"] count] + [results[@"albums"] count] + songs.count;
             _statusLabel.stringValue = [NSString stringWithFormat:@"%lu songs found", (unsigned long)songs.count];
-            (void)total;
 
             [_outlineView reloadData];
         });
@@ -878,6 +917,9 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
 }
 
 - (IBAction)refresh:(id)sender {
+    [_searchDebounceTimer invalidate];
+    _searchDebounceTimer = nil;
+    ++_searchGeneration;   // drop any search still in flight
     _isSearching = NO;
     _searchField.stringValue = @"";
     [self loadArtists];

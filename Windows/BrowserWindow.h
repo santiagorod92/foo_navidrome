@@ -3,6 +3,7 @@
 #include "../SubsonicTypes.h"
 #include <SDK/coreDarkMode.h>
 #include <SDK/ui_element.h>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <vector>
@@ -16,6 +17,9 @@
 // Background refresh of the radio station list backing the enqueue-time
 // streamUrl lookup. wParam owns a heap std::vector<navidrome::RadioStation>.
 #define WM_NAVIDROME_RADIO (WM_USER + 104)
+// Background search result, kept separate from WM_NAVIDROME_LOADED so a
+// completed search never overwrites the browse tree's root node list.
+#define WM_NAVIDROME_SEARCH (WM_USER + 105)
 
 // ---------------------------------------------------------------------------
 // Tree node
@@ -62,6 +66,10 @@ struct LoadedPayload {
     std::shared_ptr<NavidromeNode>              parent;   // nullptr = root load
     std::vector<std::shared_ptr<NavidromeNode>> nodes;
     std::string                                 error;
+    // Search payloads only: the m_searchGeneration value in effect when the
+    // request was dispatched. A stale response (superseded by later typing)
+    // is dropped instead of clobbering newer results.
+    std::uint64_t                               generation = 0;
 };
 
 // ---------------------------------------------------------------------------
@@ -88,6 +96,8 @@ public:
         MESSAGE_HANDLER(WM_NAVIDROME_CHILDREN,  OnNavidromeChildren)
         MESSAGE_HANDLER(WM_NAVIDROME_PLAYLISTS, OnNavidromePlaylists)
         MESSAGE_HANDLER(WM_NAVIDROME_RADIO,      OnNavidromeRadio)
+        MESSAGE_HANDLER(WM_NAVIDROME_SEARCH,     OnNavidromeSearch)
+        MSG_WM_TIMER(OnTimer)
         NOTIFY_CODE_HANDLER_EX(TVN_ITEMEXPANDING, OnTreeExpanding)
         NOTIFY_CODE_HANDLER_EX(NM_DBLCLK,        OnTreeDblClick)
         NOTIFY_CODE_HANDLER_EX(NM_RETURN,        OnTreeReturn)
@@ -147,6 +157,11 @@ private:
     };
     static constexpr std::size_t kMaxPlaylistMenuEntries =
         IDC_PLAYLIST_LAST - IDC_PLAYLIST_FIRST + 1;
+    // Search box debounce: a keystroke (re)starts this timer rather than
+    // firing a request per character; the search only goes out once typing
+    // pauses for kSearchDebounceMs.
+    static constexpr UINT_PTR kSearchDebounceTimer = 1;
+    static constexpr UINT     kSearchDebounceMs    = 300;
 
     LRESULT OnCreate(LPCREATESTRUCT);
     void    OnDestroy();
@@ -155,6 +170,8 @@ private:
     LRESULT OnNavidromeChildren(UINT, WPARAM, LPARAM, BOOL&);
     LRESULT OnNavidromePlaylists(UINT, WPARAM, LPARAM, BOOL&);
     LRESULT OnNavidromeRadio(UINT, WPARAM, LPARAM, BOOL&);
+    LRESULT OnNavidromeSearch(UINT, WPARAM, LPARAM, BOOL&);
+    void    OnTimer(UINT_PTR id);
     LRESULT OnTreeExpanding(LPNMHDR);
     LRESULT OnTreeDblClick(LPNMHDR);
     LRESULT OnTreeReturn(LPNMHDR);
@@ -181,6 +198,12 @@ private:
     void    loadArtists();
     void    populateRoot(LoadedPayload* payload);
     void    populateChildren(LoadedPayload* payload);
+    // Search results are shown in the same tree control but never touch
+    // m_rootNodes, so category invalidation and the browse tree survive a
+    // search untouched. restoreBrowseTree() re-renders m_rootNodes when the
+    // search box is cleared, without a network round-trip.
+    void    populateSearchResults(LoadedPayload* payload);
+    void    restoreBrowseTree();
     HTREEITEM insertNode(HTREEITEM parent, std::shared_ptr<NavidromeNode> node);
     std::shared_ptr<NavidromeNode> nodeForItem(HTREEITEM hItem);
     // Synchronous child fetch for any expandable node — background thread only.
@@ -262,6 +285,15 @@ private:
     // Keeps nodes alive; HTREEITEM lParam points into these shared_ptrs
     std::map<HTREEITEM, std::shared_ptr<NavidromeNode>> m_nodeMap;
     std::vector<std::shared_ptr<NavidromeNode>>          m_rootNodes;
+
+    // Search state. m_rootNodes above always holds the browse tree, even
+    // while a search is displayed — search results live entirely in
+    // m_searchResultNodes so nothing else that scans m_rootNodes (playlist/
+    // radio/bookmark category invalidation, the startup rating refresh) sees
+    // a search result list instead of the real tree.
+    bool                                         m_isSearching = false;
+    std::vector<std::shared_ptr<NavidromeNode>>  m_searchResultNodes;
+    std::uint64_t                                m_searchGeneration = 0;
 
     // Cached server playlists for the context submenu — built in the background
     // so opening the menu never blocks on the network.

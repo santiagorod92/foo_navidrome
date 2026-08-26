@@ -677,8 +677,10 @@ HBRUSH BrowserWindow::OnCtlColorStatic(HDC dc, HWND) {
 }
 
 void BrowserWindow::OnDestroy() {
+    KillTimer(kSearchDebounceTimer);
     m_nodeMap.clear();
     m_rootNodes.clear();
+    m_searchResultNodes.clear();
     if (m_themeBgBrush) { ::DeleteObject(m_themeBgBrush); m_themeBgBrush = nullptr; }
 }
 
@@ -737,6 +739,12 @@ static std::vector<std::shared_ptr<NavidromeNode>> buildCategoryNodes() {
 }
 
 void BrowserWindow::loadArtists() {
+    // Any full reload supersedes whatever search was pending/showing.
+    KillTimer(kSearchDebounceTimer);
+    ++m_searchGeneration;
+    m_isSearching = false;
+    m_searchResultNodes.clear();
+
     setStatus("Loading artists\u2026");
     m_tree.DeleteAllItems();
     m_nodeMap.clear();
@@ -909,6 +917,15 @@ LRESULT BrowserWindow::OnNavidromeChildren(UINT, WPARAM wParam, LPARAM, BOOL&) {
     return 0;
 }
 
+LRESULT BrowserWindow::OnNavidromeSearch(UINT, WPARAM wParam, LPARAM, BOOL&) {
+    auto* payload = reinterpret_cast<LoadedPayload*>(wParam);
+    // Superseded by a later keystroke/clear while this request was in
+    // flight -- drop it instead of clobbering whatever's now on screen.
+    if (payload->generation == m_searchGeneration) populateSearchResults(payload);
+    delete payload;
+    return 0;
+}
+
 LRESULT BrowserWindow::OnNavidromePlaylists(UINT, WPARAM wParam, LPARAM, BOOL&) {
     auto* lists = reinterpret_cast<std::vector<navidrome::Playlist>*>(wParam);
     m_playlistsLoading = false;
@@ -971,15 +988,47 @@ void BrowserWindow::populateRoot(LoadedPayload* payload) {
         setStatus("Error: " + payload->error); return;
     }
     m_rootNodes = payload->nodes;
-    std::size_t artists = 0, songs = 0;
+    std::size_t artists = 0;
     for (auto& n : m_rootNodes) {
         insertNode(TVI_ROOT, n);
         if (n->type == NavidromeNode::Artist) ++artists;
-        if (n->type == NavidromeNode::Song)   ++songs;
     }
-    // Search results arrive here too — they're songs, not artists.
-    setStatus(songs > 0 ? std::to_string(songs) + " songs found"
-                        : std::to_string(artists) + " artists");
+    setStatus(std::to_string(artists) + " artists");
+}
+
+// Renders m_searchResultNodes in place of the browse tree. m_rootNodes is
+// left untouched so category invalidation and the startup rating refresh
+// keep working against the real tree even while a search is on screen.
+void BrowserWindow::populateSearchResults(LoadedPayload* payload) {
+    if (!payload->error.empty()) {
+        setStatus("Search error: " + payload->error); return;
+    }
+    m_isSearching       = true;
+    m_searchResultNodes = payload->nodes;
+    m_tree.DeleteAllItems();
+    m_nodeMap.clear();
+    for (auto& n : m_searchResultNodes) insertNode(TVI_ROOT, n);
+    setStatus(std::to_string(m_searchResultNodes.size()) + " songs found");
+}
+
+// Re-renders the browse tree from m_rootNodes without a network round-trip.
+// Any node that had children expanded before the search wiped the tree gets
+// childrenLoaded reset so it lazily refetches on next expand -- cheap, and
+// avoids re-inserting HTREEITEMs the tree already discarded.
+void BrowserWindow::restoreBrowseTree() {
+    m_isSearching = false;
+    m_searchResultNodes.clear();
+    m_tree.DeleteAllItems();
+    m_nodeMap.clear();
+    std::size_t artists = 0;
+    for (auto& n : m_rootNodes) {
+        n->children.clear();
+        n->childrenLoaded = false;
+        n->hItem           = nullptr;
+        insertNode(TVI_ROOT, n);
+        if (n->type == NavidromeNode::Artist) ++artists;
+    }
+    setStatus(std::to_string(artists) + " artists");
 }
 
 void BrowserWindow::populateChildren(LoadedPayload* payload) {
@@ -1838,28 +1887,46 @@ void BrowserWindow::OnDeleteRadioStation(UINT, int, HWND) {
 
 void BrowserWindow::OnRefresh(UINT, int, HWND) {
     m_search.SetWindowText(L"");
-    loadArtists();
+    loadArtists();   // resets search state too
 }
 
+// Every keystroke just (re)arms the debounce timer -- the actual request
+// goes out from OnTimer once typing pauses, so fast typing doesn't fire one
+// request per character.
 void BrowserWindow::OnSearchChanged(UINT, int, HWND) {
+    SetTimer(kSearchDebounceTimer, kSearchDebounceMs, nullptr);
+}
+
+void BrowserWindow::OnTimer(UINT_PTR id) {
+    if (id != kSearchDebounceTimer) return;
+    KillTimer(kSearchDebounceTimer);
+
     wchar_t buf[256] = {};
     m_search.GetWindowText(buf, 256);
     std::string query = wToU8(buf);
+
+    // Any dispatch -- including clearing the box -- invalidates whatever
+    // search request is still in flight.
+    ++m_searchGeneration;
+
     if (query.size() < 2) {
-        if (m_rootNodes.empty()) loadArtists();
+        if (m_isSearching) restoreBrowseTree();
         return;
     }
+
     setStatus("Searching\u2026");
-    std::thread([this, query]() {
+    std::uint64_t generation = m_searchGeneration;
+    std::thread([this, query, generation]() {
         std::string err;
         auto results = navidrome::SubsonicClientWin::get().search(query, err);
         auto* payload = new LoadedPayload{};
-        payload->error = err;
+        payload->error      = err;
+        payload->generation = generation;
         for (auto& s : results.songs) {
             auto n = std::make_shared<NavidromeNode>();
             n->type           = NavidromeNode::Song;
             n->id             = s.id;
-            n->displayName    = s.title + " — " + s.artist;
+            n->displayName    = s.title + " \u2014 " + s.artist;
             n->subtitle       = s.artist;
             n->album          = s.album;
             n->albumId        = s.albumId;
@@ -1874,7 +1941,8 @@ void BrowserWindow::OnSearchChanged(UINT, int, HWND) {
             payload->nodes.push_back(n);
         }
         syncSongNodesToPlaylists(payload->nodes);
-        PostMessage(WM_NAVIDROME_LOADED, reinterpret_cast<WPARAM>(payload), 0);
+        if (!PostMessage(WM_NAVIDROME_SEARCH, reinterpret_cast<WPARAM>(payload), 0))
+            delete payload;   // window already gone
     }).detach();
 }
 
