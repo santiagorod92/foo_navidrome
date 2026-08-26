@@ -50,6 +50,8 @@ Credentials persist via `cfg_string` (foobar2000 config store). Password is sent
 
 ## Development
 
+`Makefile` at repo root wraps the scripts below as `make` targets (`make help` lists them) — e.g. `make test` for the fast Linux clang-cl+wine unit-test loop, `make build-win`/`install-win` for the local Windows cross-compile, `make dev-build`/`release` for the macOS loop, `make win-vm-*` for the Windows-on-macOS VM flow. It's a convenience wrapper only — the scripts remain the source of truth for actual build logic; keep the Makefile's flags/paths in sync if a script's CLI changes.
+
 ### Build layout (siblings required, see README)
 
 ```
@@ -71,6 +73,19 @@ pfc/                    ← sibling of foobar2000/
 Visual Studio 2022. `Windows/foo_navidrome.vcxproj` — must update `<ProjectReference>` GUIDs to match the local SDK projects. Build Release|x64, copy `.dll` to `%APPDATA%\foobar2000\user-components\foo_navidrome\`.
 
 `Windows/tests/MediaEnrichmentTests.vcxproj` builds `Windows/tests/MediaEnrichmentLogicTests.cpp` + `Windows/MediaEnrichmentLogic.cpp` into a standalone console exe — no SDK/`.sln` dependency, since `MediaEnrichmentLogic.*` only uses WinHTTP/wincrypt + stdlib. Build Release|x64 and run the exe directly; `build-windows.yml` does this on every CI run (build, then execute, failing the job on any `FAIL:` line).
+
+On Linux, this same test exe can be compiled directly with `clang-cl` + the `xwin` SDK — no need for the full `win-build-local.sh` component build (that one needs the foobar SDK/pfc/libPPUI siblings; this test file needs neither):
+```
+clang-cl --target=x86_64-pc-windows-msvc -fuse-ld=lld-link /std:c++17 /EHsc /MD /GR /W4 /WX /utf-8 \
+  -imsvc "$XWIN_SDK/crt/include" -imsvc "$XWIN_SDK/sdk/include/um" \
+  -imsvc "$XWIN_SDK/sdk/include/shared" -imsvc "$XWIN_SDK/sdk/include/ucrt" \
+  Windows/tests/MediaEnrichmentLogicTests.cpp Windows/MediaEnrichmentLogic.cpp \
+  /Fe:build-win/tests/MediaEnrichmentLogicTests.exe /Fo:build-win/tests/ /link \
+  "/libpath:$XWIN_SDK/crt/lib/x86_64" "/libpath:$XWIN_SDK/sdk/lib/um/x86_64" \
+  "/libpath:$XWIN_SDK/sdk/lib/ucrt/x86_64" advapi32.lib
+wine build-win/tests/MediaEnrichmentLogicTests.exe
+```
+(`$XWIN_SDK` defaults to `~/.local/share/xwin/sdk`, same as `win-build-local.sh`.) Use this fast path when iterating on pure-logic tests; fall back to the full vcxproj/CI build to catch anything that would only break under real MSVC.
 
 ### Windows testing on macOS (no PC / no Wine)
 

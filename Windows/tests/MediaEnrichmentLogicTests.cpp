@@ -22,6 +22,111 @@ std::vector<std::uint8_t> bytes(const std::string& value) {
     return {value.begin(), value.end()};
 }
 
+void testUriEncodeDecode() {
+    using navidrome::uriEncode;
+    using navidrome::uriDecode;
+    check(uriEncode("abc-_.~XYZ019") == "abc-_.~XYZ019",
+        "unreserved characters pass through unescaped");
+    check(uriEncode(" a/b?c&d") == "%20a%2Fb%3Fc%26d",
+        "reserved and space characters are percent-encoded");
+    check(uriEncode(u8"café") == "caf%C3%A9",
+        "UTF-8 bytes are individually percent-encoded");
+    check(uriDecode("a%20b%2Fc") == "a b/c", "decode reverses encode");
+    check(uriDecode("100%") == "100%",
+        "a trailing bare percent is passed through, not dropped");
+    check(uriDecode("50%2 off") == "50%2 off",
+        "an incomplete escape (non-hex second digit) is passed through");
+    check(uriDecode(uriEncode(u8"中文 + spaces & symbols")) ==
+        u8"中文 + spaces & symbols", "round-trip preserves arbitrary text");
+}
+
+void testNormalizeUrl() {
+    using navidrome::normalizeMediaServerUrl;
+    check(normalizeMediaServerUrl("  https://Example.COM/Root/Path/  ") ==
+        "https://example.com/Root/Path",
+        "scheme+host lowercased, path case preserved, trailing slash/space trimmed");
+    check(normalizeMediaServerUrl("HTTP://HOST") == "http://host",
+        "bare host with no path is fully lowercased");
+    check(normalizeMediaServerUrl("not-a-url") == "not-a-url",
+        "a value with no scheme separator is left alone (minus trim)");
+    check(normalizeMediaServerUrl("") == "", "empty input stays empty");
+}
+
+void testJsEscapeEdgeCases() {
+    using navidrome::jsEscape;
+    check(jsEscape("a\"b\\c") == "a\\\"b\\\\c", "quote and backslash are escaped");
+    check(jsEscape("a\tb\nc\rd") == "a\\tb\\nc\\rd",
+        "tab/newline/carriage-return use short escapes");
+    check(jsEscape(std::string(1, '\x01')) == "\\u0001",
+        "other control characters use \\u escapes");
+    check(jsEscape("") == "", "empty input stays empty");
+    check(jsEscape(u8"emoji 😀 survives") == u8"emoji 😀 survives",
+        "non-control UTF-8 bytes pass through unescaped");
+}
+
+void testStarKindAndAlbumListType() {
+    using navidrome::AlbumListType;
+    using navidrome::StarKind;
+    using navidrome::albumListTypeName;
+    using navidrome::starParamName;
+
+    check(std::string(starParamName(StarKind::Song)) == "id", "song stars use id=");
+    check(std::string(starParamName(StarKind::Album)) == "albumId",
+        "album stars use albumId=");
+    check(std::string(starParamName(StarKind::Artist)) == "artistId",
+        "artist stars use artistId=");
+
+    check(std::string(albumListTypeName(AlbumListType::Newest)) == "newest",
+        "newest is the default name");
+    check(std::string(albumListTypeName(AlbumListType::Frequent)) == "frequent",
+        "frequent list type name");
+    check(std::string(albumListTypeName(AlbumListType::Recent)) == "recent",
+        "recent list type name");
+    check(std::string(albumListTypeName(AlbumListType::Random)) == "random",
+        "random list type name");
+    check(std::string(albumListTypeName(AlbumListType::Starred)) == "starred",
+        "starred list type name");
+}
+
+void testParseHeaderLines() {
+    using navidrome::parseHeaderLines;
+    const auto lines = parseHeaderLines(
+        "X-Access: token-one\r\n"
+        "\n"
+        "# a comment, skipped\n"
+        "   \n"
+        "  Y-Other: token-two  \n"
+        "#also skipped");
+    check(lines.size() == 2, "blank and comment lines are dropped");
+    if (lines.size() == 2) {
+        check(lines[0] == "X-Access: token-one",
+            "CRLF is trimmed from a header line");
+        check(lines[1] == "Y-Other: token-two",
+            "surrounding whitespace is trimmed");
+    }
+    check(parseHeaderLines("").empty(), "empty blob yields no headers");
+    check(parseHeaderLines("\n\n\n").empty(), "all-blank blob yields no headers");
+    check(parseHeaderLines("no-trailing-newline: value").size() == 1,
+        "a final line with no trailing newline is still captured");
+}
+
+void testPercentDecodeEdgeCases() {
+    using navidrome::percentDecode;
+    check(percentDecode("a%2Fb") == "a/b", "a valid escape decodes");
+    check(percentDecode("100%") == "100%",
+        "a trailing bare percent with nothing after it is passed through");
+    check(percentDecode("50%") == "50%",
+        "a percent with fewer than two trailing characters is left as-is");
+    check(percentDecode("bad%zzescape") == "bad%zzescape",
+        "a non-hex escape is passed through unchanged");
+    check(percentDecode("") == "", "empty input stays empty");
+}
+
+void testPlaylistChunkSize() {
+    check(navidrome::kPlaylistChunkSize == 50,
+        "playlist mutations are chunked at 50 ids per request");
+}
+
 void testIdentifiers() {
     using navidrome::resolveArtId;
     check(resolveArtId("navidrome://track/song?coverArt=cover%2Fone&id=ignored") ==
@@ -211,6 +316,13 @@ void testQueryParams() {
 } // namespace
 
 int main() {
+    testUriEncodeDecode();
+    testNormalizeUrl();
+    testJsEscapeEdgeCases();
+    testStarKindAndAlbumListType();
+    testParseHeaderLines();
+    testPercentDecodeEdgeCases();
+    testPlaylistChunkSize();
     testIdentifiers();
     testCoverUrl();
     testClassification();

@@ -14,9 +14,11 @@ A [foobar2000](https://www.foobar2000.org/) component that lets you browse and s
 - Browse your entire music library: Artists → Albums → Songs
 - **Smart lists** at the top of the tree: ★ Starred, Recently Added, Most Played, Recently Played, Random Albums, **Genres**, and your **server-side playlists**
 - **Scrobbling**: plays are reported back to Navidrome, so play counts, "Recently Played" and any Last.fm / ListenBrainz relay the server has configured stay in sync (toggle in Preferences)
-- **Favorites and ratings** from the right-click menu — Star / Unstar and a 0-5 star rating, stored per-user on the server so they show up in the web UI and on your phone, and available in the playlist as `%navidrome_rating%` / `%navidrome_starred%` for a custom column
+- **Favorites and ratings** from the right-click menu — Star / Unstar and a 0-5 star rating, stored per-user on the server so they show up in the web UI and on your phone, and available in the playlist as `%navidrome_rating%` / `%navidrome_starred%` for a custom column. Also available straight from **the playlist's own right-click menu** (rate/star a track without going back to the browser), and kept in sync in already-added playlist entries — see [Showing ratings in the playlist](#showing-ratings-in-the-playlist)
 - **Manage server playlists** from the right-click menu — add the selection to any existing playlist or a **New Playlist…**, remove tracks, rename, delete. Changes land on the server, so they show up everywhere
 - **Send Active Playlist to Navidrome** from the right-click menu — uploads the active foobar2000 playlist under the same name
+- **Bookmarks (resume playback)** — bookmark the currently playing track's position from the File menu, browse them under the **Bookmarks** smart list (shows a trailing `⏱ m:ss`), remove one from its right-click menu. Backed by Subsonic's `getBookmarks.view` / `createBookmark.view` / `deleteBookmark.view`
+- **Internet radio stations** — browse/play stations under the **Radio** smart list, or manage them (New/Edit/Delete) from the tree's right-click menu or the dedicated **Preferences › Media Library › Navidrome › Radio Stations** sub-page
 - **Streaming quality**: ask the server to transcode on the fly (MP3 / Opus / AAC) and cap the bitrate — useful on slow links. Set in Preferences; "Original" always sends the stored file
 - **Download Original Files…** from the right-click menu — saves the selected tracks to a folder, always in their stored format regardless of the streaming setting
 - Add albums or artists to playlist in one click (loads all songs automatically)
@@ -27,7 +29,7 @@ A [foobar2000](https://www.foobar2000.org/) component that lets you browse and s
 - Credentials saved in foobar2000's config (persistent across restarts)
 - Test Connection button to verify server connectivity
 - **Native `navidrome://` URI scheme**: tracks added to playlists store a stable URI, not a transient HTTP URL — playlists survive credential rotation or server URL changes
-- Appears under **Preferences › Media Library › Library viewers** alongside Album List / Artist View
+- Appears under **Preferences › Media Library › Library viewers** alongside Album List / Artist View, and (macOS) can also be docked as a panel in the main window layout via **Preferences › Display › Layout › Edit Layout**
 - **Lyrics on Windows** via [ESLyric](https://github.com/ESLyric/release) — see [Lyrics (ESLyric)](#lyrics-eslyric-windows)
 
 ## Lyrics (ESLyric, Windows)
@@ -305,6 +307,21 @@ them on. Note the cross-platform twist: this project is currently developed on
 **Linux**, and the **Windows component is built from Linux** (foobar2000 runs under
 Wine; the DLL is cross-compiled with clang-cl) — so the "Windows" scripts run on a
 Linux host. A *native* Windows build uses Visual Studio directly and needs no scripts.
+
+A root [`Makefile`](Makefile) wraps the most common ones as `make` targets — run
+`make help` for the full list. It's a thin convenience wrapper; the scripts below
+remain the source of truth. Highlights:
+
+```bash
+make test          # Linux: fast clang-cl+wine build/run of MediaEnrichmentLogicTests
+make build-win      # Linux: cross-compile the Windows x64 component
+make install-win     # Linux: install the built DLL + package the .fb2k-component
+make win-test ARGS="--launch"   # dispatch a build-windows.yml run on GH, install, relaunch
+make dev-build      # macOS: bump patch, xcodebuild Release, install
+make release        # macOS: bump, build, install, package, gh release create
+make ci-build VERSION=1.11.0     # hermetic macOS CI build
+make win-vm-test ARGS="--launch" # Windows-on-macOS VM: cross-build, deploy, relaunch
+```
 
 ### Linux — build & test the Windows component (current dev environment)
 
