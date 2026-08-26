@@ -146,6 +146,11 @@ static SubsonicAlbum *parseAlbum(NSDictionary *a) {
 
 @interface SubsonicClient ()
 @property (nonatomic, strong) NSURLSession *session;
+// startScan.view / getScanStatus.view share this response shape.
+- (BOOL)fetchScanStatusForEndpoint:(NSString *)endpoint
+                           scanning:(BOOL *)scanning
+                              count:(NSInteger *)count
+                              error:(NSError **)error;
 @end
 
 @implementation SubsonicClient
@@ -718,6 +723,33 @@ static SubsonicAlbum *parseAlbum(NSDictionary *a) {
     NSString *params = [NSString stringWithFormat:@"id=%@", urlEncode(songId)];
     return [self fetchJSON:[self urlForEndpoint:@"deleteBookmark.view" params:params]
                      error:error] != nil;
+}
+
+- (BOOL)fetchScanStatusForEndpoint:(NSString *)endpoint
+                           scanning:(BOOL *)scanning
+                              count:(NSInteger *)count
+                              error:(NSError **)error {
+    if (scanning) *scanning = NO;
+    if (count)    *count    = 0;
+    NSURL *url = [self urlForEndpoint:endpoint params:@""];
+    NSDictionary *root = [self fetchJSON:url error:error];
+    if (!root) return NO;
+    NSDictionary *status = root[@"scanStatus"];
+    if ([status isKindOfClass:[NSDictionary class]]) {
+        if (scanning) *scanning = [status[@"scanning"] boolValue];
+        if (count)    *count    = [status[@"count"] integerValue];
+    }
+    return YES;
+}
+
+- (BOOL)startScanWithScanning:(BOOL *)scanning count:(NSInteger *)count error:(NSError **)error {
+    return [self fetchScanStatusForEndpoint:@"startScan.view"
+                                    scanning:scanning count:count error:error];
+}
+
+- (BOOL)getScanStatusWithScanning:(BOOL *)scanning count:(NSInteger *)count error:(NSError **)error {
+    return [self fetchScanStatusForEndpoint:@"getScanStatus.view"
+                                    scanning:scanning count:count error:error];
 }
 
 - (BOOL)scrobbleSongId:(NSString *)songId

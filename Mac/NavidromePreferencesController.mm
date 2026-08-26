@@ -169,6 +169,8 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
 @property (nonatomic, strong) NSButton           *testButton;
 @property (nonatomic, strong) NSButton           *headersButton;
 @property (nonatomic, strong) NSButton           *scrobbleCheckbox;
+@property (nonatomic, strong) NSButton           *rescanButton;
+@property (nonatomic, strong) NSTextField        *scanStatusLabel;
 @property (nonatomic, strong) NSPopUpButton      *formatPopup;
 @property (nonatomic, strong) NSPopUpButton      *bitratePopup;
 @end
@@ -278,6 +280,20 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
                              "target format is lossless (FLAC / WAV).";
     [root addSubview:_bitratePopup];
 
+    // Rescan button — useful if files were added/removed server-side and the
+    // user doesn't want to wait for Navidrome's own scan schedule.
+    _rescanButton = [NSButton buttonWithTitle:@"Rescan Library Now"
+                                        target:self
+                                        action:@selector(rescanLibrary:)];
+    _rescanButton.translatesAutoresizingMaskIntoConstraints = NO;
+    [root addSubview:_rescanButton];
+
+    _scanStatusLabel = [NSTextField labelWithString:@""];
+    _scanStatusLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    _scanStatusLabel.textColor = [NSColor secondaryLabelColor];
+    _scanStatusLabel.font = [NSFont systemFontOfSize:11];
+    [root addSubview:_scanStatusLabel];
+
     // Status label
     _statusLabel = [NSTextField labelWithString:@""];
     _statusLabel.translatesAutoresizingMaskIntoConstraints = NO;
@@ -364,8 +380,16 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
         [_bitratePopup.topAnchor constraintEqualToAnchor:_formatPopup.bottomAnchor constant:vGap],
         [_bitratePopup.leadingAnchor constraintEqualToAnchor:lBitrate.trailingAnchor constant:8],
 
+        // Rescan button + status
+        [_rescanButton.topAnchor constraintEqualToAnchor:_bitratePopup.bottomAnchor constant:vGap * 1.5],
+        [_rescanButton.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:pad + labelW + 8],
+
+        [_scanStatusLabel.centerYAnchor constraintEqualToAnchor:_rescanButton.centerYAnchor],
+        [_scanStatusLabel.leadingAnchor constraintEqualToAnchor:_rescanButton.trailingAnchor constant:10],
+        [_scanStatusLabel.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-pad],
+
         // Info label
-        [infoLabel.topAnchor constraintEqualToAnchor:_bitratePopup.bottomAnchor constant:vGap * 2],
+        [infoLabel.topAnchor constraintEqualToAnchor:_rescanButton.bottomAnchor constant:vGap * 2],
         [infoLabel.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:pad],
         [infoLabel.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-pad],
     ]];
@@ -468,6 +492,53 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
                     err.localizedDescription ?: @"Connection failed"];
                 _statusLabel.textColor = [NSColor systemRedColor];
             }
+        });
+    });
+}
+
+// Kicks off a server-side rescan and polls getScanStatus.view until it
+// finishes. Subsonic doesn't report a total item count up front, so the
+// status text can only show "N processed", not a percentage.
+- (IBAction)rescanLibrary:(id)sender {
+    _rescanButton.enabled = NO;
+    _scanStatusLabel.textColor = [NSColor secondaryLabelColor];
+    _scanStatusLabel.stringValue = @"Starting scan…";
+
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSError *err = nil;
+        BOOL scanning = NO;
+        NSInteger count = 0;
+        BOOL ok = [SubsonicClient.sharedClient startScanWithScanning:&scanning
+                                                                 count:&count
+                                                                 error:&err];
+        if (!ok) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                _rescanButton.enabled = YES;
+                _scanStatusLabel.textColor = [NSColor systemRedColor];
+                _scanStatusLabel.stringValue = [NSString stringWithFormat:@"Scan failed: %@",
+                    err.localizedDescription ?: @"unknown error"];
+            });
+            return;
+        }
+
+        while (scanning) {
+            [NSThread sleepForTimeInterval:1.5];
+            NSError *pollErr = nil;
+            BOOL polled = [SubsonicClient.sharedClient getScanStatusWithScanning:&scanning
+                                                                             count:&count
+                                                                             error:&pollErr];
+            if (!polled) break;   // transient error — stop polling, last known count stands
+            dispatch_async(dispatch_get_main_queue(), ^{
+                _scanStatusLabel.stringValue = [NSString stringWithFormat:@"Scanning… %ld processed",
+                    (long)count];
+            });
+        }
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            _rescanButton.enabled = YES;
+            _scanStatusLabel.textColor = [NSColor systemGreenColor];
+            _scanStatusLabel.stringValue = [NSString stringWithFormat:@"Scan complete — %ld items",
+                (long)count];
         });
     });
 }

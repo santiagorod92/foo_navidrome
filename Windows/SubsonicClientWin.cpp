@@ -132,6 +132,17 @@ static double jdbl(const std::string& s, const std::string& key, double def = 0.
     return (end == s.c_str() + p) ? def : v;
 }
 
+// Extract first bool for "key":true / "key":false
+static bool jbool(const std::string& s, const std::string& key, bool def = false) {
+    auto k = "\"" + key + "\":";
+    auto p = s.find(k);
+    if (p == std::string::npos) return def;
+    p += k.size();
+    if (s.compare(p, 4, "true")  == 0) return true;
+    if (s.compare(p, 5, "false") == 0) return false;
+    return def;
+}
+
 // Extract array of JSON objects for "key":[{...},{...}]
 // Also handles single-object case "key":{...}
 static std::vector<std::string> jarr(const std::string& s, const std::string& key) {
@@ -204,6 +215,17 @@ static navidrome::Album parseAlbumObj(const std::string& a) {
     al.songCount  = jint(a, "songCount");
     al.starred    = !jstr(a, "starred").empty();
     return al;
+}
+
+// startScan.view / getScanStatus.view share this response shape.
+static navidrome::ScanStatus parseScanStatus(const std::string& root) {
+    navidrome::ScanStatus result;
+    auto status = jarr(root, "scanStatus");
+    if (!status.empty()) {
+        result.scanning = jbool(status[0], "scanning");
+        result.count    = jint(status[0], "count");
+    }
+    return result;
 }
 
 // Check Subsonic status and return inner response object, or set error
@@ -770,6 +792,22 @@ bool navidrome::SubsonicClientWin::deleteBookmark(const std::string& songId,
                                outError);
     if (body.empty()) return false;
     return !checkResponse(body, outError).empty();
+}
+
+navidrome::ScanStatus navidrome::SubsonicClientWin::startScan(std::string& outError) {
+    std::string body = httpGet(buildURL("startScan.view"), outError);
+    if (body.empty()) return {};
+    auto root = checkResponse(body, outError);
+    if (root.empty()) return {};
+    return parseScanStatus(root);
+}
+
+navidrome::ScanStatus navidrome::SubsonicClientWin::getScanStatus(std::string& outError) {
+    std::string body = httpGet(buildURL("getScanStatus.view"), outError);
+    if (body.empty()) return {};
+    auto root = checkResponse(body, outError);
+    if (root.empty()) return {};
+    return parseScanStatus(root);
 }
 
 bool navidrome::SubsonicClientWin::scrobble(const std::string& songId, bool submission,

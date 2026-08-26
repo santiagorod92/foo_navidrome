@@ -79,6 +79,15 @@ struct Bookmark {
     std::string comment;
 };
 
+// Library scan progress (startScan.view / getScanStatus.view). count is the
+// number of items processed so far; only meaningful while scanning is true —
+// Subsonic doesn't report a total, so this can only show "N processed", not
+// a percentage.
+struct ScanStatus {
+    bool scanning = false;
+    long long count = 0;
+};
+
 struct SearchResults {
     std::vector<Artist> artists;
     std::vector<Album>  albums;

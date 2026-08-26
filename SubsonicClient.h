@@ -184,6 +184,14 @@ typedef NS_ENUM(NSInteger, SubsonicStarKind) {
                            error:(NSError **)error;
 - (BOOL)deleteBookmarkForSongId:(NSString *)songId error:(NSError **)error;
 
+// Kicks off (or reports progress of) a server-side library scan. Both
+// endpoints return the same shape. count is the number of items processed
+// so far; only meaningful while scanning is YES — Subsonic doesn't report a
+// total, so this can only show "N processed", not a percentage. A failed
+// request leaves scanning/count at NO/0 and sets error.
+- (BOOL)startScanWithScanning:(BOOL *)scanning count:(NSInteger *)count error:(NSError **)error;
+- (BOOL)getScanStatusWithScanning:(BOOL *)scanning count:(NSInteger *)count error:(NSError **)error;
+
 // Scrobble a play to the server: submission=NO marks "now playing",
 // submission=YES registers the play (play count, Last.fm / ListenBrainz).
 - (BOOL)scrobbleSongId:(NSString *)songId

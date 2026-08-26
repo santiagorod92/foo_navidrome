@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <string>
 #include <cctype>
+#include <chrono>
 #include <mutex>
 #include <set>
 #include <thread>
@@ -251,6 +252,7 @@ public:
     BEGIN_MSG_MAP(NavidromePrefsInstance)
         MSG_WM_CREATE(OnCreate)
         MESSAGE_HANDLER_EX(WM_TEST_RESULT, OnTestResult)
+        MESSAGE_HANDLER_EX(WM_SCAN_STATUS, OnScanStatus)
         COMMAND_HANDLER_EX(IDC_URL,  EN_CHANGE, OnChanged)
         COMMAND_HANDLER_EX(IDC_USER, EN_CHANGE, OnChanged)
         COMMAND_HANDLER_EX(IDC_PASS, EN_CHANGE, OnChanged)
@@ -259,11 +261,13 @@ public:
         COMMAND_HANDLER_EX(IDC_SCROBBLE, BN_CLICKED, OnChanged)
         COMMAND_HANDLER_EX(IDC_FORMAT,  CBN_SELCHANGE, OnChanged)
         COMMAND_HANDLER_EX(IDC_BITRATE, CBN_SELCHANGE, OnChanged)
+        COMMAND_HANDLER_EX(IDC_RESCAN, BN_CLICKED, OnRescan)
     END_MSG_MAP()
 
 private:
     enum { IDC_URL=1001, IDC_USER=1002, IDC_PASS=1003, IDC_TEST=1004, IDC_STATUS=1005,
-           IDC_HEADERS=1006, IDC_SCROBBLE=1007, IDC_FORMAT=1008, IDC_BITRATE=1009 };
+           IDC_HEADERS=1006, IDC_SCROBBLE=1007, IDC_FORMAT=1008, IDC_BITRATE=1009,
+           IDC_RESCAN=1010, IDC_SCAN_STATUS=1011 };
 
     // Streaming transcode options. The stored value is what goes on the wire as
     // stream.view's `format` — "" leaves the decision to the server's own
@@ -296,6 +300,17 @@ private:
     }
     // Posted from the background ping thread back to the UI thread (see OnTest).
     static constexpr UINT WM_TEST_RESULT = WM_USER + 200;
+    // Posted from the background scan thread back to the UI thread (see OnRescan).
+    static constexpr UINT WM_SCAN_STATUS = WM_USER + 201;
+
+    // wParam of WM_SCAN_STATUS. `done` marks the final message for a scan (re-enables
+    // the button); intermediate messages while polling just update the count shown.
+    struct ScanProgress {
+        bool        ok       = false;
+        bool        done     = false;
+        long long   count    = 0;
+        std::string error;
+    };
 
     LRESULT OnCreate(LPCREATESTRUCT) {
         HFONT f = reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
@@ -356,6 +371,17 @@ private:
                 ? L"Unlimited"
                 : (std::to_wstring(bitrates[i]) + L" kbps").c_str());
         }
+
+        // Rescan button — useful if files were added/removed server-side and
+        // the user doesn't want to wait for Navidrome's own scan schedule.
+        HWND rescan = CreateWindowW(L"BUTTON", L"Rescan Library Now",
+            WS_CHILD|WS_VISIBLE|BS_PUSHBUTTON, 92,260, 130,24, *this,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_RESCAN)), nullptr, nullptr);
+        SendMessageW(rescan, WM_SETFONT, reinterpret_cast<WPARAM>(f), 0);
+
+        HWND scanSt = CreateWindowW(L"STATIC", L"", WS_CHILD|WS_VISIBLE|SS_LEFT, 230,265, 200,18, *this,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_SCAN_STATUS)), nullptr, nullptr);
+        SendMessageW(scanSt, WM_SETFONT, reinterpret_cast<WPARAM>(f), 0);
 
         loadSettings();
         return 0;
@@ -432,6 +458,54 @@ private:
         SetDlgItemText(IDC_STATUS, ok ? L"Connected!" :
             pfc::stringcvt::string_wide_from_utf8(errStr ? errStr->c_str() : "Failed"));
         delete errStr;
+        return 0;
+    }
+
+    // Kicks off a server-side rescan and polls getScanStatus.view until it
+    // finishes. Subsonic doesn't report a total item count up front, so the
+    // status text can only show "N processed", not a percentage.
+    void OnRescan(UINT, int, HWND) {
+        ::EnableWindow(GetDlgItem(IDC_RESCAN), FALSE);
+        SetDlgItemText(IDC_SCAN_STATUS, L"Starting scan…");
+
+        std::thread([this]() {
+            std::string err;
+            auto status = navidrome::SubsonicClientWin::get().startScan(err);
+            if (!err.empty()) {
+                PostMessage(WM_SCAN_STATUS,
+                    reinterpret_cast<WPARAM>(new ScanProgress{false, true, 0, err}), 0);
+                return;
+            }
+
+            while (status.scanning) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+                std::string pollErr;
+                auto polled = navidrome::SubsonicClientWin::get().getScanStatus(pollErr);
+                if (!pollErr.empty()) break;   // transient error — stop polling, last known count stands
+                status = polled;
+                PostMessage(WM_SCAN_STATUS,
+                    reinterpret_cast<WPARAM>(new ScanProgress{true, false, status.count, ""}), 0);
+            }
+            PostMessage(WM_SCAN_STATUS,
+                reinterpret_cast<WPARAM>(new ScanProgress{true, true, status.count, ""}), 0);
+        }).detach();
+    }
+
+    // Runs on the UI thread; wParam owns a heap ScanProgress.
+    LRESULT OnScanStatus(UINT, WPARAM wParam, LPARAM) {
+        auto* p = reinterpret_cast<ScanProgress*>(wParam);
+        if (!p->ok) {
+            SetDlgItemText(IDC_SCAN_STATUS,
+                pfc::stringcvt::string_wide_from_utf8(("Scan failed: " + p->error).c_str()));
+        } else if (p->done) {
+            SetDlgItemText(IDC_SCAN_STATUS,
+                (L"Scan complete — " + std::to_wstring(p->count) + L" items").c_str());
+        } else {
+            SetDlgItemText(IDC_SCAN_STATUS,
+                (L"Scanning… " + std::to_wstring(p->count) + L" processed").c_str());
+        }
+        if (p->done) ::EnableWindow(GetDlgItem(IDC_RESCAN), TRUE);
+        delete p;
         return 0;
     }
 

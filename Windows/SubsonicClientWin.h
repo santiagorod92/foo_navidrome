@@ -100,6 +100,12 @@ public:
                         const std::string& comment, std::string& outError);
     bool deleteBookmark(const std::string& songId, std::string& outError);
 
+    // Kicks off (or reports progress of) a server-side library scan. Both
+    // endpoints return the same shape, so both are parsed the same way; a
+    // failed request leaves ScanStatus at its default (scanning=false).
+    ScanStatus startScan(std::string& outError);
+    ScanStatus getScanStatus(std::string& outError);
+
     // Scrobble a play: submission=false marks "now playing", submission=true
     // registers the play (play count, Last.fm / ListenBrainz relay).
     bool scrobble(const std::string& songId, bool submission, std::string& outError);
