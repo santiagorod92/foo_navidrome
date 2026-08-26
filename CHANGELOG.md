@@ -1,3 +1,15 @@
+## [1.11.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.10.0...v1.11.0) (2026-08-26)
+
+
+### Features
+
+* **scan:** add Rescan Library Now button to preferences ([2a932de](https://github.com/santiagorod92/foo_navidrome/commit/2a932decd3f2dfd1a0877835dd60603d92824134))
+
+
+### Bug Fixes
+
+* **search:** stop live search from piling up stale results ([30c0f16](https://github.com/santiagorod92/foo_navidrome/commit/30c0f16c530f870cea1a97d6dc7e8d9c282b6e55))
+
 ## [1.10.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.9.0...v1.10.0) (2026-08-25)
 
 
