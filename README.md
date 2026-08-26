@@ -24,7 +24,8 @@ A [foobar2000](https://www.foobar2000.org/) component that lets you browse and s
 - Add albums or artists to playlist in one click (loads all songs automatically)
 - Right-click any row for a **Play Now / Add to Playlist** context menu
 - Double-click a song to play immediately
-- Search across artists, albums and songs
+- Live search across artists, albums and songs — results update as you type (debounced, no per-keystroke server hammering)
+- **Rescan Library Now** button in Preferences › Tools › Navidrome — triggers a server-side scan and shows live progress, for when files were added/removed server-side and you don't want to wait for Navidrome's own scan schedule
 - Album artwork displayed in Now Playing and playlists (fetched from Navidrome)
 - Credentials saved in foobar2000's config (persistent across restarts)
 - Test Connection button to verify server connectivity
