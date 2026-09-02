@@ -12,7 +12,7 @@ A [foobar2000](https://www.foobar2000.org/) component that lets you browse and s
 ## Features
 
 - Browse your entire music library: Artists → Albums → Songs
-- **Smart lists** at the top of the tree: ★ Starred, Recently Added, Most Played, Recently Played, Random Albums, **Genres**, and your **server-side playlists**
+- **Smart lists** at the top of the tree: ★ Starred, Recently Added, Most Played, Recently Played, Random Albums, 🔀 **Random Mix** (a fresh batch of random tracks), **Genres**, and your **server-side playlists**
 - **Scrobbling**: plays are reported back to Navidrome, so play counts, "Recently Played" and any Last.fm / ListenBrainz relay the server has configured stay in sync (toggle in Preferences)
 - **Favorites and ratings** from the right-click menu — Star / Unstar and a 0-5 star rating, stored per-user on the server so they show up in the web UI and on your phone, and available in the playlist as `%navidrome_rating%` / `%navidrome_starred%` for a custom column. Also available straight from **the playlist's own right-click menu** (rate/star a track without going back to the browser), and kept in sync in already-added playlist entries — see [Showing ratings in the playlist](#showing-ratings-in-the-playlist)
 - **Manage server playlists** from the right-click menu — add the selection to any existing playlist or a **New Playlist…**, remove tracks, rename, delete. Changes land on the server, so they show up everywhere
@@ -23,6 +23,7 @@ A [foobar2000](https://www.foobar2000.org/) component that lets you browse and s
 - **Download Original Files…** from the right-click menu — saves the selected tracks to a folder, always in their stored format regardless of the streaming setting
 - Add albums or artists to playlist in one click (loads all songs automatically)
 - Right-click any row for a **Play Now / Add to Playlist** context menu
+- **Play Similar** from the right-click menu — queues and plays last.fm-derived recommendations for the selected artist, album, or song (`getSimilarSongs2.view`)
 - Double-click a song to play immediately
 - Live search across artists, albums and songs — results update as you type (debounced, no per-keystroke server hammering)
 - **Rescan Library Now** button in Preferences › Tools › Navidrome — triggers a server-side scan and shows live progress, for when files were added/removed server-side and you don't want to wait for Navidrome's own scan schedule
@@ -104,11 +105,11 @@ The expected layout relative to `foo_navidrome/`:
 
 ### Build steps
 
-The fastest dev loop is `./scripts/dev-build.sh` — bumps the patch version in
+The fastest dev loop is `./scripts/mac-dev-build.sh` — bumps the patch version in
 `version.txt`, runs `xcodebuild`, and installs to your local foobar2000:
 
 ```bash
-./scripts/dev-build.sh   # bump patch + build + install (see Scripts for --minor/--no-bump/… flags)
+./scripts/mac-dev-build.sh   # bump patch + build + install (see Scripts for --minor/--no-bump/… flags)
 ```
 
 Restart foobar2000 after the script finishes to pick up the new version.
@@ -313,14 +314,21 @@ A root [`Makefile`](Makefile) wraps the most common ones as `make` targets — r
 `make help` for the full list. It's a thin convenience wrapper; the scripts below
 remain the source of truth. Highlights:
 
+Targets follow an `<os>-<action>` naming scheme — `win-*` for the Linux
+cross-compile, `mac-*` for the native macOS build, `win-vm-*` for the
+Windows-on-macOS VM flow.
+
 ```bash
 make test          # Linux: fast clang-cl+wine build/run of MediaEnrichmentLogicTests
-make build-win      # Linux: cross-compile the Windows x64 component
-make install-win     # Linux: install the built DLL + package the .fb2k-component
+make win-build      # Linux: cross-compile the Windows x64 component
+make win-build-launch  # …same, then relaunch Wine foobar2000
+make win-logs       # follow the colourised component debug log (Wine)
+make win-install     # Linux: install the built DLL + package the .fb2k-component
 make win-test ARGS="--launch"   # dispatch a build-windows.yml run on GH, install, relaunch
-make dev-build      # macOS: bump patch, xcodebuild Release, install
-make release        # macOS: bump, build, install, package, gh release create
-make ci-build VERSION=1.11.0     # hermetic macOS CI build
+make mac-build      # macOS: bump patch, xcodebuild Release, install
+make mac-logs       # follow the colourised component debug log (macOS)
+make mac-release    # macOS: bump, build, install, package, gh release create
+make mac-ci-build VERSION=1.11.0     # hermetic macOS CI build
 make win-vm-test ARGS="--launch" # Windows-on-macOS VM: cross-build, deploy, relaunch
 ```
 
@@ -332,19 +340,29 @@ make win-vm-test ARGS="--launch" # Windows-on-macOS VM: cross-build, deploy, rel
 | `./scripts/win-build-local.sh` | Cross-compile the x64 DLL and install it into the Wine foobar2000 |
 | `./scripts/win-build-local.sh --launch` | …same, then relaunch foobar2000 |
 | `./scripts/win-build-local.sh --clean` | Wipe the object cache and rebuild from scratch |
+| `./scripts/navidrome-logs.sh` | Follow the local debug log, colourised by level/tag (run in a second pane; also `make win-logs` / `make mac-logs`) |
 | `./scripts/install-windows.sh` | Install an already-built DLL + package the `.fb2k-component` (called by `win-build-local.sh`; `--new-release` to publish) |
 | `./scripts/win-test.sh` | Build the DLL on a GitHub Actions Windows runner (real MSVC/MSBuild), download the artifact, install it locally |
+
+Both local dev builds (`win-build-local.sh`, `mac-dev-build.sh` — but **not**
+`--new-release` or CI) define `NAVIDROME_DEBUG_LOG`, so the component writes structured
+traces (HTTP requests with auth values redacted, Subsonic status errors, input
+decode steps, UI actions) to `/tmp/foo_navidrome_debug.log` (Wine writes it via
+`Z:\tmp`). The build clears that file and marks it with the version; `make
+win-logs` / `make mac-logs` (`scripts/navidrome-logs.sh`) tail it live. Release / CI
+builds never define the flag — the tracing compiles to nothing.
 
 ### macOS — build & install the native Mac component
 
 | Command | What it does |
 |---------|--------------|
-| `./scripts/dev-build.sh` | Bump patch version, `xcodebuild` Release, install locally |
-| `./scripts/dev-build.sh --minor` · `--major` | Bump minor / major instead of patch |
-| `./scripts/dev-build.sh --no-bump` | Rebuild + install at the current version |
-| `./scripts/dev-build.sh --no-install` | Build only (skip install) |
-| `./scripts/dev-build.sh --new-release` | Build, install, package, then create a GitHub release |
-| `./scripts/install-macos.sh` | Install an already-built component + package the `.fb2k-component` (called by `dev-build.sh`) |
+| `./scripts/mac-dev-build.sh` | Bump patch version, `xcodebuild` Release, install locally |
+| `./scripts/mac-dev-build.sh --minor` · `--major` | Bump minor / major instead of patch |
+| `./scripts/mac-dev-build.sh --no-bump` | Rebuild + install at the current version |
+| `./scripts/mac-dev-build.sh --no-install` | Build only (skip install) |
+| `./scripts/mac-dev-build.sh --new-release` | Build, install, package, then create a GitHub release (no debug tracing — matches CI) |
+| `./scripts/install-macos.sh` | Install an already-built component + package the `.fb2k-component` (called by `mac-dev-build.sh`) |
+| `./scripts/navidrome-logs.sh` | Follow `/tmp/foo_navidrome_debug.log`, colourised (also `make mac-logs`; needs a build from `mac-dev-build.sh` without `--new-release`) |
 
 ### macOS — build & test the *Windows* component in a Win11 ARM VM
 
@@ -364,7 +382,7 @@ for the full walkthrough.
 
 | Script | What it does |
 |--------|--------------|
-| `scripts/ci-build.sh <version>` | macOS Release build + packaging, invoked by semantic-release during a release |
+| `scripts/mac-ci-build.sh <version>` | macOS Release build + packaging, invoked by semantic-release during a release |
 
 The Windows CI build is driven by `.github/workflows/build-windows.yml` (MSBuild on a
 `windows-latest` runner) — no shell script involved.
@@ -397,11 +415,12 @@ foo_navidrome/
 │   ├── tests/                      # Windows: standalone unit tests for MediaEnrichmentLogic
 │   └── foo_navidrome.vcxproj       # Visual Studio project
 ├── scripts/                        # build / install / toolchain helpers
-│   ├── dev-build.sh                #   macOS dev loop (bump + xcodebuild + install)
+│   ├── mac-dev-build.sh            #   macOS dev loop (bump + xcodebuild + install)
+│   ├── mac-ci-build.sh             #   macOS CI build (called by semantic-release)
 │   ├── install-macos.sh            #   macOS install + package helper
-│   ├── ci-build.sh                 #   CI build (called by semantic-release)
 │   ├── win-setup-toolchain.sh      #   Linux: provision clang-cl + xwin SDK/ATL + WTL
 │   ├── win-build-local.sh          #   Linux: cross-compile the Windows DLL + install
+│   ├── navidrome-logs.sh           #   follow the colourised component debug log (win + mac)
 │   ├── install-windows.sh          #   Windows install + package helper
 │   └── win-test.sh                 #   build the Windows DLL on CI + install locally
 ├── foo_navidrome.xcodeproj/        # Xcode project
@@ -459,7 +478,7 @@ Releases are automated. Every push to `main` triggers `.github/workflows/release
 1. Lays out the sibling-directory tree the project expects (`pfc/`, `foobar2000/{SDK,helpers,helpers-mac,shared,foobar2000_component_client}`) by cloning [reupen/foobar2000-sdk-unmodified](https://github.com/reupen/foobar2000-sdk-unmodified) — an unmodified mirror of the official SDK that includes `helpers-mac/`.
 2. Runs [`semantic-release`](https://semantic-release.gitbook.io/) per `.releaserc.json`. semantic-release inspects commits since the last tag and decides whether a release is needed.
 3. If a release is needed:
-   - `scripts/ci-build.sh <next-version>` pins `version.txt`, runs `xcodebuild -configuration Release`, ad-hoc signs, and packages the macOS `foo_navidrome_<version>.fb2k-component`.
+   - `scripts/mac-ci-build.sh <next-version>` pins `version.txt`, runs `xcodebuild -configuration Release`, ad-hoc signs, and packages the macOS `foo_navidrome_<version>.fb2k-component`.
    - `CHANGELOG.md` is updated.
    - A `chore(release): <version> [skip ci]` commit lands on `main` with `version.txt` + `CHANGELOG.md`.
    - A GitHub release is created with the macOS `.fb2k-component` attached.
@@ -483,7 +502,7 @@ Versions are tracked in `version.txt` (consumed by the Xcode "Generate Version H
 
 ```bash
 # Build, install locally, package, and create a GitHub release in one shot
-./scripts/dev-build.sh --new-release
+./scripts/mac-dev-build.sh --new-release
 ```
 
 This bypasses the workflow and uses the `--new-release` path of `scripts/install-macos.sh`.
