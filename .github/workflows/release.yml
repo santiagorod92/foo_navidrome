@@ -111,6 +111,14 @@ jobs:
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode.app
 
+      # Native-clang build+run of the shared logic unit tests (SubsonicTypes.h +
+      # MediaEnrichmentLogic.cpp), the macOS half of the same suite CI already
+      # runs on the Windows runner (build-windows.yml). Gates the release: a
+      # regression in the shared helpers fails here before xcodebuild.
+      - name: Build and run logic unit tests (native macOS)
+        working-directory: foobar2000/foo_navidrome
+        run: make mac-test
+
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:

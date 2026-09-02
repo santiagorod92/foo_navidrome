@@ -1,7 +1,11 @@
-#include "../MediaEnrichmentLogic.h"
+// MediaEnrichmentLogic.{h,cpp} still live under Windows/ (only the Windows
+// component links them), but the module is SDK-free and its one platform-
+// specific line is MD5 (#if defined(_WIN32) WinCrypt / #else CommonCrypto), so
+// this host builds on Windows, Linux (make test) and macOS (make mac-test).
+#include "../Windows/MediaEnrichmentLogic.h"
 // SubsonicTypes.h is pure C++ (no SDK, no Windows headers), so its helpers can
 // be exercised from this standalone host executable too.
-#include "../../SubsonicTypes.h"
+#include "../SubsonicTypes.h"
 
 #include <cstdint>
 #include <iostream>

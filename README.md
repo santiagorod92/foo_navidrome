@@ -125,6 +125,19 @@ If you prefer Xcode directly:
    ```
 5. Restart foobar2000
 
+### Unit tests
+
+`make mac-test` builds and runs the shared logic test suite
+(`tests/MediaEnrichmentLogicTests.cpp` — covers `SubsonicTypes.h` and
+`Windows/MediaEnrichmentLogic.cpp`) with a plain `clang++`, no Xcode or SDK
+needed. It is the same source file the Windows CI runs; `release.yml` runs it on
+the macOS runner before every `xcodebuild`. On Linux the equivalent is
+`make test` (clang-cl + Wine).
+
+`mac-dev-build.sh` and `win-build-local.sh` **run this suite before building the
+component** and abort on failure — pass `--no-test` to skip. All paths call
+`scripts/run-unit-tests.sh`, the one place the compile command lives.
+
 ### Configuration
 
 1. Open **Preferences › Tools › Navidrome**
@@ -320,6 +333,7 @@ Windows-on-macOS VM flow.
 
 ```bash
 make test          # Linux: fast clang-cl+wine build/run of MediaEnrichmentLogicTests
+make mac-test       # macOS: native clang++ build/run of the SAME test suite
 make win-build      # Linux: cross-compile the Windows x64 component
 make win-build-launch  # …same, then relaunch Wine foobar2000
 make win-logs       # follow the colourised component debug log (Wine)
@@ -409,17 +423,18 @@ foo_navidrome/
 │   ├── NavidromePluginWin.cpp      # Windows: plugin registration, cfg vars, prefs, menu, art
 │   ├── NavidromeInputWin.h/.cpp    # Windows: navidrome:// input_singletrack handler
 │   ├── BrowserWindow.h/.cpp        # Windows: ATL browser window
-│   ├── MediaEnrichmentLogic.h/.cpp # Windows: URI/cover-art/ESLyric-config logic (SDK-free, unit-tested)
+│   ├── MediaEnrichmentLogic.h/.cpp # URI/cover-art/ESLyric-config logic (SDK-free; MD5 is the only #ifdef)
 │   ├── EsLyricBridge.h/.cpp        # Windows: writes the ESLyric config + searcher script
 │   ├── EsLyricScript.h             # Windows: embedded ESLyric searcher script source
-│   ├── tests/                      # Windows: standalone unit tests for MediaEnrichmentLogic
 │   └── foo_navidrome.vcxproj       # Visual Studio project
+├── tests/                          # cross-platform unit tests — Windows (vcxproj), Linux (make test), macOS (make mac-test)
 ├── scripts/                        # build / install / toolchain helpers
 │   ├── mac-dev-build.sh            #   macOS dev loop (bump + xcodebuild + install)
 │   ├── mac-ci-build.sh             #   macOS CI build (called by semantic-release)
 │   ├── install-macos.sh            #   macOS install + package helper
 │   ├── win-setup-toolchain.sh      #   Linux: provision clang-cl + xwin SDK/ATL + WTL
 │   ├── win-build-local.sh          #   Linux: cross-compile the Windows DLL + install
+│   ├── run-unit-tests.sh           #   build + run the unit tests (per-host toolchain; called by the build scripts)
 │   ├── navidrome-logs.sh           #   follow the colourised component debug log (win + mac)
 │   ├── install-windows.sh          #   Windows install + package helper
 │   └── win-test.sh                 #   build the Windows DLL on CI + install locally

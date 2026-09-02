@@ -202,7 +202,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $testOut = "$PWD\out\tests\"
-          msbuild Windows\tests\MediaEnrichmentTests.vcxproj `
+          msbuild tests\MediaEnrichmentTests.vcxproj `
             /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 `
             /p:OutDir=$testOut `
             /m /nologo /v:minimal "/clp:ErrorsOnly;Summary"

@@ -14,9 +14,10 @@
 #   - foobar2000 SDK as a sibling       (../foobar2000, ../pfc)
 #
 # Usage:
-#   ./win-build-local.sh [--launch] [--clean] [-j N]
+#   ./win-build-local.sh [--launch] [--clean] [--no-test] [-j N]
 #     --launch   relaunch foobar2000 after installing
 #     --clean    wipe the object cache and rebuild everything
+#     --no-test  skip the unit tests that otherwise gate the build
 #     -j N       parallel compile jobs (default: nproc)
 
 set -euo pipefail
@@ -35,11 +36,12 @@ FOOBAR_LAUNCHER="foobar2000"
 TARGET="x86_64-pc-windows-msvc"
 ARCH_DIR="x86_64"
 
-LAUNCH=0; CLEAN=0; JOBS="$(nproc 2>/dev/null || echo 4)"
+LAUNCH=0; CLEAN=0; RUN_TESTS=1; JOBS="$(nproc 2>/dev/null || echo 4)"
 while [ $# -gt 0 ]; do
   case "$1" in
     --launch) LAUNCH=1; shift ;;
     --clean)  CLEAN=1; shift ;;
+    --no-test) RUN_TESTS=0; shift ;;
     -j)       JOBS="${2:?}"; shift 2 ;;
     -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
@@ -60,6 +62,15 @@ for t in clang-cl lld-link; do command -v "$t" >/dev/null || fail "$t not found 
 
 [ "$CLEAN" = "1" ] && rm -rf "$BUILD"
 mkdir -p "$OBJ_DIR"
+
+# ---------------------------------------------------------------------------
+# Unit tests (gate the build — fail fast before the ~minute-long component
+# compile). Same suite CI runs on the Windows runner; --no-test to skip.
+# ---------------------------------------------------------------------------
+if [ "$RUN_TESTS" = "1" ]; then
+  echo "==> unit tests ..."
+  XWIN_SDK="$XWIN_SDK" "$REPO/scripts/run-unit-tests.sh" win
+fi
 
 # main.cpp reads COMPONENT_VERSION from version_generated.h (else falls back to
 # "1.0.0"). The macOS Xcode build phase writes this; mirror it here so the local

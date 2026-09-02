@@ -1,10 +1,11 @@
-.PHONY: help test test-clean \
+.PHONY: help test test-clean mac-test mac-test-clean \
 	win-build win-build-launch win-install win-test win-logs \
 	mac-build mac-build-minor mac-build-major mac-build-no-install mac-install mac-release mac-ci-build mac-logs \
 	win-vm-setup win-vm-fetch win-vm-install win-vm-test clean
 
 XWIN_SDK ?= $(HOME)/.local/share/xwin/sdk
 BUILD_WIN := build-win
+BUILD_MAC := build-mac
 
 # Target naming: <os>-<action>. The OS prefix (win- / mac-) is the only thing
 # that varies; the action after it means the same on both platforms, wired to
@@ -18,6 +19,8 @@ help:
 	@echo ""
 	@echo "  test                  fast clang-cl+wine build/run of MediaEnrichmentLogicTests (Linux)"
 	@echo "  test-clean            same, forcing a clean recompile"
+	@echo "  mac-test              native clang++ build/run of the SAME test suite (macOS)"
+	@echo "  mac-test-clean        same, forcing a clean recompile"
 	@echo ""
 	@echo "  win-build             cross-compile Windows x64 component locally (win-build-local.sh)"
 	@echo "  win-build-launch      same, then relaunch local Wine foobar2000 to load it"
@@ -42,21 +45,24 @@ help:
 	@echo ""
 	@echo "  clean                 remove local build-win/ artifacts"
 
-# --- Linux fast-path unit tests (see CLAUDE.md > Windows > tests) ---
+# --- Unit tests (tests/MediaEnrichmentLogicTests.cpp + Windows/MediaEnrichmentLogic.cpp) ---
+# One source file, per-host toolchain. scripts/run-unit-tests.sh is the single
+# source of truth for the compile command; the local build scripts
+# (win-build-local.sh / mac-dev-build.sh) call it too, before building the
+# component. See CLAUDE.md > Development > Unit tests.
 test:
-	mkdir -p $(BUILD_WIN)/tests
-	clang-cl --target=x86_64-pc-windows-msvc -fuse-ld=lld-link /std:c++17 /EHsc /MD /GR /W4 /WX /utf-8 \
-		-imsvc "$(XWIN_SDK)/crt/include" -imsvc "$(XWIN_SDK)/sdk/include/um" \
-		-imsvc "$(XWIN_SDK)/sdk/include/shared" -imsvc "$(XWIN_SDK)/sdk/include/ucrt" \
-		Windows/tests/MediaEnrichmentLogicTests.cpp Windows/MediaEnrichmentLogic.cpp \
-		/Fe:$(BUILD_WIN)/tests/MediaEnrichmentLogicTests.exe /Fo:$(BUILD_WIN)/tests/ /link \
-		"/libpath:$(XWIN_SDK)/crt/lib/x86_64" "/libpath:$(XWIN_SDK)/sdk/lib/um/x86_64" \
-		"/libpath:$(XWIN_SDK)/sdk/lib/ucrt/x86_64" advapi32.lib
-	wine $(BUILD_WIN)/tests/MediaEnrichmentLogicTests.exe
+	XWIN_SDK="$(XWIN_SDK)" ./scripts/run-unit-tests.sh win
 
 test-clean:
 	rm -rf $(BUILD_WIN)/tests
 	$(MAKE) test
+
+mac-test:
+	./scripts/run-unit-tests.sh mac
+
+mac-test-clean:
+	rm -rf $(BUILD_MAC)/tests
+	$(MAKE) mac-test
 
 # --- Windows component, local cross-compile (Linux host) ---
 win-build:
@@ -114,4 +120,4 @@ win-vm-test:
 	./scripts/win-vm/win-vm-test.sh $(ARGS)
 
 clean:
-	rm -rf $(BUILD_WIN)
+	rm -rf $(BUILD_WIN) $(BUILD_MAC)

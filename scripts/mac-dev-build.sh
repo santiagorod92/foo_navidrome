@@ -7,6 +7,7 @@
 #   ./mac-dev-build.sh --major          — bump major (resets minor + patch to 0)
 #   ./mac-dev-build.sh --no-bump        — skip the version bump (just build + install)
 #   ./mac-dev-build.sh --no-install     — build only (skip install-macos.sh)
+#   ./mac-dev-build.sh --no-test        — skip the unit tests that otherwise gate the build
 #   ./mac-dev-build.sh --new-release    — bump, build, install, then create a GitHub release
 
 set -euo pipefail
@@ -18,6 +19,7 @@ VERSION_FILE="${ROOT}/version.txt"
 BUMP="patch"
 DO_INSTALL=true
 DO_RELEASE=false
+RUN_TESTS=true
 
 for arg in "$@"; do
     case "$arg" in
@@ -26,10 +28,20 @@ for arg in "$@"; do
         --patch)        BUMP="patch"      ;;
         --no-bump)      BUMP="none"       ;;
         --no-install)   DO_INSTALL=false  ;;
+        --no-test)      RUN_TESTS=false   ;;
         --new-release)  DO_RELEASE=true   ;;
         *) echo "Unknown argument: $arg"; exit 1 ;;
     esac
 done
+
+# ---------------------------------------------------------------------------
+# 0. Unit tests (gate the build — fail fast before the long xcodebuild).
+#    Same suite CI runs on the macOS runner; --no-test to skip.
+# ---------------------------------------------------------------------------
+if [ "$RUN_TESTS" = true ]; then
+    echo "==> unit tests ..."
+    "$SCRIPT_DIR/run-unit-tests.sh" mac
+fi
 
 # ---------------------------------------------------------------------------
 # 1. Bump version.txt

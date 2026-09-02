@@ -1,8 +1,18 @@
+// This module is deliberately SDK-free (see CLAUDE.md) so the unit-test host in
+// Windows/tests/ can build it standalone. The only platform-specific piece is
+// the MD5 primitive: WinCrypt on Windows, CommonCrypto on macOS (the same one
+// SubsonicClient.mm already uses). That keeps the whole test suite building and
+// running natively on both platforms — `make test` (clang-cl + wine) and
+// `make mac-test` (native clang++) — off the one source file.
+#if defined(_WIN32)
 #if !defined(WIN32_LEAN_AND_MEAN)
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
 #include <wincrypt.h>
+#else
+#include <CommonCrypto/CommonDigest.h>
+#endif
 
 #include "MediaEnrichmentLogic.h"
 
@@ -12,11 +22,14 @@
 #include <iomanip>
 #include <sstream>
 
+#if defined(_WIN32)
 #pragma comment(lib, "advapi32.lib")
+#endif
 
 namespace navidrome {
 namespace {
 
+#if defined(_WIN32)
 std::string md5Hex(const std::string& input) {
     HCRYPTPROV provider = 0;
     HCRYPTHASH hash = 0;
@@ -42,6 +55,23 @@ std::string md5Hex(const std::string& input) {
     for (BYTE byte : digest) output << std::setw(2) << static_cast<unsigned>(byte);
     return output.str();
 }
+#else
+std::string md5Hex(const std::string& input) {
+    unsigned char digest[CC_MD5_DIGEST_LENGTH] = {};
+    // CC_MD5 is deprecated on modern macOS but not removed; it stays the
+    // lowest-dependency MD5 (no framework link) and matches SubsonicClient.mm.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    CC_MD5(input.data(), static_cast<CC_LONG>(input.size()), digest);
+#pragma clang diagnostic pop
+
+    std::ostringstream output;
+    output << std::hex << std::setfill('0');
+    for (unsigned char byte : digest)
+        output << std::setw(2) << static_cast<unsigned>(byte);
+    return output.str();
+}
+#endif
 
 std::string queryParameter(const std::string& query, const std::string& key) {
     std::size_t offset = 0;

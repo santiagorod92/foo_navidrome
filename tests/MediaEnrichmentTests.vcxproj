@@ -31,7 +31,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="MediaEnrichmentLogicTests.cpp" />
-    <ClCompile Include="..\MediaEnrichmentLogic.cpp" />
+    <ClCompile Include="..\Windows\MediaEnrichmentLogic.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

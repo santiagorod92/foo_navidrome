@@ -44,3 +44,6 @@ build/
 build-win/
 
 build-win-mac/
+
+# macOS-native unit tests (make mac-test)
+build-mac/
