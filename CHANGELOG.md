@@ -1,3 +1,10 @@
+## [1.12.1](https://github.com/santiagorod92/foo_navidrome/compare/v1.12.0...v1.12.1) (2026-09-02)
+
+
+### Bug Fixes
+
+* general logging improvements ([1bf7285](https://github.com/santiagorod92/foo_navidrome/commit/1bf72850d1958c0759a39c7046d179d83e0dd62e))
+
 ## [1.12.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.11.0...v1.12.0) (2026-09-02)
 
 
