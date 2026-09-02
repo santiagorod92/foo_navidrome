@@ -1,14 +1,14 @@
 #!/bin/bash
-# CI build orchestrator — called by semantic-release prepareCmd.
+# macOS CI build orchestrator — called by semantic-release prepareCmd.
 #
-# Usage: ./ci-build.sh <new-version>
+# Usage: ./mac-ci-build.sh <new-version>
 #
 # 1. Writes the new version to version.txt (single source of truth read by the
 #    Xcode "Generate Version Header" build phase).
 # 2. Builds the Release configuration with xcodebuild.
 # 3. Packages the built .component into a .fb2k-component zip in the repo root.
 #
-# Does NOT install to ~/Library/foobar2000-v2/ (that's dev-build.sh's job).
+# Does NOT install to ~/Library/foobar2000-v2/ (that's mac-dev-build.sh's job).
 
 set -euo pipefail
 
@@ -28,22 +28,22 @@ cd "$ROOT"
 # 1. Pin version
 # ---------------------------------------------------------------------------
 echo "$VERSION" > version.txt
-echo "ci-build: version = $VERSION"
+echo "mac-ci-build: version = $VERSION"
 
 # Expose the resolved version to the GitHub Actions step that invoked
 # semantic-release. The downstream Windows build job (needs: release) reads
 # this output to gate on "a release happened" and to check out the matching
 # tag. $GITHUB_OUTPUT is inherited from the wrapping step's environment; it's
-# only set under CI, so this is a no-op for local dev-build runs.
+# only set under CI, so this is a no-op for local mac-dev-build runs.
 if [ -n "${GITHUB_OUTPUT:-}" ]; then
     echo "released_version=$VERSION" >> "$GITHUB_OUTPUT"
-    echo "ci-build: exported released_version=$VERSION to GITHUB_OUTPUT"
+    echo "mac-ci-build: exported released_version=$VERSION to GITHUB_OUTPUT"
 fi
 
 # ---------------------------------------------------------------------------
 # 2. Build (Release)
 # ---------------------------------------------------------------------------
-echo "ci-build: xcodebuild Release ..."
+echo "mac-ci-build: xcodebuild Release ..."
 # Print full xcodebuild output to /tmp and stream a filtered summary to stdout.
 # On failure, dump the full log so the actual compile error is visible in the
 # GitHub Actions step output (the noisy compile-command echoes mean the error
@@ -85,7 +85,7 @@ if [ ! -d "$COMPONENT" ]; then
     echo "ERROR: built bundle not found at $COMPONENT" >&2
     exit 1
 fi
-echo "ci-build: built $COMPONENT"
+echo "mac-ci-build: built $COMPONENT"
 
 # ---------------------------------------------------------------------------
 # 4. Ad-hoc sign (foobar2000 rejects unsigned bundles on load)
@@ -105,4 +105,4 @@ cp -Rf "$COMPONENT" "$TMPDIR_PKG/mac/"
 
 ditto --noqtn -ck --norsrc "$TMPDIR_PKG" "$OUTPUT"
 
-echo "ci-build: packaged $OUTPUT"
+echo "mac-ci-build: packaged $OUTPUT"

@@ -109,7 +109,7 @@ PROJ_INC=(
   -I "$SDK_ROOT" -I "$SDK_ROOT/.." -I "$PFC_ROOT"
 )
 DEFS=( /DWIN32 /D_WINDOWS /D_USRDLL /DUNICODE /D_UNICODE /DNDEBUG
-       /D_CRT_SECURE_NO_WARNINGS /D_SECURE_ATL=1 )
+       /D_CRT_SECURE_NO_WARNINGS /D_SECURE_ATL=1 /DNAVIDROME_DEBUG_LOG=1 )
 FORCE=( /FI"$PREFIX_H" )
 CL_COMMON=( --target="$TARGET" /c /std:c++17 /EHsc /MD /GR /w
             "${DEFS[@]}" "${FORCE[@]}" "${SYS_INC[@]}" "${PROJ_INC[@]}" )
@@ -244,16 +244,27 @@ echo "==> built $OUT_DLL ($(du -h "$OUT_DLL" | cut -f1))"
 
 # ---------------------------------------------------------------------------
 # Install + package via install-windows.sh (the standalone installer, mirroring
-# how dev-build.sh delegates to install-macos.sh).
+# how mac-dev-build.sh delegates to install-macos.sh).
 # ---------------------------------------------------------------------------
 BUILT_DLL="$OUT_DLL" "$REPO/scripts/install-windows.sh"
 
+# NAVIDROME_DEBUG_LOG traces (BrowserWindow / SubsonicClientWin / NavidromeInput) land
+# here — Wine's Z:\tmp maps to the host /tmp. `make win-logs` tails it colourised.
+DBG_LOG="${NAVIDROME_DEBUG_LOG_FILE:-/tmp/foo_navidrome_debug.log}"
+
 if [ "$LAUNCH" = "1" ]; then
+  # Fresh log per session so what you see is only this run.
+  : > "$DBG_LOG" 2>/dev/null || true
+  printf '==== build %s installed %s — foobar2000 relaunch ====\n' \
+    "$(cat "$REPO/version.txt" 2>/dev/null || echo '?')" \
+    "$(date '+%Y-%m-%d %H:%M:%S')" >> "$DBG_LOG" 2>/dev/null || true
   echo "==> relaunching foobar2000 ..."
   pkill -f 'foobar2000.exe' 2>/dev/null || true
   sleep 1
   nohup "$FOOBAR_LAUNCHER" >/dev/null 2>&1 &
-  echo "==> launched. Check Preferences › Components and View › Console."
+  echo "==> launched. Live debug logs:  make win-logs"
+  echo "    (raw file: $DBG_LOG · Preferences › Components / View › Console for the rest)"
 else
   echo "==> done. Restart foobar2000 to load it:  $FOOBAR_LAUNCHER"
+  echo "    Then watch component traces with:  make win-logs"
 fi

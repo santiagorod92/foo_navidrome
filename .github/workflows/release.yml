@@ -39,7 +39,7 @@ jobs:
       !startsWith(github.event.head_commit.message, 'ci(')
 
     # Expose the version semantic-release resolved (written to $GITHUB_OUTPUT by
-    # ci-build.sh's prepareCmd) so the Windows job can attach its x64 component
+    # mac-ci-build.sh's prepareCmd) so the Windows job can attach its x64 component
     # to the same release. Empty when no release was published this run.
     outputs:
       released_version: ${{ steps.semantic_release.outputs.released_version }}

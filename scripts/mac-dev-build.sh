@@ -1,13 +1,13 @@
 #!/bin/bash
-# Developer build script: bump version, build, install.
+# macOS developer build script: bump version, build, install.
 #
 # Usage:
-#   ./dev-build.sh                  — bump patch, build, install locally
-#   ./dev-build.sh --minor          — bump minor (resets patch to 0)
-#   ./dev-build.sh --major          — bump major (resets minor + patch to 0)
-#   ./dev-build.sh --no-bump        — skip the version bump (just build + install)
-#   ./dev-build.sh --no-install     — build only (skip install-macos.sh)
-#   ./dev-build.sh --new-release    — bump, build, install, then create a GitHub release
+#   ./mac-dev-build.sh                  — bump patch, build, install locally
+#   ./mac-dev-build.sh --minor          — bump minor (resets patch to 0)
+#   ./mac-dev-build.sh --major          — bump major (resets minor + patch to 0)
+#   ./mac-dev-build.sh --no-bump        — skip the version bump (just build + install)
+#   ./mac-dev-build.sh --no-install     — build only (skip install-macos.sh)
+#   ./mac-dev-build.sh --new-release    — bump, build, install, then create a GitHub release
 
 set -euo pipefail
 
@@ -108,10 +108,21 @@ fi
 cd "$BUILD_ROOT"
 LOG=/tmp/xcodebuild-dev.log
 echo "Building (Release)..."
+
+# Local dev build compiles in the NAVIDROME_DEBUG_LOG tracer (NavidromeDebugLog.h) so
+# `make mac-logs` can follow /tmp/foo_navidrome_debug.log live. A --new-release
+# build is excluded — it must match the CI (mac-ci-build.sh) binary exactly.
+# ${ARR[@]+…} guard: macOS bash 3.2 + `set -u` chokes on a bare empty-array expand.
+XCB_EXTRA=()
+if [ "$DO_RELEASE" = false ]; then
+    XCB_EXTRA=(OTHER_CFLAGS='$(inherited) -DNAVIDROME_DEBUG_LOG=1')
+fi
+
 if xcodebuild \
     -workspace foo_navidrome.xcworkspace \
     -scheme foo_navidrome \
     -configuration Release \
+    ${XCB_EXTRA[@]+"${XCB_EXTRA[@]}"} \
     build > "$LOG" 2>&1; then
     grep -E "warning:|\*\* BUILD" "$LOG" | grep -v "iOSSimulator" | tail -n 10 || true
     echo "Build OK. (full log: $LOG)"
@@ -131,8 +142,16 @@ if [ "$DO_INSTALL" = true ]; then
         "$SCRIPT_DIR/install-macos.sh" --new-release
     else
         "$SCRIPT_DIR/install-macos.sh"
+        # Start the debug log clean for this build, marked with the version.
+        DBG_LOG=/tmp/foo_navidrome_debug.log
+        : > "$DBG_LOG" 2>/dev/null || true
+        printf '==== build %s installed %s ====\n' \
+            "$NEW" "$(date '+%Y-%m-%d %H:%M:%S')" >> "$DBG_LOG" 2>/dev/null || true
     fi
 fi
 
 echo ""
 echo "Done. Restart foobar2000 to load v${NEW}."
+if [ "$DO_INSTALL" = true ] && [ "$DO_RELEASE" = false ]; then
+    echo "Then follow component traces with:  make mac-logs"
+fi
