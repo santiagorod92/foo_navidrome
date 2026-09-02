@@ -264,6 +264,11 @@ static NSString *formatDuration(NSTimeInterval secs) {
                                              action:@selector(addToPlaylist:)
                                       keyEquivalent:@""];
     addItem.target = self;
+    // last.fm-derived recommendations for the selected artist/album/song.
+    NSMenuItem *similarItem = [rowMenu addItemWithTitle:@"Play Similar"
+                                                 action:@selector(playSimilarSelection:)
+                                          keyEquivalent:@""];
+    similarItem.target = self;
 
     // Server-side favorites + ratings. Both are per-user state on Navidrome, so
     // they show up in its web UI and in every other Subsonic client.
@@ -336,6 +341,11 @@ static NSString *formatDuration(NSTimeInterval secs) {
                                                 action:@selector(sendActivePlaylist:)
                                          keyEquivalent:@""];
     uploadItem.target = self;
+
+    NSMenuItem *randomMixItem = [rowMenu addItemWithTitle:@"Random Mix"
+                                                    action:@selector(playRandomMix:)
+                                             keyEquivalent:@""];
+    randomMixItem.target = self;
 
     NSMenuItem *downloadItem = [rowMenu addItemWithTitle:@"Download Original Files…"
                                                   action:@selector(downloadSelection:)
@@ -914,6 +924,71 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
 
 - (IBAction)playNow:(id)sender {
     [self addNodesToPlaylist:[self selectedNodes] play:YES];
+}
+
+// Fetches last.fm-derived similar tracks for the first selected artist, album
+// or song and appends + plays them, mirroring "Play Now"'s enqueue semantics.
+- (IBAction)playSimilarSelection:(id)sender {
+    NavidromeNode *node = [self selectedNodes].firstObject;
+    if (node.nodeId.length == 0 ||
+        (node.type != NavidromeNodeTypeArtist &&
+         node.type != NavidromeNodeTypeAlbum &&
+         node.type != NavidromeNodeTypeSong)) {
+        _statusLabel.stringValue = @"Play Similar needs an artist, album, or song";
+        return;
+    }
+
+    [_spinner startAnimation:nil];
+    _statusLabel.stringValue = @"Finding similar tracks…";
+    NSString *itemId = node.nodeId;
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSError *err = nil;
+        NSArray<SubsonicSong *> *similar = [SubsonicClient.sharedClient getSimilarSongsForId:itemId
+                                                                                        count:50
+                                                                                        error:&err];
+        NSMutableArray<NavidromeNode *> *songNodes = [NSMutableArray array];
+        for (SubsonicSong *s in similar) [songNodes addObject:[NavidromeNode songNode:s]];
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [_spinner stopAnimation:nil];
+            if (err) {
+                _statusLabel.stringValue = [NSString stringWithFormat:@"Error: %@", err.localizedDescription];
+                return;
+            }
+            if (songNodes.count == 0) {
+                _statusLabel.stringValue = @"No similar tracks found";
+                return;
+            }
+            [self enqueueNodes:songNodes play:YES clearFirst:NO];
+        });
+    });
+}
+
+// Fetches a fresh batch of random tracks and appends + plays them. No
+// selection needed — always available, like "Send Active Playlist".
+- (IBAction)playRandomMix:(id)sender {
+    [_spinner startAnimation:nil];
+    _statusLabel.stringValue = @"Fetching random mix…";
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSError *err = nil;
+        NSArray<SubsonicSong *> *songs = [SubsonicClient.sharedClient getRandomSongsWithCount:100
+                                                                                          error:&err];
+        NSMutableArray<NavidromeNode *> *songNodes = [NSMutableArray array];
+        for (SubsonicSong *s in songs) [songNodes addObject:[NavidromeNode songNode:s]];
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [_spinner stopAnimation:nil];
+            if (err) {
+                _statusLabel.stringValue = [NSString stringWithFormat:@"Error: %@", err.localizedDescription];
+                return;
+            }
+            if (songNodes.count == 0) {
+                _statusLabel.stringValue = @"No tracks found";
+                return;
+            }
+            [self enqueueNodes:songNodes play:YES clearFirst:NO];
+        });
+    });
 }
 
 - (IBAction)refresh:(id)sender {

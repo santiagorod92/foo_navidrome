@@ -1,5 +1,6 @@
 #import "SubsonicClient.h"
 #import "SubsonicTypes.h"
+#import "NavidromeDebugLog.h"
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 #import <CommonCrypto/CommonDigest.h>
@@ -220,6 +221,7 @@ static SubsonicAlbum *parseAlbum(NSDictionary *a) {
 
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
     NavidromeApplyCustomHeaders(request);
+    NAVIDROME_LOG("HTTP", "GET " + navidrome::dbg::scrubAuth(std::string(url.absoluteString.UTF8String ?: "")));
 
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
     [[_session dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
@@ -231,10 +233,12 @@ static SubsonicAlbum *parseAlbum(NSDictionary *a) {
     dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
 
     if (taskError) {
+        NAVIDROME_ERR("HTTP", std::string("network error: ") + (taskError.localizedDescription.UTF8String ?: "?"));
         if (outError) *outError = taskError;
         return nil;
     }
     if (httpResponse.statusCode != 200) {
+        NAVIDROME_ERR("HTTP", "HTTP " + std::to_string((long)httpResponse.statusCode));
         if (outError) {
             *outError = [NSError errorWithDomain:@"SubsonicClient"
                                            code:httpResponse.statusCode
@@ -244,6 +248,7 @@ static SubsonicAlbum *parseAlbum(NSDictionary *a) {
         return nil;
     }
     if (!responseData) {
+        NAVIDROME_ERR("HTTP", "empty response body");
         if (outError) {
             *outError = [NSError errorWithDomain:@"SubsonicClient" code:-1
                                        userInfo:@{NSLocalizedDescriptionKey: @"Empty response"}];
@@ -254,6 +259,7 @@ static SubsonicAlbum *parseAlbum(NSDictionary *a) {
     NSError *jsonError = nil;
     NSDictionary *json = [NSJSONSerialization JSONObjectWithData:responseData options:0 error:&jsonError];
     if (!json || jsonError) {
+        NAVIDROME_ERR("HTTP", std::string("JSON parse failed: ") + (jsonError.localizedDescription.UTF8String ?: "?"));
         if (outError) *outError = jsonError;
         return nil;
     }
@@ -261,6 +267,7 @@ static SubsonicAlbum *parseAlbum(NSDictionary *a) {
     // Subsonic wraps everything in "subsonic-response"
     NSDictionary *root = json[@"subsonic-response"];
     if (!root) {
+        NAVIDROME_ERR("API", "response missing subsonic-response wrapper");
         if (outError) {
             *outError = [NSError errorWithDomain:@"SubsonicClient" code:-2
                                        userInfo:@{NSLocalizedDescriptionKey: @"Invalid response format"}];
@@ -272,6 +279,7 @@ static SubsonicAlbum *parseAlbum(NSDictionary *a) {
     if (![status isEqualToString:@"ok"]) {
         NSDictionary *err = root[@"error"];
         NSString *msg = err[@"message"] ?: @"Unknown Subsonic error";
+        NAVIDROME_ERR("API", std::string("Subsonic status != ok: ") + (msg.UTF8String ?: "?"));
         if (outError) {
             *outError = [NSError errorWithDomain:@"SubsonicClient"
                                            code:[err[@"code"] integerValue]
@@ -280,6 +288,7 @@ static SubsonicAlbum *parseAlbum(NSDictionary *a) {
         return nil;
     }
 
+    NAVIDROME_LOG("HTTP", "200 OK  " + std::to_string((unsigned long)responseData.length) + " bytes");
     return root;
 }
 
@@ -458,6 +467,35 @@ static SubsonicAlbum *parseAlbum(NSDictionary *a) {
 
     NSMutableArray<SubsonicSong *> *result = [NSMutableArray array];
     for (NSDictionary *s in asArray(root[@"songsByGenre"][@"song"]))
+        [result addObject:parseSong(s)];
+    return result;
+}
+
+- (NSArray<SubsonicSong *> *)getSimilarSongsForId:(NSString *)itemId
+                                             count:(NSInteger)count
+                                             error:(NSError **)error {
+    if (itemId.length == 0) return @[];
+    NSString *params = [NSString stringWithFormat:@"id=%@&count=%ld",
+                        urlEncode(itemId), (long)count];
+    NSURL *url = [self urlForEndpoint:@"getSimilarSongs2.view" params:params];
+    NSDictionary *root = [self fetchJSON:url error:error];
+    if (!root) return nil;
+
+    NSMutableArray<SubsonicSong *> *result = [NSMutableArray array];
+    for (NSDictionary *s in asArray(root[@"similarSongs2"][@"song"]))
+        [result addObject:parseSong(s)];
+    return result;
+}
+
+- (NSArray<SubsonicSong *> *)getRandomSongsWithCount:(NSInteger)count
+                                                error:(NSError **)error {
+    NSString *params = [NSString stringWithFormat:@"size=%ld", (long)count];
+    NSURL *url = [self urlForEndpoint:@"getRandomSongs.view" params:params];
+    NSDictionary *root = [self fetchJSON:url error:error];
+    if (!root) return nil;
+
+    NSMutableArray<SubsonicSong *> *result = [NSMutableArray array];
+    for (NSDictionary *s in asArray(root[@"randomSongs"][@"song"]))
         [result addObject:parseSong(s)];
     return result;
 }

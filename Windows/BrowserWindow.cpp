@@ -15,6 +15,12 @@
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "ole32.lib")
 
+// Debug-only tracing — see Windows/NavidromeDebugLog.h. The shared tracer adds a
+// timestamp + level + tag and is what `make win-logs` pretty-prints live.
+// This shim keeps the existing bare-message call sites; they log under "UI".
+#include "../NavidromeDebugLog.h"
+static inline void dbgLog(const std::string& msg) { NAVIDROME_LOG("UI", msg); }
+
 static std::wstring u8ToWide(const std::string& s) {
     if (s.empty()) return {};
     int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
@@ -793,6 +799,30 @@ static void syncSongNodesToPlaylists(
     navidrome::syncRatingsToPlaylists(std::move(updates));
 }
 
+// Converts a fetched Song into a tree node. Shared by fetchChildren (browse
+// tree) and any one-off song list (e.g. "Play Similar") that doesn't go
+// through the node-type switch below.
+static std::shared_ptr<NavidromeNode> makeSongNode(const navidrome::Song& s,
+                                                    double bookmarkPositionMs = 0.0) {
+    auto n = std::make_shared<NavidromeNode>();
+    n->type           = NavidromeNode::Song;
+    n->id             = s.id;
+    n->displayName    = s.title;
+    n->subtitle       = s.artist;
+    n->album          = s.album;
+    n->albumId        = s.albumId;
+    n->coverArtId     = s.coverArtId;
+    n->suffix         = s.suffix;
+    n->track          = s.track;
+    n->year           = s.year;
+    n->duration       = s.duration;
+    n->starred        = s.starred;
+    n->rating         = s.rating;
+    n->bookmarkPositionMs = bookmarkPositionMs;
+    n->childrenLoaded = true;
+    return n;
+}
+
 // ---------------------------------------------------------------------------
 // Child fetch (synchronous \u2014 background thread only)
 // ---------------------------------------------------------------------------
@@ -803,23 +833,7 @@ BrowserWindow::fetchChildren(const std::shared_ptr<NavidromeNode>& node,
     std::vector<std::shared_ptr<NavidromeNode>> out;
 
     auto addSong = [&out](const navidrome::Song& s, double bookmarkPositionMs = 0.0) {
-        auto n = std::make_shared<NavidromeNode>();
-        n->type           = NavidromeNode::Song;
-        n->id             = s.id;
-        n->displayName    = s.title;
-        n->subtitle       = s.artist;
-        n->album          = s.album;
-        n->albumId        = s.albumId;
-        n->coverArtId     = s.coverArtId;
-        n->suffix         = s.suffix;
-        n->track          = s.track;
-        n->year           = s.year;
-        n->duration       = s.duration;
-        n->starred        = s.starred;
-        n->rating         = s.rating;
-        n->bookmarkPositionMs = bookmarkPositionMs;
-        n->childrenLoaded = true;
-        out.push_back(n);
+        out.push_back(makeSongNode(s, bookmarkPositionMs));
     };
     auto addAlbum = [&out](const navidrome::Album& a) {
         auto n = std::make_shared<NavidromeNode>();
@@ -1209,8 +1223,59 @@ void BrowserWindow::queueSelected(bool play, bool closeAfter, bool clearFirst) {
     }).detach();
 }
 
-void BrowserWindow::OnAdd(UINT, int, HWND)  { queueSelected(false, false); }
-void BrowserWindow::OnPlay(UINT, int, HWND) { queueSelected(true,  false); }
+void BrowserWindow::OnAdd(UINT, int, HWND)  { dbgLog("OnAdd fired"); queueSelected(false, false); }
+void BrowserWindow::OnPlay(UINT, int, HWND) { dbgLog("OnPlay fired"); queueSelected(true,  false); }
+
+// Fetches last.fm-derived similar tracks for the first selected artist, album
+// or song and appends + plays them, mirroring OnPlay's enqueue semantics.
+void BrowserWindow::OnPlaySimilar(UINT, int, HWND) {
+    dbgLog("OnPlaySimilar fired");
+    auto selected = selectedNodes();
+    auto node = selected.empty() ? nullptr : selected.front();
+    if (!node || node->id.empty() ||
+        (node->type != NavidromeNode::Artist &&
+         node->type != NavidromeNode::Album &&
+         node->type != NavidromeNode::Song)) {
+        setStatus("Play Similar needs an artist, album, or song");
+        return;
+    }
+
+    setStatus("Finding similar tracks…");
+    std::string itemId = node->id;
+    std::thread([this, itemId]() {
+        std::string err;
+        auto songs = navidrome::SubsonicClientWin::get().getSimilarSongs(itemId, 50, err);
+        std::vector<std::shared_ptr<NavidromeNode>> nodes;
+        for (auto& s : songs) nodes.push_back(makeSongNode(s));
+
+        fb2k::inMainThread([this, nodes, err]() mutable {
+            if (!IsWindow()) return;
+            if (!err.empty()) { setStatus("Error: " + err); return; }
+            if (nodes.empty()) { setStatus("No similar tracks found"); return; }
+            enqueueNodes(std::move(nodes), true, false);
+        });
+    }).detach();
+}
+
+// Fetches a fresh batch of random tracks and appends + plays them. No
+// selection needed — always available, like "Send Active Playlist".
+void BrowserWindow::OnRandomMix(UINT, int, HWND) {
+    dbgLog("OnRandomMix fired");
+    setStatus("Fetching random mix…");
+    std::thread([this]() {
+        std::string err;
+        auto songs = navidrome::SubsonicClientWin::get().getRandomSongs(100, err);
+        std::vector<std::shared_ptr<NavidromeNode>> nodes;
+        for (auto& s : songs) nodes.push_back(makeSongNode(s));
+
+        fb2k::inMainThread([this, nodes, err]() mutable {
+            if (!IsWindow()) return;
+            if (!err.empty()) { setStatus("Error: " + err); return; }
+            if (nodes.empty()) { setStatus("No tracks found"); return; }
+            enqueueNodes(std::move(nodes), true, false);
+        });
+    }).detach();
+}
 
 // Enter in the tree = replace the active playlist with the selected item(s),
 // start playing, and close the window. A quick "jump to this artist" shortcut.
@@ -1223,7 +1288,13 @@ LRESULT BrowserWindow::OnTreeReturn(LPNMHDR) {
 // native feel. The menu item IDs are IDC_PLAY / IDC_ADD, so TrackPopupMenu
 // posts WM_COMMAND straight into the existing OnPlay / OnAdd handlers.
 void BrowserWindow::OnContextMenu(CWindow wnd, CPoint point) {
-    if (wnd.m_hWnd != m_tree.m_hWnd) { SetMsgHandled(FALSE); return; }
+    dbgLog("OnContextMenu: wnd=" + std::to_string(reinterpret_cast<uintptr_t>(wnd.m_hWnd)) +
+           " tree=" + std::to_string(reinterpret_cast<uintptr_t>(m_tree.m_hWnd)) +
+           " point=" + std::to_string(point.x) + "," + std::to_string(point.y));
+    if (wnd.m_hWnd != m_tree.m_hWnd) {
+        dbgLog("OnContextMenu: wnd mismatch, passing through");
+        SetMsgHandled(FALSE); return;
+    }
 
     if (point.x == -1 && point.y == -1) {
         // Keyboard-invoked (Shift+F10 / menu key): anchor on the selected item.
@@ -1241,12 +1312,15 @@ void BrowserWindow::OnContextMenu(CWindow wnd, CPoint point) {
         if (hit) m_tree.SelectItem(hit);
     }
 
-    if (selectedNodes().empty()) return;
+    auto selForMenu = selectedNodes();
+    dbgLog("OnContextMenu: selectedNodes count=" + std::to_string(selForMenu.size()));
+    if (selForMenu.empty()) { dbgLog("OnContextMenu: empty selection, aborting"); return; }
 
     CMenu menu;
     menu.CreatePopupMenu();
     menu.AppendMenu(MF_STRING, IDC_PLAY, L"Play Now");
     menu.AppendMenu(MF_STRING, IDC_ADD,  L"Add to Playlist");
+    menu.AppendMenu(MF_STRING, IDC_PLAY_SIMILAR, L"Play Similar");
 
     // Server-side favorites + ratings. Both are per-user state on Navidrome, so
     // they show up in its web UI and in every other Subsonic client.
@@ -1302,9 +1376,12 @@ void BrowserWindow::OnContextMenu(CWindow wnd, CPoint point) {
     menu.AppendMenu(MF_SEPARATOR);
     menu.AppendMenu(MF_STRING, IDC_SEND_PLAYLIST,
                     L"Send Active Playlist to Navidrome");
+    menu.AppendMenu(MF_STRING, IDC_RANDOM_MIX, L"Random Mix");
     menu.AppendMenu(MF_STRING, IDC_DOWNLOAD, L"Download Original Files…");
 
+    dbgLog("OnContextMenu: showing TrackPopupMenu");
     menu.TrackPopupMenu(TPM_LEFTALIGN | TPM_RIGHTBUTTON, point.x, point.y, *this);
+    dbgLog("OnContextMenu: TrackPopupMenu returned");
 
     // A stale cache is only visible once — refresh for the next open.
     refreshServerPlaylists();
@@ -1314,8 +1391,8 @@ void BrowserWindow::OnContextMenu(CWindow wnd, CPoint point) {
 // ---------------------------------------------------------------------------
 // Favorites, ratings and playlist upload
 // ---------------------------------------------------------------------------
-void BrowserWindow::OnStar(UINT, int, HWND)   { applyStarred(true); }
-void BrowserWindow::OnUnstar(UINT, int, HWND) { applyStarred(false); }
+void BrowserWindow::OnStar(UINT, int, HWND)   { dbgLog("OnStar fired");   applyStarred(true); }
+void BrowserWindow::OnUnstar(UINT, int, HWND) { dbgLog("OnUnstar fired"); applyStarred(false); }
 
 void BrowserWindow::applyStarred(bool starred) {
     std::vector<std::shared_ptr<NavidromeNode>> targets;
@@ -1388,18 +1465,23 @@ void BrowserWindow::applyRemoveBookmark() {
 // Ratings are a song-level concept in Subsonic; albums/artists are ignored.
 void BrowserWindow::OnRate(UINT, int id, HWND) {
     int stars = id - IDC_RATE_0;
-    if (stars < 0 || stars > 5) return;
+    dbgLog("OnRate fired: id=" + std::to_string(id) + " stars=" + std::to_string(stars));
+    if (stars < 0 || stars > 5) { dbgLog("OnRate: stars out of range, aborting"); return; }
 
     std::vector<std::shared_ptr<NavidromeNode>> songs;
     for (auto& n : selectedNodes())
         if (n->type == NavidromeNode::Song) songs.push_back(n);
-    if (songs.empty()) { setStatus("Select one or more songs to rate"); return; }
+    dbgLog("OnRate: selected song count=" + std::to_string(songs.size()));
+    if (songs.empty()) { dbgLog("OnRate: no song-type nodes selected, aborting"); setStatus("Select one or more songs to rate"); return; }
 
     std::thread([this, songs, stars]() {
         std::string err;
         for (auto& n : songs) {
             std::string one;
-            if (navidrome::SubsonicClientWin::get().setRating(stars, n->id, one))
+            bool ok = navidrome::SubsonicClientWin::get().setRating(stars, n->id, one);
+            dbgLog("OnRate: setRating(stars=" + std::to_string(stars) + ", id=" + n->id +
+                   ") -> " + (ok ? "OK" : "FAIL: " + one));
+            if (ok)
                 n->rating = stars;
             else if (err.empty())
                 err = one;

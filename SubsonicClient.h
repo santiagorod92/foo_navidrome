@@ -123,6 +123,17 @@ typedef NS_ENUM(NSInteger, SubsonicStarKind) {
                                         count:(NSInteger)count
                                         error:(NSError **)error;
 
+// Similar songs (getSimilarSongs2.view) for an artist, album or song id —
+// last.fm-derived recommendations, used by the "Play Similar" context menu.
+- (NSArray<SubsonicSong *> *)getSimilarSongsForId:(NSString *)itemId
+                                             count:(NSInteger)count
+                                             error:(NSError **)error;
+
+// A random batch of tracks (getRandomSongs.view). Backs the "Random Mix"
+// smart-list node.
+- (NSArray<SubsonicSong *> *)getRandomSongsWithCount:(NSInteger)count
+                                                error:(NSError **)error;
+
 // Favorites + ratings. Both are per-user server-side state, so they show up in
 // the Navidrome web UI and every other Subsonic client.
 - (BOOL)setStarred:(BOOL)starred

@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "SubsonicClientWin.h"
 #include "MediaEnrichmentLogic.h"
+#include "../NavidromeDebugLog.h"
 #include <SDK/cfg_var.h>
 #include <algorithm>
 #include <functional>
@@ -234,6 +235,7 @@ static std::string checkResponse(const std::string& body, std::string& outError)
     if (res != "ok") {
         auto arr = jarr(body, "error");
         outError = arr.empty() ? "Unknown Subsonic error" : jstr(arr[0], "message", "Error");
+        NAVIDROME_ERR("API", "Subsonic status != ok: " + outError);
         return "";
     }
     // Return everything inside "subsonic-response":{...}
@@ -313,6 +315,7 @@ std::wstring navidrome::SubsonicClientWin::customHeadersWide() {
 
 std::string navidrome::SubsonicClientWin::httpGet(const std::string& urlStr,
                                                    std::string& outError) const {
+    NAVIDROME_LOG("HTTP", "GET " + navidrome::dbg::scrubAuth(urlStr));
     std::wstring wurl = toWide(urlStr);
 
     URL_COMPONENTS uc = {};
@@ -369,6 +372,10 @@ std::string navidrome::SubsonicClientWin::httpGet(const std::string& urlStr,
     }
     WinHttpCloseHandle(hConn);
     WinHttpCloseHandle(hSess);
+    if (!outError.empty())
+        NAVIDROME_ERR("HTTP", outError + "  (" + navidrome::dbg::scrubAuth(urlStr) + ")");
+    else
+        NAVIDROME_LOG("HTTP", "200 OK  " + std::to_string(result.size()) + " bytes");
     return result;
 }
 
@@ -518,6 +525,36 @@ navidrome::SubsonicClientWin::getSongsForGenre(const std::string& genre, int cou
     if (genre.empty()) return {};
     std::string params = "genre=" + urlEncode(genre) + "&count=" + std::to_string(count);
     std::string body = httpGet(buildURL("getSongsByGenre.view", params), outError);
+    if (body.empty()) return {};
+    auto root = checkResponse(body, outError);
+    if (root.empty()) return {};
+
+    std::vector<Song> result;
+    for (auto& s : jarr(root, "song"))
+        result.push_back(parseSongObj(s));
+    return result;
+}
+
+std::vector<navidrome::Song>
+navidrome::SubsonicClientWin::getSimilarSongs(const std::string& itemId, int count,
+                                               std::string& outError) {
+    if (itemId.empty()) return {};
+    std::string params = "id=" + urlEncode(itemId) + "&count=" + std::to_string(count);
+    std::string body = httpGet(buildURL("getSimilarSongs2.view", params), outError);
+    if (body.empty()) return {};
+    auto root = checkResponse(body, outError);
+    if (root.empty()) return {};
+
+    std::vector<Song> result;
+    for (auto& s : jarr(root, "song"))
+        result.push_back(parseSongObj(s));
+    return result;
+}
+
+std::vector<navidrome::Song>
+navidrome::SubsonicClientWin::getRandomSongs(int count, std::string& outError) {
+    std::string params = "size=" + std::to_string(count);
+    std::string body = httpGet(buildURL("getRandomSongs.view", params), outError);
     if (body.empty()) return {};
     auto root = checkResponse(body, outError);
     if (root.empty()) return {};

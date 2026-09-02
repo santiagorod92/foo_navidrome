@@ -107,6 +107,8 @@ public:
         MSG_WM_CTLCOLORSTATIC(OnCtlColorStatic)
         COMMAND_ID_HANDLER_EX(IDC_ADD,     OnAdd)
         COMMAND_ID_HANDLER_EX(IDC_PLAY,    OnPlay)
+        COMMAND_ID_HANDLER_EX(IDC_PLAY_SIMILAR, OnPlaySimilar)
+        COMMAND_ID_HANDLER_EX(IDC_RANDOM_MIX, OnRandomMix)
         COMMAND_ID_HANDLER_EX(IDC_REFRESH, OnRefresh)
         COMMAND_ID_HANDLER_EX(IDC_STAR,    OnStar)
         COMMAND_ID_HANDLER_EX(IDC_UNSTAR,  OnUnstar)
@@ -137,6 +139,8 @@ private:
         IDC_STATUS = 1006,
         IDC_STAR   = 1007,
         IDC_UNSTAR = 1008,
+        IDC_PLAY_SIMILAR = 1025,
+        IDC_RANDOM_MIX   = 1026,
         IDC_SEND_PLAYLIST = 1009,
         // Contiguous so a single COMMAND_RANGE_HANDLER_EX covers 0-5 stars.
         IDC_RATE_0 = 1010,
@@ -178,6 +182,8 @@ private:
     void    OnContextMenu(CWindow wnd, CPoint point);
     void    OnAdd(UINT, int, HWND);
     void    OnPlay(UINT, int, HWND);
+    void    OnPlaySimilar(UINT, int, HWND);
+    void    OnRandomMix(UINT, int, HWND);
     void    OnRefresh(UINT, int, HWND);
     void    OnStar(UINT, int, HWND);
     void    OnUnstar(UINT, int, HWND);

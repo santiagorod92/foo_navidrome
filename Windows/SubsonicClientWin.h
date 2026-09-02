@@ -45,6 +45,15 @@ public:
     std::vector<Song>    getSongsForGenre(const std::string& genre, int count,
                                           std::string& outError);
 
+    // Similar songs (getSimilarSongs2.view) for an artist, album or song id —
+    // last.fm-derived recommendations, used by the "Play Similar" context menu.
+    std::vector<Song>    getSimilarSongs(const std::string& itemId, int count,
+                                         std::string& outError);
+
+    // A random batch of tracks (getRandomSongs.view). Backs the "Random Mix"
+    // smart-list node.
+    std::vector<Song>    getRandomSongs(int count, std::string& outError);
+
     // Favorites + ratings. Per-user server-side state, so it shows up in the
     // Navidrome web UI and every other Subsonic client.
     bool setStarred(bool starred, const std::string& itemId, StarKind kind,
