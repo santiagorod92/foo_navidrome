@@ -5,7 +5,7 @@
 # The component, built by win-build-local.sh or mac-dev-build.sh (both define
 # NAVIDROME_DEBUG_LOG), writes structured traces via NavidromeDebugLog.h to
 #   /tmp/foo_navidrome_debug.log        (Wine writes it as Z:\tmp\...)
-# Each line is:  HH:MM:SS.mmm  LEVEL  TAG       message
+# Each line is:  HH:MM:SS.mmm  LEVEL  TAG       [tNNNN] message
 # The dev-build scripts truncate the file per build and drop a
 # "==== build <ver> installed ... ====" marker at the top.
 #
@@ -52,11 +52,14 @@ tail "${START[@]}" -F "$LOG" | awk '
   {
     if ($2 ~ /^(INFO|WARN|ERROR|DEBUG)$/) {
       ts = $1; lvl = $2; tag = $3;
+      tid = ($4 ~ /^\[t[0-9]+\]$/) ? $4 : "";
       msg = $0; sub(/^[^ ]+[ ]+[^ ]+[ ]+[^ ]+[ ]+/, "", msg);
+      if (tid != "") sub(/^\[t[0-9]+\][ ]+/, "", msg);
       lc = (lvl == "ERROR") ? "1;31" : (lvl == "WARN") ? "33" : (lvl == "INFO") ? "32" : "37";
       mc = (lvl == "ERROR") ? "1;31" : (lvl == "WARN") ? "33" : "0";
-      printf "%s  %s  %s  %s\n", c("2", ts), c(lc, sprintf("%-5s", lvl)),
-                                 c("36", sprintf("%-8s", tag)), c(mc, msg);
+      printf "%s  %s  %s  %s%s\n", c("2", ts), c(lc, sprintf("%-5s", lvl)),
+                                 c("36", sprintf("%-8s", tag)),
+                                 (tid != "" ? c("2", tid " ") : ""), c(mc, msg);
     } else {
       print c("2", $0);
     }

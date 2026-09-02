@@ -106,6 +106,100 @@ inline const char* starParamName(StarKind kind) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Unified error model — shared by SubsonicClient (macOS) and SubsonicClientWin.
+//
+// Both HTTP layers previously returned only a free-text error string, so a
+// caller couldn't tell "credentials rejected" (deterministic, surface to the
+// user) from "connection reset" (transient, retry) from "song not found"
+// (skip and move on). ErrorKind is that missing axis; `Error` carries it plus
+// the raw HTTP / Subsonic codes and a log-safe message. Pure C++ so it lives
+// here, in every build path, and is unit-tested from tests/.
+// ---------------------------------------------------------------------------
+enum class ErrorKind {
+    None,           // success
+    NotConfigured,  // no server URL / username / password set yet
+    Network,        // DNS failure, connection refused / reset, host unreachable
+    Timeout,        // connect / send / receive deadline hit
+    Tls,            // certificate or TLS handshake failure
+    Auth,           // credentials rejected — HTTP 401/403, Subsonic 40/41/50
+    NotFound,       // HTTP 404/410, Subsonic 70
+    RateLimited,    // HTTP 429
+    ServerError,    // HTTP 5xx, and every Subsonic error code not mapped above
+    Parse,          // transport succeeded but the body wasn't valid JSON
+    Cancelled,      // request aborted by us
+    Unknown,
+};
+
+inline const char* errorKindName(ErrorKind kind) {
+    switch (kind) {
+        case ErrorKind::None:          return "None";
+        case ErrorKind::NotConfigured: return "NotConfigured";
+        case ErrorKind::Network:      return "Network";
+        case ErrorKind::Timeout:      return "Timeout";
+        case ErrorKind::Tls:          return "Tls";
+        case ErrorKind::Auth:         return "Auth";
+        case ErrorKind::NotFound:     return "NotFound";
+        case ErrorKind::RateLimited:  return "RateLimited";
+        case ErrorKind::ServerError:  return "ServerError";
+        case ErrorKind::Parse:        return "Parse";
+        case ErrorKind::Cancelled:    return "Cancelled";
+        default:                      return "Unknown";
+    }
+}
+
+// Retry only failures a later identical request could plausibly survive.
+// Auth / NotFound / Parse / NotConfigured are deterministic — retrying just
+// adds latency before the same failure.
+inline bool isRetryable(ErrorKind kind) {
+    switch (kind) {
+        case ErrorKind::Network:
+        case ErrorKind::Timeout:
+        case ErrorKind::RateLimited:
+        case ErrorKind::ServerError:
+            return true;
+        default:
+            return false;
+    }
+}
+
+// Map an HTTP status line to an ErrorKind. 2xx -> None. status 0 means "no
+// response line at all" (socket died before headers) -> Network. An
+// unfollowed 3xx is a transport problem, not a server error.
+inline ErrorKind httpStatusToErrorKind(int status) {
+    if (status >= 200 && status < 300) return ErrorKind::None;
+    if (status == 0)                   return ErrorKind::Network;
+    if (status == 401 || status == 403) return ErrorKind::Auth;
+    if (status == 404 || status == 410) return ErrorKind::NotFound;
+    if (status == 429)                 return ErrorKind::RateLimited;
+    if (status >= 500 && status < 600) return ErrorKind::ServerError;
+    if (status >= 300 && status < 400) return ErrorKind::Network;
+    return ErrorKind::ServerError;
+}
+
+// Map a Subsonic <error code="N"> to an ErrorKind. Subsonic's own codes:
+//   0  generic      10 missing param     20 client too old   30 server too old
+//   40 wrong creds  41 token auth n/a    50 not authorized   60 trial expired
+//   70 not found
+inline ErrorKind subsonicCodeToErrorKind(int code) {
+    switch (code) {
+        case 40: case 41: case 50: return ErrorKind::Auth;
+        case 70:                   return ErrorKind::NotFound;
+        default:                   return ErrorKind::ServerError;
+    }
+}
+
+struct Error {
+    ErrorKind   kind = ErrorKind::None;
+    int         http = 0;   // HTTP status, 0 when there was none
+    int         code = 0;   // Subsonic error code, 0 when there was none
+    std::string message;    // human-readable, already auth-scrubbed — safe to log/show
+
+    bool ok()        const { return kind == ErrorKind::None; }
+    bool retryable() const { return isRetryable(kind); }
+    const char* kindName() const { return errorKindName(kind); }
+};
+
 // getAlbumList2.view "type" values we expose as smart nodes in the browser.
 enum class AlbumListType { Newest, Frequent, Recent, Random, Starred };
 

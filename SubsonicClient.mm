@@ -36,6 +36,45 @@ static void NavidromeApplyCustomHeaders(NSMutableURLRequest *req) {
     }
 }
 
+// Map an NSURLErrorDomain code to the shared ErrorKind so the retry loop can
+// tell a transient socket failure from a dead-certain one.
+static navidrome::ErrorKind NavidromeClassifyURLError(NSInteger code) {
+    switch (code) {
+        case NSURLErrorTimedOut:
+            return navidrome::ErrorKind::Timeout;
+        case NSURLErrorCancelled:
+            return navidrome::ErrorKind::Cancelled;
+        case NSURLErrorCannotFindHost:
+        case NSURLErrorCannotConnectToHost:
+        case NSURLErrorNetworkConnectionLost:
+        case NSURLErrorNotConnectedToInternet:
+        case NSURLErrorDNSLookupFailed:
+        case NSURLErrorResourceUnavailable:
+            return navidrome::ErrorKind::Network;
+        case NSURLErrorSecureConnectionFailed:
+        case NSURLErrorServerCertificateHasBadDate:
+        case NSURLErrorServerCertificateUntrusted:
+        case NSURLErrorServerCertificateHasUnknownRoot:
+        case NSURLErrorServerCertificateNotYetValid:
+        case NSURLErrorClientCertificateRejected:
+        case NSURLErrorClientCertificateRequired:
+            return navidrome::ErrorKind::Tls;
+        default:
+            return navidrome::ErrorKind::Network;
+    }
+}
+
+// The server rejecting the configured credentials is a deterministic, user-
+// actionable state — say so once per session in the console (every subsequent
+// call would just repeat it).
+static void NavidromeWarnAuthOnce() {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        console::print("Navidrome: the server rejected the configured credentials — "
+                       "check Preferences › Tools › Navidrome");
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Data model implementations
 // ---------------------------------------------------------------------------
@@ -145,7 +184,9 @@ static SubsonicAlbum *parseAlbum(NSDictionary *a) {
 // SubsonicClient
 // ---------------------------------------------------------------------------
 
-@interface SubsonicClient ()
+@interface SubsonicClient () {
+    navidrome::Error _lastError;
+}
 @property (nonatomic, strong) NSURLSession *session;
 // startScan.view / getScanStatus.view share this response shape.
 - (BOOL)fetchScanStatusForEndpoint:(NSString *)endpoint
@@ -213,53 +254,89 @@ static SubsonicAlbum *parseAlbum(NSDictionary *a) {
     return [NSURL URLWithString:full];
 }
 
-// Synchronous HTTP GET, returns parsed JSON or nil
+- (navidrome::Error)lastError {
+    return _lastError;
+}
+
+// Synchronous HTTP GET, returns parsed JSON or nil. Retries transient failures
+// (timeout / 5xx / connection reset) up to 3x with backoff; deterministic
+// failures (auth, 404, bad JSON) return immediately. Classified outcome is
+// stashed in _lastError.
 - (NSDictionary *)fetchJSON:(NSURL *)url error:(NSError **)outError {
-    __block NSData *responseData = nil;
-    __block NSError *taskError = nil;
-    __block NSHTTPURLResponse *httpResponse = nil;
+    const std::string safeUrl =
+        navidrome::dbg::scrubAuth(std::string(url.absoluteString.UTF8String ?: ""));
+    NAVIDROME_TIMER("HTTP", "GET " + safeUrl);
+    NAVIDROME_LOG("HTTP", "GET " + safeUrl);
+    _lastError = navidrome::Error{};
 
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
     NavidromeApplyCustomHeaders(request);
-    NAVIDROME_LOG("HTTP", "GET " + navidrome::dbg::scrubAuth(std::string(url.absoluteString.UTF8String ?: "")));
 
-    dispatch_semaphore_t sema = dispatch_semaphore_create(0);
-    [[_session dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-        responseData = data;
-        taskError = error;
-        httpResponse = (NSHTTPURLResponse *)response;
-        dispatch_semaphore_signal(sema);
-    }] resume];
-    dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+    const int kMaxAttempts = 3;
+    NSData *responseData = nil;
 
-    if (taskError) {
-        NAVIDROME_ERR("HTTP", std::string("network error: ") + (taskError.localizedDescription.UTF8String ?: "?"));
-        if (outError) *outError = taskError;
-        return nil;
-    }
-    if (httpResponse.statusCode != 200) {
-        NAVIDROME_ERR("HTTP", "HTTP " + std::to_string((long)httpResponse.statusCode));
-        if (outError) {
-            *outError = [NSError errorWithDomain:@"SubsonicClient"
-                                           code:httpResponse.statusCode
-                                       userInfo:@{NSLocalizedDescriptionKey:
-                                                  [NSString stringWithFormat:@"HTTP %ld", (long)httpResponse.statusCode]}];
+    for (int attempt = 1; attempt <= kMaxAttempts; ++attempt) {
+        __block NSData *data = nil;
+        __block NSError *taskError = nil;
+        __block NSHTTPURLResponse *httpResponse = nil;
+
+        dispatch_semaphore_t sema = dispatch_semaphore_create(0);
+        [[_session dataTaskWithRequest:request completionHandler:^(NSData *d, NSURLResponse *response, NSError *error) {
+            data = d;
+            taskError = error;
+            httpResponse = (NSHTTPURLResponse *)response;
+            dispatch_semaphore_signal(sema);
+        }] resume];
+        dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+
+        navidrome::Error err;
+        if (taskError) {
+            err.kind    = NavidromeClassifyURLError(taskError.code);
+            err.message = std::string(navidrome::errorKindName(err.kind)) + ": " +
+                          (taskError.localizedDescription.UTF8String ?: "?");
+        } else {
+            int status = (int)httpResponse.statusCode;
+            err.http = status;
+            err.kind = navidrome::httpStatusToErrorKind(status);
+            if (!err.ok())
+                err.message = "HTTP " + std::to_string(status);
+            else if (!data)
+                err = { navidrome::ErrorKind::Parse, status, 0, "empty response body" };
         }
-        return nil;
-    }
-    if (!responseData) {
-        NAVIDROME_ERR("HTTP", "empty response body");
-        if (outError) {
-            *outError = [NSError errorWithDomain:@"SubsonicClient" code:-1
-                                       userInfo:@{NSLocalizedDescriptionKey: @"Empty response"}];
+
+        if (err.ok()) {
+            responseData = data;
+            break;
         }
-        return nil;
+
+        _lastError = err;
+        if (!err.retryable() || attempt == kMaxAttempts) {
+            NAVIDROME_ERR("HTTP", std::string(err.kindName()) + ": " + err.message +
+                          "  (" + safeUrl + ")");
+            if (err.kind == navidrome::ErrorKind::Auth) NavidromeWarnAuthOnce();
+            if (outError) {
+                *outError = taskError ?: [NSError errorWithDomain:@"SubsonicClient"
+                    code:err.http
+                    userInfo:@{NSLocalizedDescriptionKey:
+                               [NSString stringWithUTF8String:err.message.c_str()]}];
+            }
+            return nil;
+        }
+
+        double backoff = 0.3 * attempt + (arc4random_uniform(200) / 1000.0);
+        NAVIDROME_WARN("HTTP", err.message + " — retry " + std::to_string(attempt + 1) +
+                       "/" + std::to_string(kMaxAttempts) + " in " +
+                       std::to_string(backoff) + "s  (" + safeUrl + ")");
+        [NSThread sleepForTimeInterval:backoff];
     }
 
     NSError *jsonError = nil;
     NSDictionary *json = [NSJSONSerialization JSONObjectWithData:responseData options:0 error:&jsonError];
     if (!json || jsonError) {
-        NAVIDROME_ERR("HTTP", std::string("JSON parse failed: ") + (jsonError.localizedDescription.UTF8String ?: "?"));
+        _lastError = { navidrome::ErrorKind::Parse, 200, 0,
+                       std::string("JSON parse failed: ") +
+                       (jsonError.localizedDescription.UTF8String ?: "?") };
+        NAVIDROME_ERR("HTTP", _lastError.message);
         if (outError) *outError = jsonError;
         return nil;
     }
@@ -267,7 +344,9 @@ static SubsonicAlbum *parseAlbum(NSDictionary *a) {
     // Subsonic wraps everything in "subsonic-response"
     NSDictionary *root = json[@"subsonic-response"];
     if (!root) {
-        NAVIDROME_ERR("API", "response missing subsonic-response wrapper");
+        _lastError = { navidrome::ErrorKind::Parse, 200, 0,
+                       "response missing subsonic-response wrapper" };
+        NAVIDROME_ERR("API", _lastError.message);
         if (outError) {
             *outError = [NSError errorWithDomain:@"SubsonicClient" code:-2
                                        userInfo:@{NSLocalizedDescriptionKey: @"Invalid response format"}];
@@ -279,10 +358,15 @@ static SubsonicAlbum *parseAlbum(NSDictionary *a) {
     if (![status isEqualToString:@"ok"]) {
         NSDictionary *err = root[@"error"];
         NSString *msg = err[@"message"] ?: @"Unknown Subsonic error";
-        NAVIDROME_ERR("API", std::string("Subsonic status != ok: ") + (msg.UTF8String ?: "?"));
+        int code = (int)[err[@"code"] integerValue];
+        _lastError = { navidrome::subsonicCodeToErrorKind(code), 200, code,
+                       std::string(msg.UTF8String ?: "?") };
+        NAVIDROME_ERR("API", "Subsonic status != ok (code " + std::to_string(code) +
+                      ", " + _lastError.kindName() + "): " + _lastError.message);
+        if (_lastError.kind == navidrome::ErrorKind::Auth) NavidromeWarnAuthOnce();
         if (outError) {
             *outError = [NSError errorWithDomain:@"SubsonicClient"
-                                           code:[err[@"code"] integerValue]
+                                           code:code
                                        userInfo:@{NSLocalizedDescriptionKey: msg}];
         }
         return nil;
@@ -614,15 +698,25 @@ static SubsonicAlbum *parseAlbum(NSDictionary *a) {
            error:(NSError **)error {
     if (playlistId.length == 0 || songIds.count == 0) return NO;
     const NSUInteger kChunk = navidrome::kPlaylistChunkSize;
+    const NSUInteger chunks = (songIds.count + kChunk - 1) / kChunk;
+    NAVIDROME_LOG("Playlist", "add " + std::to_string((unsigned long)songIds.count) +
+                  " ids to " + (playlistId.UTF8String ?: "?") + " in " +
+                  std::to_string((unsigned long)chunks) + " chunk(s)");
 
-    for (NSUInteger i = 0; i < songIds.count; i += kChunk) {
+    for (NSUInteger i = 0, c = 1; i < songIds.count; i += kChunk, c++) {
         NSMutableString *upd = [NSMutableString stringWithFormat:@"playlistId=%@",
                                 urlEncode(playlistId)];
         for (NSUInteger j = i; j < MIN(i + kChunk, songIds.count); j++)
             [upd appendFormat:@"&songIdToAdd=%@", urlEncode(songIds[j])];
         if (![self fetchJSON:[self urlForEndpoint:@"updatePlaylist.view" params:upd]
-                       error:error])
+                       error:error]) {
+            NAVIDROME_ERR("Playlist", "add: chunk " + std::to_string((unsigned long)c) + "/" +
+                          std::to_string((unsigned long)chunks) + " failed after " +
+                          std::to_string((unsigned long)i) + "/" +
+                          std::to_string((unsigned long)songIds.count) + " ids: " +
+                          _lastError.kindName());
             return NO;
+        }
     }
     return YES;
 }
@@ -638,15 +732,25 @@ static SubsonicAlbum *parseAlbum(NSDictionary *a) {
 
     NSArray<NSNumber *> *sorted = [indexes sortedArrayUsingComparator:
         ^NSComparisonResult(NSNumber *a, NSNumber *b) { return [b compare:a]; }];
+    const NSUInteger chunks = (sorted.count + kChunk - 1) / kChunk;
+    NAVIDROME_LOG("Playlist", "remove " + std::to_string((unsigned long)sorted.count) +
+                  " index(es) from " + (playlistId.UTF8String ?: "?") +
+                  " (highest-first) in " + std::to_string((unsigned long)chunks) + " chunk(s)");
 
-    for (NSUInteger i = 0; i < sorted.count; i += kChunk) {
+    for (NSUInteger i = 0, c = 1; i < sorted.count; i += kChunk, c++) {
         NSMutableString *upd = [NSMutableString stringWithFormat:@"playlistId=%@",
                                 urlEncode(playlistId)];
         for (NSUInteger j = i; j < MIN(i + kChunk, sorted.count); j++)
             [upd appendFormat:@"&songIndexToRemove=%ld", (long)sorted[j].integerValue];
         if (![self fetchJSON:[self urlForEndpoint:@"updatePlaylist.view" params:upd]
-                       error:error])
+                       error:error]) {
+            NAVIDROME_ERR("Playlist", "remove: chunk " + std::to_string((unsigned long)c) + "/" +
+                          std::to_string((unsigned long)chunks) + " failed after " +
+                          std::to_string((unsigned long)i) + "/" +
+                          std::to_string((unsigned long)sorted.count) + " indexes: " +
+                          _lastError.kindName());
             return NO;
+        }
     }
     return YES;
 }
@@ -836,29 +940,55 @@ static SubsonicAlbum *parseAlbum(NSDictionary *a) {
 }
 
 - (NSData *)dataForURL:(NSURL *)url error:(NSError **)outError {
+    const std::string safeUrl =
+        navidrome::dbg::scrubAuth(std::string(url.absoluteString.UTF8String ?: ""));
+    NAVIDROME_TIMER("Art", "GET " + safeUrl);
+
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
     NavidromeApplyCustomHeaders(request);
 
-    __block NSData *responseData = nil;
-    __block NSError *taskError = nil;
-    __block NSHTTPURLResponse *httpResponse = nil;
-    dispatch_semaphore_t sema = dispatch_semaphore_create(0);
-    [[_session dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-        responseData = data;
-        taskError = error;
-        httpResponse = (NSHTTPURLResponse *)response;
-        dispatch_semaphore_signal(sema);
-    }] resume];
-    dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+    const int kMaxAttempts = 3;
+    for (int attempt = 1; attempt <= kMaxAttempts; ++attempt) {
+        __block NSData *responseData = nil;
+        __block NSError *taskError = nil;
+        __block NSHTTPURLResponse *httpResponse = nil;
+        dispatch_semaphore_t sema = dispatch_semaphore_create(0);
+        [[_session dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+            responseData = data;
+            taskError = error;
+            httpResponse = (NSHTTPURLResponse *)response;
+            dispatch_semaphore_signal(sema);
+        }] resume];
+        dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
 
-    if (taskError) { if (outError) *outError = taskError; return nil; }
-    if (httpResponse && httpResponse.statusCode != 200) {
-        if (outError) *outError = [NSError errorWithDomain:@"SubsonicClient"
-            code:httpResponse.statusCode userInfo:@{NSLocalizedDescriptionKey:
-                [NSString stringWithFormat:@"HTTP %ld", (long)httpResponse.statusCode]}];
-        return nil;
+        navidrome::Error err;
+        if (taskError) {
+            err.kind = NavidromeClassifyURLError(taskError.code);
+            err.message = taskError.localizedDescription.UTF8String ?: "?";
+        } else {
+            int status = (int)httpResponse.statusCode;
+            err.http = status;
+            err.kind = navidrome::httpStatusToErrorKind(status);
+            if (!err.ok()) err.message = "HTTP " + std::to_string(status);
+        }
+
+        if (err.ok()) {
+            NAVIDROME_LOG("Art", "200 OK  " + std::to_string((unsigned long)responseData.length) + " bytes");
+            return responseData;
+        }
+        if (!err.retryable() || attempt == kMaxAttempts) {
+            NAVIDROME_WARN("Art", std::string(err.kindName()) + ": " + err.message +
+                           "  (" + safeUrl + ")");
+            if (outError) {
+                *outError = taskError ?: [NSError errorWithDomain:@"SubsonicClient"
+                    code:err.http userInfo:@{NSLocalizedDescriptionKey:
+                        [NSString stringWithUTF8String:err.message.c_str()]}];
+            }
+            return nil;
+        }
+        [NSThread sleepForTimeInterval:0.3 * attempt];
     }
-    return responseData;
+    return nil;
 }
 
 - (BOOL)downloadURL:(NSURL *)url toPath:(NSString *)path error:(NSError **)outError {

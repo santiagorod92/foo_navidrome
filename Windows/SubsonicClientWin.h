@@ -29,6 +29,11 @@ public:
     SubsonicRequestContext snapshot() const;
     bool ping(std::string& outError);
 
+    // Classified outcome of the most recent request (transport + Subsonic
+    // status). Lets a caller tell "credentials rejected" (surface to the user)
+    // from "connection reset" (transient) without string-matching outError.
+    const Error& lastError() const { return m_lastError; }
+
     std::vector<Artist>  getArtists(std::string& outError);
     std::vector<Album>   getAlbumsForArtist(const std::string& artistId, std::string& outError);
     std::vector<Song>    getSongsForAlbum(const std::string& albumId, std::string& outError);
@@ -162,8 +167,15 @@ private:
 
     std::string authParams() const;
     std::string buildURL(const std::string& endpoint, const std::string& extra = "") const;
-    // Synchronous HTTP GET; returns body or "" on error (sets outError).
+    // Synchronous HTTP GET; returns body or "" on error (sets outError). Retries
+    // transient failures (timeout / 5xx / connection reset) up to 3x with
+    // backoff; deterministic failures (auth, 404) return immediately.
     std::string httpGet(const std::string& url, std::string& outError) const;
+    // Validates the Subsonic status wrapper, returns the inner response object
+    // or "" (sets outError + m_lastError with the classified error code).
+    std::string checkResponse(const std::string& body, std::string& outError) const;
+
+    mutable Error m_lastError;
 };
 
 } // namespace navidrome

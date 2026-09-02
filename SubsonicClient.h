@@ -1,6 +1,7 @@
 #pragma once
 #import <Foundation/Foundation.h>
 #include "stdafx.h"
+#include "SubsonicTypes.h"
 
 // ---------------------------------------------------------------------------
 // Data model objects
@@ -95,6 +96,11 @@ typedef NS_ENUM(NSInteger, SubsonicStarKind) {
 
 // Test connection — returns YES on success, sets *error on failure
 - (BOOL)pingWithError:(NSError **)error;
+
+// Classified outcome of the most recent -fetchJSON: call (transport + Subsonic
+// status). Lets a caller tell "credentials rejected" (surface to the user) from
+// "connection reset" (transient) without matching on NSError strings.
+- (navidrome::Error)lastError;
 
 // Browse hierarchy
 - (NSArray<SubsonicArtist *> *)getArtistsWithError:(NSError **)error;

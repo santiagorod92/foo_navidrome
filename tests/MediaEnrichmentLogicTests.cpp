@@ -36,6 +36,9 @@ void testUriEncodeDecode() {
     check(uriEncode(u8"café") == "caf%C3%A9",
         "UTF-8 bytes are individually percent-encoded");
     check(uriDecode("a%20b%2Fc") == "a b/c", "decode reverses encode");
+    check(uriDecode("a%2fb") == "a/b", "lowercase hex escapes decode too");
+    check(uriEncode("a+b c") == "a%2Bb%20c",
+        "'+' and space are both percent-encoded (not form-encoding)");
     check(uriDecode("100%") == "100%",
         "a trailing bare percent is passed through, not dropped");
     check(uriDecode("50%2 off") == "50%2 off",
@@ -54,6 +57,14 @@ void testNormalizeUrl() {
     check(normalizeMediaServerUrl("not-a-url") == "not-a-url",
         "a value with no scheme separator is left alone (minus trim)");
     check(normalizeMediaServerUrl("") == "", "empty input stays empty");
+    check(normalizeMediaServerUrl("\thttps://Host/Keep/Case\t") ==
+        "https://host/Keep/Case",
+        "leading/trailing tabs are trimmed, host lowercased, path case kept");
+    check(normalizeMediaServerUrl("HTTPS://Host:8080/Path") ==
+        "https://host:8080/Path",
+        "an explicit port is preserved and lowercased with the host, not the path");
+    check(normalizeMediaServerUrl("https://host///") == "https://host",
+        "every trailing slash is trimmed, not just one");
 }
 
 void testJsEscapeEdgeCases() {
@@ -112,6 +123,13 @@ void testParseHeaderLines() {
     check(parseHeaderLines("\n\n\n").empty(), "all-blank blob yields no headers");
     check(parseHeaderLines("no-trailing-newline: value").size() == 1,
         "a final line with no trailing newline is still captured");
+    const auto more = parseHeaderLines("   # indented comment\nA: 1\nA: 2");
+    check(more.size() == 2,
+        "an indented '#' line is still treated as a comment and dropped");
+    if (more.size() == 2) {
+        check(more[0] == "A: 1" && more[1] == "A: 2",
+            "duplicate header names are preserved in order (no dedup)");
+    }
 }
 
 void testPercentDecodeEdgeCases() {
@@ -124,6 +142,9 @@ void testPercentDecodeEdgeCases() {
     check(percentDecode("bad%zzescape") == "bad%zzescape",
         "a non-hex escape is passed through unchanged");
     check(percentDecode("") == "", "empty input stays empty");
+    check(percentDecode("a%2fb") == "a/b", "lowercase hex escapes decode");
+    check(percentDecode("ab%2") == "ab%2",
+        "an escape truncated at end of string is passed through, not consumed");
 }
 
 void testPlaylistChunkSize() {
@@ -158,6 +179,15 @@ void testCoverUrl() {
     check(url.find("size=300") != std::string::npos, "requested size is present");
     check(url.find("distinct-password-9") == std::string::npos,
         "raw password is absent from URL");
+
+    const auto noSize = navidrome::buildCoverArtUrl("https://s", "u", "p",
+        "salt", "cid", 0);
+    check(noSize.find("size=") == std::string::npos,
+        "size is omitted entirely when not positive");
+    check(noSize.find("v=1.16.1") != std::string::npos &&
+          noSize.find("c=foo_navidrome") != std::string::npos &&
+          noSize.find("f=json") != std::string::npos,
+        "the fixed Subsonic client params are always present");
 }
 
 void testClassification() {
@@ -169,7 +199,16 @@ void testClassification() {
     check(classifyHttpStatus(401) == FetchClass::Auth, "HTTP 401");
     check(classifyHttpStatus(403) == FetchClass::Auth, "HTTP 403");
     check(classifyHttpStatus(404) == FetchClass::NotFound, "HTTP 404");
+    check(classifyHttpStatus(410) == FetchClass::NotFound, "HTTP 410 Gone");
+    check(classifyHttpStatus(500) == FetchClass::ServerError, "HTTP 500 lower bound");
     check(classifyHttpStatus(503) == FetchClass::ServerError, "HTTP 5xx");
+    check(classifyHttpStatus(599) == FetchClass::ServerError, "HTTP 599 upper bound");
+    check(classifyHttpStatus(600) == FetchClass::Transport,
+        "a status past the 5xx range is a transport failure");
+    check(classifyHttpStatus(302) == FetchClass::Transport,
+        "an unmapped status (redirect) is treated as a transport failure");
+    check(classifyHttpStatus(0) == FetchClass::Transport,
+        "a zero status (no response line) is a transport failure");
 
     check(classifyBody("image/jpeg", {0xff, 0xd8, 0xff, 0x00}) == FetchClass::Ok,
         "JPEG magic");
@@ -194,6 +233,39 @@ void testClassification() {
     check(classifyBody("application/json", bytes(
         R"({"subsonic-response":{"status":"failed","error":{"code":10}}})")) ==
         FetchClass::ServerError, "other Subsonic error");
+
+    check(classifyBody("application/octet-stream", {'G', 'I', 'F', '8', '9', 'a'}) ==
+        FetchClass::Ok, "GIF magic");
+    check(classifyBody("application/octet-stream", {'B', 'M', 0x00, 0x00}) ==
+        FetchClass::Ok, "BMP magic");
+    check(classifyBody("application/octet-stream",
+        {'R', 'I', 'F', 'F', 0x00, 0x00, 0x00, 0x00, 'W', 'E', 'B', 'P'}) ==
+        FetchClass::Ok, "WEBP RIFF container magic");
+    check(classifyBody("image/jpeg", {}) == FetchClass::InvalidContent,
+        "an empty body is never valid content");
+    check(classifyBody("IMAGE/JPEG", bytes("not really an image")) == FetchClass::Ok,
+        "the image/ content-type check is case-insensitive");
+    check(classifyBody("image/jpeg", {0xff, 0xd8, 0xff}, 3) == FetchClass::Ok,
+        "a body exactly at the size limit is still inspected (limit is exclusive)");
+    check(classifyBody("image/jpeg", bytes(
+        R"({"subsonic-response":{"status":"failed","error":{"code":70}}})")) ==
+        FetchClass::NotFound,
+        "a Subsonic error wins even when the content-type claims an image");
+    check(classifyBody("application/json", bytes(
+        R"({"subsonic-response":{"status":"failed","error":{"code":41}}})")) ==
+        FetchClass::Auth, "Subsonic error code 41 is an auth failure");
+    check(classifyBody("application/json", bytes(
+        R"({"subsonic_response":{"status":"failed","error":{"code":70}}})")) ==
+        FetchClass::NotFound,
+        "the subsonic_response underscore spelling is also recognised");
+    check(classifyBody("application/json", bytes(
+        R"({"subsonic-response":{"status":"failed","error":{"code":0}}})")) ==
+        FetchClass::InvalidContent,
+        "error code 0 is not a positive code, so body inspection continues");
+    check(classifyBody("application/json", bytes(
+        R"({"subsonic-response":{"status":"failed"}})")) ==
+        FetchClass::InvalidContent,
+        "a failed response with no code field falls through to content inspection");
 }
 
 void testCache() {
@@ -223,6 +295,32 @@ void testCache() {
         "least recently used entry is evicted");
     check(!cache.get("https://server", "user", "cover-0").empty(),
         "recently touched entry survives eviction");
+
+    // Overwriting an existing key must adjust the byte counter down by the old
+    // size before adding the new one — an underflow there would make every
+    // later put() think the cache is over budget and evict spuriously.
+    cache.clear();
+    cache.put("https://s", "u", "k", {1, 2, 3});
+    cache.put("https://s", "u", "k", {9});
+    check(cache.get("https://s", "u", "k") == std::vector<std::uint8_t>({9}),
+        "overwriting a cache key replaces its bytes");
+    cache.put("https://s", "u", "k2", {5});
+    check(!cache.get("https://s", "u", "k").empty(),
+        "an overwrite keeps the byte counter sane (no spurious eviction)");
+
+    // Byte-total eviction (48 MiB budget) is a separate path from the 32-entry
+    // cap and otherwise has no coverage. The literal mirrors CoverCache::kMaxBytes.
+    cache.clear();
+    const std::size_t kMaxBytes = 48u * 1024u * 1024u;
+    cache.put("https://s", "u", "big", std::vector<std::uint8_t>(kMaxBytes, 1));
+    check(!cache.get("https://s", "u", "big").empty(),
+        "an entry exactly at the byte budget is accepted");
+    cache.put("https://s", "u", "small", {7});
+    check(cache.get("https://s", "u", "big").empty(),
+        "exceeding the byte budget evicts the least recently used entry");
+    check(cache.get("https://s", "u", "small") == std::vector<std::uint8_t>({7}),
+        "the entry that pushed past the budget stays");
+    cache.clear();
 }
 
 void testConfig() {
@@ -250,6 +348,13 @@ void testConfig() {
         " HTTPS://Example.COM/root/ ", "user\"name", password, "salt-42",
         {{"X-Access", "line1\r\nline2"}, {u8"中文", u8"值😀"}}, "1.3.0"),
         "config generation is stable");
+
+    const auto withDebug = navidrome::buildEsLyricConfigJs(
+        "https://s", "u", "p", "salt", {}, "2.0.0", true);
+    check(withDebug.find("debug: true") != std::string::npos,
+        "the debug flag is honoured when set");
+    check(withDebug.find("headers: {}") != std::string::npos,
+        "an empty header list renders as an empty object");
 }
 
 void testTranscodeParams() {
@@ -286,6 +391,14 @@ void testFileNames() {
         "an all-trimmed name falls back to a placeholder");
     check(sanitizeFileName(u8"中文 title") == u8"中文 title",
         "non-ASCII names survive untouched");
+    check(sanitizeFileName("a\\b*c<d>e|f\"g") == "a_b_c_d_e_f_g",
+        "every remaining Windows-reserved character is replaced");
+    check(sanitizeFileName("...") == "untitled",
+        "a name that is only dots trims to nothing and falls back");
+    check(sanitizeFileName("tab\tinside") == "tab inside",
+        "a control character becomes a space");
+    check(sanitizeFileName(".hidden") == ".hidden",
+        "a leading dot is kept (only trailing dots/spaces are unsafe on Windows)");
 }
 
 void testQueryParams() {
@@ -315,6 +428,138 @@ void testQueryParams() {
         "song%2Fraw", "the song id is decoded exactly once, query stripped");
     check(navidrome::trackIdFromURI("https://server/music.mp3").empty(),
         "a foreign URI yields no song id");
+
+    check(queryParamFromURI("navidrome://track/x?title=a=b&rating=4", "title") == "a=b",
+        "a value containing '=' is returned whole (params split on '&', not '=')");
+    check(queryParamFromURI("navidrome://track/x?rating=4&rating=5", "rating") == "4",
+        "a repeated parameter yields the first occurrence");
+    check(queryParamFromURI("navidrome://track/x?title=a+b", "title") == "a+b",
+        "'+' is left literal, not turned into a space (this is not form-encoding)");
+    check(navidrome::trackIdFromURI("navidrome://track/").empty(),
+        "a URI equal to the bare prefix has no song id");
+    check(navidrome::trackIdFromURI("NAVIDROME://track/abc").empty(),
+        "the scheme match is case-sensitive");
+    check(queryParamFromURI("navidrome://track/?rating=4", "rating") == "4" &&
+          navidrome::trackIdFromURI("navidrome://track/?rating=4").empty(),
+        "an empty id before the query still parses; params still read");
+}
+
+void testMd5KnownAnswers() {
+    // The MD5 primitive is the module's one platform-specific line (WinCrypt vs
+    // CommonCrypto). A known-answer test on the empty string is a cheap canary
+    // for that primitive being mis-wired on a new toolchain.
+    const auto emptyToken = navidrome::buildCoverArtUrl(
+        "https://s", "u", "", "", "cid", 0);
+    check(emptyToken.find("t=d41d8cd98f00b204e9800998ecf8427e") != std::string::npos,
+        "md5(\"\") matches the well-known digest");
+
+    // Same credentials through buildCoverArtUrl and buildEsLyricConfigJs must
+    // yield an identical token — both are md5(password + salt).
+    const auto url = navidrome::buildCoverArtUrl("https://s", "u", "pw", "st", "cid", 0);
+    const auto at = url.find("&t=") + 3;
+    const auto token = url.substr(at, url.find('&', at) - at);
+    check(token.size() == 32, "an MD5 hex digest is 32 characters");
+    const auto cfg = navidrome::buildEsLyricConfigJs(
+        "https://s", "u", "pw", "st", {}, "1.0.0");
+    check(cfg.find("token: \"" + token + "\"") != std::string::npos,
+        "cover-art URL and ESLyric config derive the same token from the same creds");
+}
+
+void testCrossParserParity() {
+    using navidrome::resolveArtId;
+    using navidrome::trackIdFromURI;
+    // resolveArtId (art extractor) and trackIdFromURI (scrobbler) are separate
+    // implementations that both pull <id> out of navidrome://track/<id>.
+    // CLAUDE.md flags scheme drift between the two as a live trap — pin them to
+    // the same decoded output for ids that exercise the decoder.
+    const char* ids[] = {"plain", "a/b", "a%2Fb", u8"中文+plus", "x?y"};
+    for (const char* id : ids) {
+        const auto uri = "navidrome://track/" + navidrome::uriEncode(id);
+        check(resolveArtId(uri) == trackIdFromURI(uri),
+            "resolveArtId and trackIdFromURI agree on the decoded id");
+        check(resolveArtId(uri) == std::string(id),
+            "the round-tripped id decodes back to the original");
+    }
+    const auto withQuery =
+        "navidrome://track/" + navidrome::uriEncode("a/b") + "?rating=3&x=1";
+    check(resolveArtId(withQuery) == "a/b" && trackIdFromURI(withQuery) == "a/b",
+        "a trailing query string is stripped by both parsers before decoding");
+
+    // resolveArtId's id= query branch and queryParamFromURI are two more query
+    // parsers that must decode a parameter the same way.
+    check(resolveArtId("navidrome://track/ignored?id=a%2Fb") ==
+          navidrome::queryParamFromURI("navidrome://track/ignored?id=a%2Fb", "id"),
+        "the id= query branch decodes the same as queryParamFromURI");
+}
+
+void testErrorModel() {
+    using navidrome::ErrorKind;
+    using navidrome::Error;
+    using navidrome::httpStatusToErrorKind;
+    using navidrome::subsonicCodeToErrorKind;
+    using navidrome::isRetryable;
+    using navidrome::errorKindName;
+
+    // HTTP status -> ErrorKind
+    check(httpStatusToErrorKind(200) == ErrorKind::None, "HTTP 200 is not an error");
+    check(httpStatusToErrorKind(204) == ErrorKind::None, "any 2xx is success");
+    check(httpStatusToErrorKind(0) == ErrorKind::Network,
+        "status 0 (no response line) is a network failure");
+    check(httpStatusToErrorKind(401) == ErrorKind::Auth, "HTTP 401 is auth");
+    check(httpStatusToErrorKind(403) == ErrorKind::Auth, "HTTP 403 is auth");
+    check(httpStatusToErrorKind(404) == ErrorKind::NotFound, "HTTP 404 is not-found");
+    check(httpStatusToErrorKind(410) == ErrorKind::NotFound, "HTTP 410 Gone is not-found");
+    check(httpStatusToErrorKind(429) == ErrorKind::RateLimited, "HTTP 429 is rate-limited");
+    check(httpStatusToErrorKind(500) == ErrorKind::ServerError, "HTTP 500 lower bound");
+    check(httpStatusToErrorKind(599) == ErrorKind::ServerError, "HTTP 599 upper bound");
+    check(httpStatusToErrorKind(302) == ErrorKind::Network,
+        "an unfollowed redirect is a transport problem, not a server error");
+    check(httpStatusToErrorKind(418) == ErrorKind::ServerError,
+        "an unmapped 4xx falls back to server error");
+
+    // Subsonic error code -> ErrorKind
+    check(subsonicCodeToErrorKind(40) == ErrorKind::Auth, "Subsonic 40 wrong creds is auth");
+    check(subsonicCodeToErrorKind(41) == ErrorKind::Auth, "Subsonic 41 token auth n/a is auth");
+    check(subsonicCodeToErrorKind(50) == ErrorKind::Auth, "Subsonic 50 not authorized is auth");
+    check(subsonicCodeToErrorKind(70) == ErrorKind::NotFound, "Subsonic 70 is not-found");
+    check(subsonicCodeToErrorKind(0) == ErrorKind::ServerError, "Subsonic 0 generic is server error");
+    check(subsonicCodeToErrorKind(10) == ErrorKind::ServerError,
+        "Subsonic 10 missing param is a server error to us (we built the request)");
+    check(subsonicCodeToErrorKind(60) == ErrorKind::ServerError,
+        "Subsonic 60 trial expired is unmapped -> server error");
+
+    // retry policy
+    check(isRetryable(ErrorKind::Network), "network failures are retryable");
+    check(isRetryable(ErrorKind::Timeout), "timeouts are retryable");
+    check(isRetryable(ErrorKind::RateLimited), "rate-limit is retryable (after backoff)");
+    check(isRetryable(ErrorKind::ServerError), "5xx is retryable");
+    check(!isRetryable(ErrorKind::Auth), "auth failure is deterministic, not retryable");
+    check(!isRetryable(ErrorKind::NotFound), "not-found is deterministic, not retryable");
+    check(!isRetryable(ErrorKind::Parse), "a parse failure repeats, not retryable");
+    check(!isRetryable(ErrorKind::NotConfigured), "not-configured is not retryable");
+    check(!isRetryable(ErrorKind::None), "success is not 'retryable'");
+
+    // Error convenience accessors
+    Error ok;
+    check(ok.ok() && !ok.retryable() && std::string(ok.kindName()) == "None",
+        "a default-constructed Error is success");
+    Error timedOut{ErrorKind::Timeout, 0, 0, "receive deadline hit"};
+    check(!timedOut.ok() && timedOut.retryable(),
+        "a Timeout Error reports not-ok and retryable");
+    check(std::string(timedOut.kindName()) == "Timeout",
+        "kindName round-trips the enum");
+
+    // every enumerator has a distinct, non-empty name
+    const ErrorKind all[] = {
+        ErrorKind::None, ErrorKind::NotConfigured, ErrorKind::Network,
+        ErrorKind::Timeout, ErrorKind::Tls, ErrorKind::Auth, ErrorKind::NotFound,
+        ErrorKind::RateLimited, ErrorKind::ServerError, ErrorKind::Parse,
+        ErrorKind::Cancelled, ErrorKind::Unknown,
+    };
+    for (ErrorKind k : all) {
+        check(errorKindName(k) != nullptr && errorKindName(k)[0] != '\0',
+            "every ErrorKind has a printable name");
+    }
 }
 
 } // namespace
@@ -335,6 +580,9 @@ int main() {
     testTranscodeParams();
     testFileNames();
     testQueryParams();
+    testMd5KnownAnswers();
+    testCrossParserParity();
+    testErrorModel();
     if (failures != 0) {
         std::cerr << failures << " test(s) failed\n";
         return 1;

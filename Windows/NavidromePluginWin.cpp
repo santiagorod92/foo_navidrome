@@ -3,6 +3,7 @@
 #include "SubsonicClientWin.h"
 #include "MediaEnrichmentLogic.h"
 #include "../NavidromePlaylistSync.h"
+#include "../NavidromeDebugLog.h"
 #include "EsLyricBridge.h"
 #include <SDK/cfg_var.h>
 #include <SDK/album_art.h>
@@ -443,10 +444,12 @@ private:
         saveSettings();
         SetDlgItemText(IDC_STATUS, L"Testing\u2026");
         std::thread([this]() {
+          navidrome::dbg::runGuarded("UI", "connection test", [&]{
             std::string err;
             bool ok = navidrome::SubsonicClientWin::get().ping(err);
             PostMessage(WM_TEST_RESULT, ok ? 1 : 0,
                 reinterpret_cast<LPARAM>(ok ? nullptr : new std::string(err)));
+          });
         }).detach();
     }
 
@@ -469,6 +472,7 @@ private:
         SetDlgItemText(IDC_SCAN_STATUS, L"Starting scan…");
 
         std::thread([this]() {
+          navidrome::dbg::runGuarded("UI", "library rescan poll", [&]{
             std::string err;
             auto status = navidrome::SubsonicClientWin::get().startScan(err);
             if (!err.empty()) {
@@ -488,6 +492,7 @@ private:
             }
             PostMessage(WM_SCAN_STATUS,
                 reinterpret_cast<WPARAM>(new ScanProgress{true, true, status.count, ""}), 0);
+          });
         }).detach();
     }
 
@@ -638,10 +643,15 @@ private:
         }
         double positionMs = pc->playback_get_position() * 1000.0;
         std::thread([songId, positionMs]() {
+          navidrome::dbg::runGuarded("Bookmark", "bookmarkCurrentPosition", [&]{
             std::string err;
             navidrome::SubsonicClientWin::get().createBookmark(songId, positionMs, "", err);
             if (!err.empty())
                 console::printf("Navidrome: failed to save bookmark: %s", err.c_str());
+            NAVIDROME_LOG("Bookmark", "save id=" + songId + " pos=" +
+                std::to_string((long long)positionMs) + "ms" +
+                (err.empty() ? " ok" : " FAILED: " + err));
+          });
         }).detach();
     }
 };
@@ -814,8 +824,14 @@ private:
     // never stall playback, and a failed scrobble isn't worth interrupting for.
     static void scrobbleAsync(std::string songId, bool submission) {
         std::thread([songId, submission]() {
-            std::string err;
-            navidrome::SubsonicClientWin::get().scrobble(songId, submission, err);
+            navidrome::dbg::runGuarded("Scrobble", "scrobbleAsync", [&]{
+                std::string err;
+                navidrome::SubsonicClientWin::get().scrobble(songId, submission, err);
+                navidrome::Error e = navidrome::SubsonicClientWin::get().lastError();
+                NAVIDROME_LOG("Scrobble", std::string(submission ? "submit" : "now-playing") +
+                              " id=" + songId + (e.ok() ? " ok"
+                              : std::string(" FAILED ") + e.kindName() + ": " + e.message));
+            });
         }).detach();
     }
 
@@ -825,16 +841,24 @@ private:
     // lookup, so a whole-playlist refresh would be one request per track.
     static void refreshRatingAsync(std::string songId) {
         std::thread([songId]() {
-            std::string err;
-            navidrome::Song song;
-            if (!navidrome::SubsonicClientWin::get().getSong(songId, song, err)) return;
-            navidrome::RatingUpdate u;
-            u.songId  = songId;
-            u.rating  = song.rating;
-            u.starred = song.starred;
-            std::vector<navidrome::RatingUpdate> updates;
-            updates.push_back(std::move(u));
-            navidrome::syncRatingsToPlaylists(std::move(updates));
+            navidrome::dbg::runGuarded("Rating", "refreshRatingAsync", [&]{
+                std::string err;
+                navidrome::Song song;
+                if (!navidrome::SubsonicClientWin::get().getSong(songId, song, err)) {
+                    NAVIDROME_WARN("Rating", "getSong id=" + songId + " failed: " +
+                        navidrome::SubsonicClientWin::get().lastError().kindName());
+                    return;
+                }
+                navidrome::RatingUpdate u;
+                u.songId  = songId;
+                u.rating  = song.rating;
+                u.starred = song.starred;
+                std::vector<navidrome::RatingUpdate> updates;
+                updates.push_back(std::move(u));
+                navidrome::syncRatingsToPlaylists(std::move(updates));
+                NAVIDROME_LOG("Rating", "id=" + songId + " -> rating=" +
+                    std::to_string(u.rating) + " starred=" + (u.starred ? "1" : "0"));
+            });
         }).detach();
     }
 
@@ -860,7 +884,25 @@ bool navidrome::setStarredOnServer(const std::string& songId, bool starred) {
 // Startup refresh — mirrors navidromeRefreshRatingsOnStart() in
 // NavidromePlugin.mm.
 
+// One-shot dump of the state that shapes every later trace line — see the
+// macOS twin in NavidromePlugin.mm.
+static void navidromeLogSessionEnv() {
+#ifdef NAVIDROME_DEBUG_LOG
+    std::string fmt = navidrome::cfg_stream_format.get().c_str();
+    NAVIDROME_LOG("Env", std::string("platform=Windows")
+        + "  configured=" + (navidrome::SubsonicClientWin::get().isConfigured() ? "yes" : "no")
+        + "  server=" + navidrome::cfg_server_url.get().c_str()
+        + "  transcode=" + (fmt.empty() ? "server-default" : fmt)
+        + "  maxBitrate=" + std::to_string((int)navidrome::cfg_max_bitrate.get())
+        + "  scrobble=" + (navidrome::cfg_scrobble.get() ? "on" : "off")
+        + "  startupRefresh=" + (navidrome::refreshRatingsOnStartEnabled() ? "on" : "off")
+        + "  customHeaders=" + (navidrome::cfg_custom_headers.get().length() ? "yes" : "no"));
+#endif
+}
+
 static void navidromeRefreshRatingsOnStart() {
+    navidromeLogSessionEnv();
+
     // Main thread: walking the playlists is a main-thread operation.
     navidrome::PlaylistAlbumScan scan = navidrome::scanPlaylistAlbums();
 
@@ -870,8 +912,17 @@ static void navidromeRefreshRatingsOnStart() {
     // nothing" are otherwise indistinguishable from the outside.
     if (scan.entries == 0) return;
 
-    if (!navidrome::refreshRatingsOnStartEnabled()) return;
-    if (!navidrome::SubsonicClientWin::get().isConfigured()) return;
+    if (!navidrome::refreshRatingsOnStartEnabled()) {
+        NAVIDROME_LOG("Rating", "startup refresh: disabled by advconfig switch");
+        return;
+    }
+    if (!navidrome::SubsonicClientWin::get().isConfigured()) {
+        NAVIDROME_LOG("Rating", "startup refresh: no server configured");
+        return;
+    }
+    NAVIDROME_LOG("Rating", "startup refresh: " + std::to_string(scan.entries) +
+                  " entries, " + std::to_string(scan.albumIds.size()) + " distinct albums, " +
+                  std::to_string(scan.ungrouped) + " ungrouped");
 
     // Skipping coverage silently is how a partial refresh gets mistaken for a
     // complete one, so the two outcomes that leave entries behind say so.
@@ -885,6 +936,7 @@ static void navidromeRefreshRatingsOnStart() {
 
     const std::size_t ungrouped = scan.ungrouped;
     std::thread([albumIds = std::move(scan.albumIds), ungrouped]() {
+      navidrome::dbg::runGuarded("Rating", "startup refresh worker", [&]{
         std::vector<navidrome::RatingUpdate> updates;
         std::size_t failed = 0;
         for (const auto& albumId : albumIds) {
@@ -910,6 +962,8 @@ static void navidromeRefreshRatingsOnStart() {
         if (ungrouped > 0) msg += ", " + std::to_string(ungrouped) +
             " entry/entries skipped (no album id, added by an older version)";
         console::print(msg.c_str());
+        NAVIDROME_LOG("Rating", "startup refresh done: " + msg);
+      });
     }).detach();
 }
 

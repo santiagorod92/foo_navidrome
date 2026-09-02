@@ -1,6 +1,6 @@
 .PHONY: help test test-clean mac-test mac-test-clean \
-	win-build win-build-launch win-install win-test win-logs \
-	mac-build mac-build-minor mac-build-major mac-build-no-install mac-install mac-release mac-ci-build mac-logs \
+	win-build win-build-patch win-build-minor win-build-major win-build-launch win-install win-test win-logs \
+	mac-build mac-build-patch mac-build-minor mac-build-major mac-build-no-install mac-install mac-release mac-ci-build mac-logs \
 	win-vm-setup win-vm-fetch win-vm-install win-vm-test clean
 
 XWIN_SDK ?= $(HOME)/.local/share/xwin/sdk
@@ -22,14 +22,18 @@ help:
 	@echo "  mac-test              native clang++ build/run of the SAME test suite (macOS)"
 	@echo "  mac-test-clean        same, forcing a clean recompile"
 	@echo ""
-	@echo "  win-build             cross-compile Windows x64 component locally (win-build-local.sh)"
-	@echo "  win-build-launch      same, then relaunch local Wine foobar2000 to load it"
+	@echo "  win-build             cross-compile Windows x64 component locally (win-build-local.sh, no version bump)"
+	@echo "  win-build-patch       bump version.txt patch, then cross-compile"
+	@echo "  win-build-minor       bump version.txt minor, then cross-compile"
+	@echo "  win-build-major       bump version.txt major, then cross-compile"
+	@echo "  win-build-launch      same as win-build, then relaunch local Wine foobar2000 to load it"
 	@echo "  win-install           install built DLL into local Wine foobar2000 + package"
 	@echo "  win-logs              follow the local Wine debug log, colourised (run beside win-build-launch)"
 	@echo "  win-test              dispatch build-windows.yml on GH runner, install, [ARGS=--launch]"
 	@echo "                        (win-logs / mac-logs share scripts/navidrome-logs.sh — pass ARGS=-a for the whole file)"
 	@echo ""
 	@echo "  mac-build             bump patch, xcodebuild Release, install locally"
+	@echo "  mac-build-patch       alias for mac-build (explicit patch bump)"
 	@echo "  mac-build-minor       bump minor instead of patch"
 	@echo "  mac-build-major       bump major instead of patch"
 	@echo "  mac-build-no-install  bump + build only (skip install)"
@@ -68,6 +72,15 @@ mac-test-clean:
 win-build:
 	./scripts/win-build-local.sh
 
+win-build-patch:
+	./scripts/win-build-local.sh --patch
+
+win-build-minor:
+	./scripts/win-build-local.sh --minor
+
+win-build-major:
+	./scripts/win-build-local.sh --major
+
 win-build-launch:
 	./scripts/win-build-local.sh --launch
 
@@ -83,6 +96,9 @@ win-test:
 # --- macOS native component ---
 mac-build:
 	./scripts/mac-dev-build.sh
+
+mac-build-patch:
+	./scripts/mac-dev-build.sh --patch
 
 mac-build-minor:
 	./scripts/mac-dev-build.sh --minor

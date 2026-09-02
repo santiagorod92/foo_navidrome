@@ -366,6 +366,24 @@ decode steps, UI actions) to `/tmp/foo_navidrome_debug.log` (Wine writes it via
 win-logs` / `make mac-logs` (`scripts/navidrome-logs.sh`) tail it live. Release / CI
 builds never define the flag — the tracing compiles to nothing.
 
+Each line is `HH:MM:SS.mmm  LEVEL  TAG  [tNNNN] message`, where `tNNNN` is a
+short per-thread id so interleaved lines from background workers can be told
+apart. `NAVIDROME_TIMER` also emits `<label> took <n>ms` when its scope exits
+(HTTP requests are timed this way). Three environment knobs are read once at the
+first log line — no rebuild:
+
+| Variable | Effect |
+|---|---|
+| `NAVIDROME_LOG_LEVEL` | `INFO` (default) · `WARN` · `ERROR` — drop lines below the threshold |
+| `NAVIDROME_LOG_TAGS` | comma list, e.g. `HTTP,Input` — when set, only those tags are written |
+| `NAVIDROME_LOG_MAX_MB` | integer (default `8`) — truncate the file at process start if it is already larger |
+
+Both HTTP clients classify every failure into a shared `navidrome::ErrorKind`
+(`Auth` / `NotFound` / `Timeout` / `Network` / `Tls` / `RateLimited` /
+`ServerError` / `Parse` / …), retry the transient kinds up to 3× with jittered
+backoff, and expose the classified outcome via `lastError()` so a caller can
+tell "credentials rejected" from "connection reset" without string-matching.
+
 ### macOS — build & install the native Mac component
 
 | Command | What it does |

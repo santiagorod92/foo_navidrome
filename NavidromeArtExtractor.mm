@@ -1,5 +1,6 @@
 #import "stdafx.h"
 #import "SubsonicClient.h"
+#import "NavidromeDebugLog.h"
 #include <SDK/album_art.h>
 
 // ---------------------------------------------------------------------------
@@ -36,9 +37,14 @@ public:
         // Cloudflare Access tokens) are applied — a bare dataWithContentsOfURL:
         // would send none and get blocked behind a Zero Trust tunnel.
         NSData *data = [SubsonicClient.sharedClient dataForURL:url error:&err];
-        if (!data || data.length == 0)
+        if (!data || data.length == 0) {
+            NAVIDROME_WARN("Art", std::string("no art for id=") + m_artId.c_str() +
+                           (err ? std::string(" (") + (err.localizedDescription.UTF8String ?: "?") + ")" : ""));
             throw exception_album_art_not_found();
+        }
 
+        NAVIDROME_LOG("Art", std::string("art id=") + m_artId.c_str() + " -> " +
+                      std::to_string((unsigned long)data.length) + " bytes");
         return album_art_data_impl::g_create(data.bytes, (t_size)data.length);
     }
 
@@ -87,8 +93,10 @@ public:
                 }
             }
         }
-        if (artId.length() == 0)
+        if (artId.length() == 0) {
+            NAVIDROME_WARN("Art", std::string("open: no art id resolvable from ") + p_path);
             throw exception_album_art_not_found();
+        }
         return new service_impl_t<navidrome_art_instance>(artId.c_str());
     }
 };

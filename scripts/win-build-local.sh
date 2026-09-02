@@ -14,10 +14,14 @@
 #   - foobar2000 SDK as a sibling       (../foobar2000, ../pfc)
 #
 # Usage:
-#   ./win-build-local.sh [--launch] [--clean] [--no-test] [-j N]
+#   ./win-build-local.sh [--launch] [--clean] [--no-test] [--minor|--major|--patch] [-j N]
 #     --launch   relaunch foobar2000 after installing
 #     --clean    wipe the object cache and rebuild everything
 #     --no-test  skip the unit tests that otherwise gate the build
+#     --minor    bump version.txt minor (resets patch to 0) before building
+#     --major    bump version.txt major (resets minor + patch to 0)
+#     --patch    bump version.txt patch
+#                (default: no bump — the Linux loop runs often, version.txt is tracked)
 #     -j N       parallel compile jobs (default: nproc)
 
 set -euo pipefail
@@ -36,12 +40,15 @@ FOOBAR_LAUNCHER="foobar2000"
 TARGET="x86_64-pc-windows-msvc"
 ARCH_DIR="x86_64"
 
-LAUNCH=0; CLEAN=0; RUN_TESTS=1; JOBS="$(nproc 2>/dev/null || echo 4)"
+LAUNCH=0; CLEAN=0; RUN_TESTS=1; BUMP=none; JOBS="$(nproc 2>/dev/null || echo 4)"
 while [ $# -gt 0 ]; do
   case "$1" in
     --launch) LAUNCH=1; shift ;;
     --clean)  CLEAN=1; shift ;;
     --no-test) RUN_TESTS=0; shift ;;
+    --major)  BUMP=major; shift ;;
+    --minor)  BUMP=minor; shift ;;
+    --patch)  BUMP=patch; shift ;;
     -j)       JOBS="${2:?}"; shift 2 ;;
     -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
@@ -72,15 +79,33 @@ if [ "$RUN_TESTS" = "1" ]; then
   XWIN_SDK="$XWIN_SDK" "$REPO/scripts/run-unit-tests.sh" win
 fi
 
+# Version bump (mirrors mac-dev-build.sh). Default is *no* bump: unlike the mac
+# dev loop, the Linux cross-compile loop runs constantly and version.txt is
+# tracked, so churning it every build is noise. --minor/--major/--patch opt in
+# (make win-build-minor / win-build-major wire the first two).
+VERSION_FILE="$REPO/version.txt"
+[ -f "$VERSION_FILE" ] || echo "1.0.0" > "$VERSION_FILE"
+if [ "$BUMP" != "none" ]; then
+  CURRENT="$(tr -d '[:space:]' < "$VERSION_FILE")"
+  IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+  MAJOR="${MAJOR:-1}"; MINOR="${MINOR:-0}"; PATCH="${PATCH:-0}"
+  case "$BUMP" in
+    major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+    minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+    patch) PATCH=$((PATCH + 1)) ;;
+  esac
+  NEW="${MAJOR}.${MINOR}.${PATCH}"
+  echo "$NEW" > "$VERSION_FILE"
+  echo "==> version: ${CURRENT} -> ${NEW}"
+fi
+
 # main.cpp reads COMPONENT_VERSION from version_generated.h (else falls back to
 # "1.0.0"). The macOS Xcode build phase writes this; mirror it here so the local
 # DLL reports the version.txt version. Gitignored, shared with the mac build.
-if [ -f "$REPO/version.txt" ]; then
-  printf '#pragma once\n#define COMPONENT_VERSION "%s"\n' "$(cat "$REPO/version.txt")" > "$REPO/version_generated.h"
-  # version_generated.h isn't tracked as a compile dependency, so drop main.obj
-  # to force it to pick up a version bump (one cheap TU).
-  rm -f "$OBJ_DIR/main.obj"
-fi
+printf '#pragma once\n#define COMPONENT_VERSION "%s"\n' "$(cat "$VERSION_FILE")" > "$REPO/version_generated.h"
+# version_generated.h isn't tracked as a compile dependency, so drop main.obj
+# to force it to pick up a version bump (one cheap TU).
+rm -f "$OBJ_DIR/main.obj"
 
 # Forced-include prefix: the foobar SDK/pfc sources expect a *full* windows.h
 # (NOT lean) so COM types (interface, IUnknown, IDataObject) are defined, but
