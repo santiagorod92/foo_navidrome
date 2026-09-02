@@ -1,3 +1,11 @@
+## [1.12.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.11.0...v1.12.0) (2026-09-02)
+
+
+### Features
+
+* add Play Similar and Random Mix actions (macOS + Windows) ([949b641](https://github.com/santiagorod92/foo_navidrome/commit/949b641a9035a53c1adfe572bb5ee3ebcd61f62e))
+* **debug:** cross-platform NAVIDROME_DEBUG_LOG tracer with make win-logs / mac-logs ([ca6bf80](https://github.com/santiagorod92/foo_navidrome/commit/ca6bf8009968d32d54f6e255186ff105e44bd104))
+
 ## [1.11.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.10.0...v1.11.0) (2026-08-26)
 
 
