@@ -2,6 +2,7 @@
 #include "NavidromeInputWin.h"
 #include "SubsonicClientWin.h"
 #include "MediaEnrichmentLogic.h"
+#include "../NavidromeDebugLog.h"
 #include "../NavidromePlaylistSync.h"
 #include <SDK/cfg_var.h>
 #include <SDK/input_impl.h>
@@ -60,9 +61,14 @@ public:
     t_filestats2 get_stats2(uint32_t, abort_callback&) { return filestats2_invalid; }
 
     void decode_initialize(unsigned p_flags, abort_callback& p_abort) {
+        NAVIDROME_LOG("Input", "decode_initialize  id=" + m_song_id + " suffix=" + m_suffix);
         std::string url = navidrome::SubsonicClientWin::get().streamURL(m_song_id);
-        if (url.empty()) throw exception_io_data();
+        if (url.empty()) {
+            NAVIDROME_ERR("Input", "streamURL() returned empty — not configured or id unknown");
+            throw exception_io_data();
+        }
         m_resolved_url = url.c_str();
+        NAVIDROME_LOG("Input", "stream URL = " + navidrome::dbg::scrubAuth(url));
 
         // When custom headers are configured, open the stream ourselves so the
         // headers ride along; otherwise hand a null file and let foobar open the
@@ -70,6 +76,8 @@ public:
         file::ptr httpFile;
         auto headers = navidrome::SubsonicClientWin::customHeaderLines();
         if (!headers.empty()) {
+            NAVIDROME_LOG("Input", "opening stream ourselves with "
+                     + std::to_string(headers.size()) + " custom header(s)");
             http_request::ptr req = http_client::get()->create_request("GET");
             for (const auto& h : headers) req->add_header(h.c_str());
             httpFile = req->run(url.c_str(), p_abort);
@@ -89,9 +97,15 @@ public:
             hint = hintBuf.c_str();
         }
 
+        NAVIDROME_LOG("Input", "g_open_for_decoding  hint=" + navidrome::dbg::scrubAuth(hint)
+                 + (httpFile.is_valid() ? "  (own http file)" : "  (foobar opens url)"));
         input_entry::g_open_for_decoding(m_decoder, httpFile, hint, p_abort, true);
-        if (m_decoder.is_empty()) throw exception_io_data();
+        if (m_decoder.is_empty()) {
+            NAVIDROME_ERR("Input", "g_open_for_decoding produced no decoder — unsupported/corrupt stream");
+            throw exception_io_data();
+        }
         m_decoder->initialize(0, p_flags, p_abort);
+        NAVIDROME_LOG("Input", "decoder ready");
     }
 
     bool decode_run(audio_chunk& chunk, abort_callback& abort) {

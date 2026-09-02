@@ -163,6 +163,7 @@
   <ItemGroup>
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="..\SubsonicTypes.h" />
+    <ClInclude Include="..\NavidromeDebugLog.h" />
     <ClInclude Include="SubsonicClientWin.h" />
     <ClInclude Include="NavidromeInputWin.h" />
     <ClInclude Include="BrowserWindow.h" />

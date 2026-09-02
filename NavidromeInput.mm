@@ -2,6 +2,7 @@
 #import "NavidromeInput.h"
 #import "SubsonicClient.h"
 #import "SubsonicTypes.h"
+#import "NavidromeDebugLog.h"
 #import "NavidromePlaylistSync.h"
 #import <Foundation/Foundation.h>
 #include <SDK/input_impl.h>
@@ -81,16 +82,23 @@ public:
     }
 
     void decode_initialize(unsigned p_flags, abort_callback &p_abort) {
+        NAVIDROME_LOG("Input", std::string("decode_initialize  id=") + m_song_id.c_str()
+                 + " suffix=" + m_suffix.c_str());
         pfc::string8 httpURL;
         @autoreleasepool {
             SubsonicClient *c = [SubsonicClient sharedClient];
             NSString *songIdNS  = [NSString stringWithUTF8String:m_song_id.c_str()];
             NSString *coverArt  = [NSString stringWithUTF8String:m_cover_art_id.c_str()];
             NSString *http      = [c streamURLForSongId:songIdNS coverArtId:coverArt];
-            if (http.length == 0) throw exception_io_data();
+            if (http.length == 0) {
+                NAVIDROME_ERR("Input", "streamURLForSongId returned empty — not configured or id unknown");
+                throw exception_io_data();
+            }
             httpURL = [http UTF8String];
         }
         m_resolved_url = httpURL;
+        NAVIDROME_LOG("Input", "stream URL = "
+                 + navidrome::dbg::scrubAuth(std::string(m_resolved_url.c_str())));
 
         // When custom headers are configured (e.g. Cloudflare Access service
         // tokens), open the stream ourselves via http_client so the headers
@@ -101,6 +109,8 @@ public:
         std::vector<std::string> headers =
             navidrome::parseHeaderLines(navidrome::cfg_custom_headers.get().c_str());
         if (!headers.empty()) {
+            NAVIDROME_LOG("Input", "opening stream ourselves with "
+                     + std::to_string(headers.size()) + " custom header(s)");
             http_request::ptr req = http_client::get()->create_request("GET");
             for (const std::string &h : headers) req->add_header(h.c_str());
             httpFile = req->run(m_resolved_url.c_str(), p_abort);
@@ -122,9 +132,15 @@ public:
 
         // The `true` flag marks this as a redirect open so foobar will not feed
         // it back to us.
+        NAVIDROME_LOG("Input", "g_open_for_decoding  hint=" + navidrome::dbg::scrubAuth(hint)
+                 + (httpFile.is_valid() ? "  (own http file)" : "  (foobar opens url)"));
         input_entry::g_open_for_decoding(m_decoder, httpFile, hint, p_abort, true);
-        if (m_decoder.is_empty()) throw exception_io_data();
+        if (m_decoder.is_empty()) {
+            NAVIDROME_ERR("Input", "g_open_for_decoding produced no decoder — unsupported/corrupt stream");
+            throw exception_io_data();
+        }
         m_decoder->initialize(0, p_flags, p_abort);
+        NAVIDROME_LOG("Input", "decoder ready");
     }
 
     bool decode_run(audio_chunk &p_chunk, abort_callback &p_abort) {
