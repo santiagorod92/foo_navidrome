@@ -75,16 +75,9 @@ while IFS= read -r f; do SRCS+=("$f"); done < <(
   {
     ls "$PFC_ROOT"/*.cpp "$SDK_ROOT/SDK"/*.cpp "$SDK_ROOT/helpers"/*.cpp \
        "$LIBPPUI_ROOT"/*.cpp "$SDK_ROOT/foobar2000_component_client"/*.cpp 2>/dev/null
-    echo "$REPO/main.cpp"
-    echo "$REPO/Windows/SubsonicClientWin.cpp"
-    echo "$REPO/Windows/NavidromePluginWin.cpp"
-    echo "$REPO/Windows/NavidromeInputWin.cpp"
-    echo "$REPO/Windows/BrowserWindow.cpp"
-    # Keep in sync with the ClCompile list in Windows/foo_navidrome.vcxproj —
-    # this list is hardcoded, so a source added there but not here only shows up
-    # as a wall of undefined symbols at link time.
-    echo "$REPO/Windows/MediaEnrichmentLogic.cpp"
-    echo "$REPO/Windows/EsLyricBridge.cpp"
+    # Component sources are parsed from Windows/foo_navidrome.vcxproj — add a
+    # new .cpp there and this cross-build picks it up with no edit here.
+    bash "$REPO/scripts/component-sources.sh" "$REPO"
   } | grep -vE '/(pfc-fb2k-hooks|nix-objects)\.cpp$'
 )
 
