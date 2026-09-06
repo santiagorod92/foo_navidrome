@@ -141,36 +141,18 @@ public:
 
 private:
     void parse_uri(const char* uri) {
-        std::string s = uri;
-        if (s.size() <= kPrefixLen) return;
-        std::string rest = s.substr(kPrefixLen);   // <id>[?query]
-        std::string idPart, query;
-        size_t q = rest.find('?');
-        if (q == std::string::npos) { idPart = rest; }
-        else { idPart = rest.substr(0, q); query = rest.substr(q + 1); }
-        m_song_id = navidrome::uriDecode(idPart);
-
-        size_t pos = 0;
-        while (pos <= query.size() && !query.empty()) {
-            size_t amp = query.find('&', pos);
-            std::string pair = (amp == std::string::npos)
-                ? query.substr(pos) : query.substr(pos, amp - pos);
-            size_t eq = pair.find('=');
-            std::string k = (eq == std::string::npos) ? pair : pair.substr(0, eq);
-            std::string v = (eq == std::string::npos) ? "" : navidrome::uriDecode(pair.substr(eq + 1));
-            if      (k == "title")       m_title  = v;
-            else if (k == "artist")      m_artist = v;
-            else if (k == "album")       m_album  = v;
-            else if (k == "tracknumber") m_track  = atoi(v.c_str());
-            else if (k == "date")        m_year   = atoi(v.c_str());
-            else if (k == "duration")    m_duration = atof(v.c_str());
-            else if (k == "coverArt")    m_cover_art_id = v;
-            else if (k == "suffix")      m_suffix = v;
-            else if (k == "rating")      m_rating = atoi(v.c_str());
-            else if (k == "starred")     m_starred = (atoi(v.c_str()) != 0);
-            if (amp == std::string::npos) break;
-            pos = amp + 1;
-        }
+        navidrome::TrackURI t = navidrome::parseTrackURI(uri ? uri : "");
+        m_song_id      = t.id;
+        m_title        = t.title;
+        m_artist       = t.artist;
+        m_album        = t.album;
+        m_cover_art_id = t.coverArtId;
+        m_suffix       = t.suffix;
+        m_track        = t.track;
+        m_year         = t.year;
+        m_duration     = t.duration;
+        m_rating       = t.rating;
+        m_starred      = t.starred;
     }
 
     std::string  m_path, m_song_id, m_cover_art_id, m_title, m_artist, m_album, m_suffix;
@@ -202,31 +184,18 @@ std::string navidrome::makeTrackURI(const std::string& id,
                                     int rating,
                                     bool starred,
                                     const std::string& albumId) {
-    if (id.empty()) return "";
-    std::string uri = std::string(kPrefix) + navidrome::uriEncode(id);
-
-    std::vector<std::string> q;
-    if (!title.empty())      q.push_back("title="  + navidrome::uriEncode(title));
-    if (!artist.empty())     q.push_back("artist=" + navidrome::uriEncode(artist));
-    if (!album.empty())      q.push_back("album="  + navidrome::uriEncode(album));
-    if (track > 0)           q.push_back("tracknumber=" + std::to_string(track));
-    if (year > 0)            q.push_back("date="   + std::to_string(year));
-    if (duration > 0) {
-        char b[32];
-        snprintf(b, sizeof(b), "%g", duration);
-        q.push_back(std::string("duration=") + b);
-    }
-    if (!coverArtId.empty()) q.push_back("coverArt=" + navidrome::uriEncode(coverArtId));
-    if (!suffix.empty())     q.push_back("suffix="   + navidrome::uriEncode(suffix));
-    // Omitted when unset, so the URI of an unrated track is byte-identical to
-    // what earlier versions produced.
-    if (rating > 0)          q.push_back("rating="   + std::to_string(rating));
-    if (starred)             q.push_back("starred=1");
-    if (!albumId.empty())    q.push_back("albumId=" + navidrome::uriEncode(albumId));
-
-    for (size_t i = 0; i < q.size(); ++i) {
-        uri += (i == 0 ? "?" : "&");
-        uri += q[i];
-    }
-    return uri;
+    navidrome::TrackURI t;
+    t.id         = id;
+    t.title      = title;
+    t.artist     = artist;
+    t.album      = album;
+    t.coverArtId = coverArtId;
+    t.suffix     = suffix;
+    t.albumId    = albumId;
+    t.track      = track;
+    t.year       = year;
+    t.rating     = rating;
+    t.duration   = duration;
+    t.starred    = starred;
+    return navidrome::buildTrackURI(t);
 }

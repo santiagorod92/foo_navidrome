@@ -25,15 +25,6 @@ constexpr const char *kPrefix = "navidrome://track/";
 constexpr size_t       kPrefixLen = 18;
 
 // ---------------------------------------------------------------------------
-// URI builder
-// ---------------------------------------------------------------------------
-
-static NSString *encodeQuery(NSString *s) {
-    return [s stringByAddingPercentEncodingWithAllowedCharacters:
-            [NSCharacterSet URLQueryAllowedCharacterSet]] ?: @"";
-}
-
-// ---------------------------------------------------------------------------
 // Input implementation — proxy/redirect to foobar's HTTP input.
 //
 // On open(): parse the URI, store metadata.
@@ -186,35 +177,18 @@ public:
 
 private:
     void parse_uri(const char *uri) {
-        @autoreleasepool {
-            NSString *uriNS = [NSString stringWithUTF8String:uri];
-            NSURLComponents *c = [NSURLComponents componentsWithString:uriNS];
-            if (!c) return;
-
-            // For navidrome://track/<id>?... NSURLComponents parses "track" as
-            // the host and "/<id>" as the path (URI authority semantics).
-            // So the song id is percentEncodedPath with the leading "/" stripped.
-            NSString *path = c.percentEncodedPath ?: @"";
-            NSString *idPart = [path hasPrefix:@"/"] ? [path substringFromIndex:1] : path;
-            if (idPart.length > 0) {
-                NSString *songId = [idPart stringByRemovingPercentEncoding] ?: idPart;
-                m_song_id = [songId UTF8String];
-            }
-
-            for (NSURLQueryItem *q in (c.queryItems ?: @[])) {
-                NSString *k = q.name; NSString *v = q.value ?: @"";
-                if      ([k isEqualToString:@"title"])       m_title  = [v UTF8String];
-                else if ([k isEqualToString:@"artist"])      m_artist = [v UTF8String];
-                else if ([k isEqualToString:@"album"])       m_album  = [v UTF8String];
-                else if ([k isEqualToString:@"tracknumber"]) m_track  = v.intValue;
-                else if ([k isEqualToString:@"date"])        m_year   = v.intValue;
-                else if ([k isEqualToString:@"duration"])    m_duration = v.doubleValue;
-                else if ([k isEqualToString:@"coverArt"])    m_cover_art_id = [v UTF8String];
-                else if ([k isEqualToString:@"suffix"])      m_suffix = [v UTF8String];
-                else if ([k isEqualToString:@"rating"])      m_rating = v.intValue;
-                else if ([k isEqualToString:@"starred"])     m_starred = (v.intValue != 0);
-            }
-        }
+        navidrome::TrackURI t = navidrome::parseTrackURI(uri ? uri : "");
+        m_song_id      = t.id.c_str();
+        m_cover_art_id = t.coverArtId.c_str();
+        m_title        = t.title.c_str();
+        m_artist       = t.artist.c_str();
+        m_album        = t.album.c_str();
+        m_suffix       = t.suffix.c_str();
+        m_track        = t.track;
+        m_year         = t.year;
+        m_duration     = t.duration;
+        m_rating       = t.rating;
+        m_starred      = t.starred;
     }
 
     pfc::string8 m_path;
@@ -243,6 +217,11 @@ static input_singletrack_factory_t<navidrome_input, input_entry::flag_redirect>
 // Public URI builder
 // ---------------------------------------------------------------------------
 
+static std::string cppStr(NSString *s) {
+    const char *u = [s UTF8String];
+    return u ? std::string(u) : std::string();
+}
+
 NSString *NavidromeMakeTrackURIWithFields(NSString *songId,
                                           NSString *title,
                                           NSString *artist,
@@ -257,37 +236,23 @@ NSString *NavidromeMakeTrackURIWithFields(NSString *songId,
                                           NSString *albumId) {
     if (!songId || songId.length == 0) return nil;
 
-    NSMutableArray<NSString *> *q = [NSMutableArray array];
-    if (title.length)
-        [q addObject:[NSString stringWithFormat:@"title=%@",  encodeQuery(title)]];
-    if (artist.length)
-        [q addObject:[NSString stringWithFormat:@"artist=%@", encodeQuery(artist)]];
-    if (album.length)
-        [q addObject:[NSString stringWithFormat:@"album=%@",  encodeQuery(album)]];
-    if (track > 0)
-        [q addObject:[NSString stringWithFormat:@"tracknumber=%ld", (long)track]];
-    if (year > 0)
-        [q addObject:[NSString stringWithFormat:@"date=%ld",  (long)year]];
-    if (duration > 0)
-        [q addObject:[NSString stringWithFormat:@"duration=%g", duration]];
-    if (coverArtId.length)
-        [q addObject:[NSString stringWithFormat:@"coverArt=%@", encodeQuery(coverArtId)]];
-    if (suffix.length)
-        [q addObject:[NSString stringWithFormat:@"suffix=%@", encodeQuery(suffix)]];
-    // Omitted when unset, so the URI of an unrated track is byte-identical to
-    // what earlier versions produced.
-    if (rating > 0)
-        [q addObject:[NSString stringWithFormat:@"rating=%ld", (long)rating]];
-    if (starred)
-        [q addObject:@"starred=1"];
-    if (albumId.length)
-        [q addObject:[NSString stringWithFormat:@"albumId=%@", encodeQuery(albumId)]];
+    navidrome::TrackURI t;
+    t.id         = cppStr(songId);
+    t.title      = cppStr(title);
+    t.artist     = cppStr(artist);
+    t.album      = cppStr(album);
+    t.coverArtId = cppStr(coverArtId);
+    t.suffix     = cppStr(suffix);
+    t.albumId    = cppStr(albumId);
+    t.track      = (int)track;
+    t.year       = (int)year;
+    t.rating     = (int)rating;
+    t.duration   = duration;
+    t.starred    = starred ? true : false;
 
-    NSString *query = [q componentsJoinedByString:@"&"];
-    NSString *idPart = encodeQuery(songId);
-    if (query.length > 0)
-        return [NSString stringWithFormat:@"%@%@?%@", NavidromeURIPrefix, idPart, query];
-    return [NSString stringWithFormat:@"%@%@", NavidromeURIPrefix, idPart];
+    std::string uri = navidrome::buildTrackURI(t);
+    if (uri.empty()) return nil;
+    return [NSString stringWithUTF8String:uri.c_str()];
 }
 
 NSString *NavidromeMakeTrackURI(SubsonicSong *song) {

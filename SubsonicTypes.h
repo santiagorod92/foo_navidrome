@@ -3,6 +3,8 @@
 // No ObjC, no Windows headers — safe to include anywhere.
 
 #include <cstddef>
+#include <cstdio>
+#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -285,6 +287,126 @@ inline std::string percentDecode(const std::string& in) {
     return out;
 }
 
+// Percent-encode a URI component. Escapes everything outside the RFC 3986
+// unreserved set (A-Za-z0-9 and -_.~), uppercase hex — strict, so the output is
+// safe in either the path or the query. The inverse of percentDecode above.
+inline std::string percentEncode(const std::string& in) {
+    static constexpr char hex[] = "0123456789ABCDEF";
+    std::string out;
+    out.reserve(in.size());
+    for (unsigned char c : in) {
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~') {
+            out.push_back(static_cast<char>(c));
+        } else {
+            out.push_back('%');
+            out.push_back(hex[c >> 4]);
+            out.push_back(hex[c & 0x0F]);
+        }
+    }
+    return out;
+}
+
+// A decoded navidrome://track/<id>?... URI. Every query field is optional; a URI
+// written by an older version simply leaves the newer fields at their defaults,
+// so the scheme only ever grows. `rating` 0 means unrated (also: param absent).
+// `albumId` is carried for the startup rating refresh only — one getAlbum.view
+// brings a whole album's playlist entries up to date; the input handler never
+// reads it back.
+struct TrackURI {
+    std::string id;
+    std::string title;
+    std::string artist;
+    std::string album;
+    std::string coverArtId;
+    std::string suffix;
+    std::string albumId;
+    int    track    = 0;
+    int    year     = 0;
+    int    rating   = 0;
+    double duration = 0.0;
+    bool   starred  = false;
+};
+
+// Build a navidrome://track/<id>?title=...&artist=...&album=...&tracknumber=N&
+// date=YYYY&duration=SEC&coverArt=...&suffix=mp3&rating=N&starred=1&albumId=...
+// URI. Every field is omitted when unset, so the URI of an unrated, untagged
+// track is byte-identical to what earlier versions produced. Returns "" when id
+// is empty. Shared by both platforms' enqueue paths.
+inline std::string buildTrackURI(const TrackURI& t) {
+    if (t.id.empty()) return std::string();
+    std::string uri = "navidrome://track/" + percentEncode(t.id);
+
+    std::vector<std::string> q;
+    if (!t.title.empty())      q.push_back("title="  + percentEncode(t.title));
+    if (!t.artist.empty())     q.push_back("artist=" + percentEncode(t.artist));
+    if (!t.album.empty())      q.push_back("album="  + percentEncode(t.album));
+    if (t.track > 0)           q.push_back("tracknumber=" + std::to_string(t.track));
+    if (t.year > 0)            q.push_back("date="   + std::to_string(t.year));
+    if (t.duration > 0.0) {
+        char b[32];
+        std::snprintf(b, sizeof(b), "%g", t.duration);
+        q.push_back(std::string("duration=") + b);
+    }
+    if (!t.coverArtId.empty()) q.push_back("coverArt=" + percentEncode(t.coverArtId));
+    if (!t.suffix.empty())     q.push_back("suffix="   + percentEncode(t.suffix));
+    if (t.rating > 0)          q.push_back("rating="   + std::to_string(t.rating));
+    if (t.starred)             q.push_back("starred=1");
+    if (!t.albumId.empty())    q.push_back("albumId=" + percentEncode(t.albumId));
+
+    for (std::size_t i = 0; i < q.size(); ++i) {
+        uri += (i == 0 ? '?' : '&');
+        uri += q[i];
+    }
+    return uri;
+}
+
+// Parse a navidrome://track/<id>?... URI. A URI that isn't one of ours yields a
+// TrackURI with an empty id (callers treat that as "not ours"). Unknown query
+// keys are ignored; an absent key leaves its field at the default, never a
+// sentinel — same tolerance trackIdFromURI / queryParamFromURI already give.
+inline TrackURI parseTrackURI(const std::string& uri) {
+    TrackURI t;
+    static const std::string prefix = "navidrome://track/";
+    if (uri.size() <= prefix.size() || uri.compare(0, prefix.size(), prefix) != 0)
+        return t;
+
+    std::string rest = uri.substr(prefix.size());   // <id>[?query]
+    size_t q = rest.find('?');
+    if (q == std::string::npos) {
+        t.id = percentDecode(rest);
+        return t;
+    }
+    t.id = percentDecode(rest.substr(0, q));
+    std::string query = rest.substr(q + 1);
+
+    for (size_t pos = 0; pos < query.size();) {
+        size_t amp = query.find('&', pos);
+        std::string pair = (amp == std::string::npos)
+            ? query.substr(pos) : query.substr(pos, amp - pos);
+        size_t eq = pair.find('=');
+        std::string k = (eq == std::string::npos) ? pair : pair.substr(0, eq);
+        std::string v = (eq == std::string::npos)
+            ? std::string() : percentDecode(pair.substr(eq + 1));
+
+        if      (k == "title")       t.title       = v;
+        else if (k == "artist")      t.artist      = v;
+        else if (k == "album")       t.album       = v;
+        else if (k == "tracknumber") t.track       = std::atoi(v.c_str());
+        else if (k == "date")        t.year        = std::atoi(v.c_str());
+        else if (k == "duration")    t.duration    = std::atof(v.c_str());
+        else if (k == "coverArt")    t.coverArtId  = v;
+        else if (k == "suffix")      t.suffix      = v;
+        else if (k == "rating")      t.rating      = std::atoi(v.c_str());
+        else if (k == "starred")     t.starred     = (std::atoi(v.c_str()) != 0);
+        else if (k == "albumId")     t.albumId     = v;
+
+        if (amp == std::string::npos) break;
+        pos = amp + 1;
+    }
+    return t;
+}
+
 // Extract the song id from a navidrome://track/<id>?... URI. Returns "" when
 // the path isn't one of ours. Shared so the scrobbler on both platforms maps a
 // playing metadb handle back to a Subsonic song id the same way.
@@ -320,6 +442,60 @@ inline std::string queryParamFromURI(const std::string& uri, const std::string& 
         pos = amp + 1;
     }
     return std::string();
+}
+
+// Read one query parameter out of ANY url string — not just navidrome:// ones.
+// Cover-art resolution also sees legacy raw /rest/stream.view HTTP URLs, so this
+// scans from the first '?' with no scheme check. Returns the percent-decoded
+// value, or "" when the key is absent. A parameter is only matched at a pair
+// boundary, so "id" never matches inside "guid=" or "albumId=".
+inline std::string rawQueryParam(const std::string& url, const std::string& key) {
+    size_t q = url.find('?');
+    if (q == std::string::npos) return std::string();
+    const std::string needle = key + "=";
+    for (size_t pos = q + 1; pos < url.size();) {
+        size_t amp = url.find('&', pos);
+        size_t end = (amp == std::string::npos) ? url.size() : amp;
+        if (end - pos >= needle.size() &&
+            url.compare(pos, needle.size(), needle) == 0)
+            return percentDecode(url.substr(pos + needle.size(), end - pos - needle.size()));
+        if (amp == std::string::npos) break;
+        pos = amp + 1;
+    }
+    return std::string();
+}
+
+// Resolve the Subsonic art id for a track path, in priority order: the coverArt=
+// query param (album / Folder.jpg id embedded at enqueue time), else the id=
+// query param, else the <id> segment of a navidrome://track/<id> URI. Returns ""
+// when nothing usable is present. Shared by both platforms' album_art
+// extractors — is_our_path there also matches legacy /rest/stream.view URLs, so
+// this must handle a plain HTTP url too.
+inline std::string resolveArtId(const std::string& path) {
+    std::string v = rawQueryParam(path, "coverArt");
+    if (!v.empty()) return v;
+    v = rawQueryParam(path, "id");
+    if (!v.empty()) return v;
+
+    static const std::string prefix = "navidrome://track/";
+    if (path.compare(0, prefix.size(), prefix) == 0) {
+        size_t begin = prefix.size();
+        size_t end   = path.find('?', begin);
+        return percentDecode(path.substr(
+            begin, end == std::string::npos ? std::string::npos : end - begin));
+    }
+    return std::string();
+}
+
+// Subsonic "submission" (scrobble-complete) fires once the listener has heard
+// enough of the track: half its length, capped at 4 minutes. A track of unknown
+// length (a live stream, length <= 0) uses the 4-minute cap alone. Shared so
+// both scrobblers apply the identical rule — and so neither has to spell the
+// Windows-safe (std::min) form.
+inline double scrobbleSubmitThreshold(double trackLength) {
+    if (trackLength <= 0.0) return 240.0;
+    double half = trackLength * 0.5;
+    return half < 240.0 ? half : 240.0;
 }
 
 // Parse a multiline custom-headers blob (one "Name: Value" per line) into

@@ -13,7 +13,7 @@ namespace navidrome {
 std::string uriEncode(const std::string& value);
 std::string uriDecode(const std::string& value);
 std::string normalizeMediaServerUrl(const std::string& value);
-std::string resolveArtId(const std::string& path);
+// resolveArtId now lives in ../SubsonicTypes.h (shared with macOS).
 
 std::string buildCoverArtUrl(const std::string& serverUrl,
                              const std::string& username,

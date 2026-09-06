@@ -73,21 +73,6 @@ std::string md5Hex(const std::string& input) {
 }
 #endif
 
-std::string queryParameter(const std::string& query, const std::string& key) {
-    std::size_t offset = 0;
-    while (offset <= query.size()) {
-        const auto separator = query.find('&', offset);
-        const auto pair = query.substr(offset, separator == std::string::npos
-            ? std::string::npos : separator - offset);
-        const auto equals = pair.find('=');
-        if (equals != std::string::npos && pair.substr(0, equals) == key)
-            return uriDecode(pair.substr(equals + 1));
-        if (separator == std::string::npos) break;
-        offset = separator + 1;
-    }
-    return {};
-}
-
 bool startsWithCaseInsensitive(const std::string& value, const char* prefix) {
     const std::size_t length = std::strlen(prefix);
     if (value.size() < length) return false;
@@ -178,24 +163,6 @@ std::string normalizeMediaServerUrl(const std::string& value) {
     return result;
 }
 
-std::string resolveArtId(const std::string& path) {
-    const auto queryStart = path.find('?');
-    if (queryStart != std::string::npos) {
-        const auto query = path.substr(queryStart + 1);
-        auto value = queryParameter(query, "coverArt");
-        if (!value.empty()) return value;
-        value = queryParameter(query, "id");
-        if (!value.empty()) return value;
-    }
-    static constexpr char prefix[] = "navidrome://track/";
-    if (path.compare(0, sizeof(prefix) - 1, prefix) == 0) {
-        const auto begin = sizeof(prefix) - 1;
-        const auto end = path.find('?', begin);
-        return uriDecode(path.substr(begin, end == std::string::npos
-            ? std::string::npos : end - begin));
-    }
-    return {};
-}
 
 std::string buildCoverArtUrl(const std::string& serverUrl,
                              const std::string& username,

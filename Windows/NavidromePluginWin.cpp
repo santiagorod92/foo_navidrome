@@ -798,8 +798,7 @@ public:
 
     void on_playback_time(double time) override {
         if (m_songId.empty() || m_submitted) return;
-        // Unknown length (live stream): fall back to the 4-minute cap alone.
-        double threshold = (m_length > 0) ? (std::min)(240.0, m_length * 0.5) : 240.0;
+        double threshold = navidrome::scrobbleSubmitThreshold(m_length);
         if (time < threshold) return;
         m_submitted = true;
         scrobbleAsync(m_songId, true);
