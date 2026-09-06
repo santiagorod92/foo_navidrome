@@ -1,3 +1,10 @@
+## [1.13.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.12.2...v1.13.0) (2026-09-06)
+
+
+### Features
+
+* filter browsing by Navidrome library (multi-library support) ([#10](https://github.com/santiagorod92/foo_navidrome/issues/10)) ([b3548ce](https://github.com/santiagorod92/foo_navidrome/commit/b3548ce92f0c38eef39536dc3dbb9e7a88677771)), closes [#9](https://github.com/santiagorod92/foo_navidrome/issues/9)
+
 ## [1.12.2](https://github.com/santiagorod92/foo_navidrome/compare/v1.12.1...v1.12.2) (2026-09-06)
 
 ## [1.12.1](https://github.com/santiagorod92/foo_navidrome/compare/v1.12.0...v1.12.1) (2026-09-02)
