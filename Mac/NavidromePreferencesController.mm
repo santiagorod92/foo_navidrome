@@ -467,6 +467,9 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
     navidrome::cfg_server_url.set([_serverField.stringValue UTF8String] ?: "");
     navidrome::cfg_username.set  ([_usernameField.stringValue UTF8String] ?: "");
     navidrome::cfg_password.set  ([_passwordField.stringValue UTF8String] ?: "");
+    // Server / credentials changed — drop the cached music-folder list so the
+    // library filter re-fetches against the new target.
+    [[SubsonicClient sharedClient] refreshMusicFolders];
 }
 
 // ---------------------------------------------------------------------------

@@ -5,6 +5,7 @@
 #include <SDK/cfg_var.h>
 #include <algorithm>
 #include <functional>
+#include <unordered_set>
 
 #pragma comment(lib, "winhttp.lib")
 #pragma comment(lib, "crypt32.lib")
@@ -18,6 +19,8 @@ namespace navidrome {
     extern cfg_string cfg_custom_headers;
     extern cfg_string cfg_stream_format;
     extern cfg_var_modern::cfg_int cfg_max_bitrate;
+    extern cfg_var_modern::cfg_bool cfg_library_filter;
+    extern cfg_string cfg_library_ids;
 }
 
 // ---------------------------------------------------------------------------
@@ -269,6 +272,51 @@ static navidrome::Album parseAlbumObj(const std::string& a) {
     return al;
 }
 
+// A field that Subsonic may report either quoted ("id":"1") or as a bare
+// number ("id":1) — getMusicFolders uses the numeric form. Try the string
+// scan first, fall back to the integer scan.
+static std::string jstrOrInt(const std::string& obj, const std::string& key) {
+    std::string s = jstr(obj, key);
+    if (!s.empty()) return s;
+    auto probe = "\"" + key + "\":";
+    auto p = obj.find(probe);
+    if (p == std::string::npos) return "";
+    p += probe.size();
+    while (p < obj.size() && obj[p] == ' ') ++p;
+    if (p >= obj.size() || !isdigit(static_cast<unsigned char>(obj[p]))) return "";
+    return std::to_string(jint(obj, key));
+}
+
+// Fan `fetch` out over each musicFolderId in `folderIds`, concatenating the
+// results and dropping duplicates by `idOf`. An empty `folderIds` runs the
+// fetch once with an empty id — the unchanged single-request path.
+template <class T, class Fetch, class IdOf>
+static std::vector<T> fanOutFolders(const std::vector<std::string>& folderIds,
+                                    Fetch fetch, IdOf idOf) {
+    if (folderIds.empty()) return fetch(std::string());
+    std::vector<T> merged;
+    std::unordered_set<std::string> seen;
+    for (const auto& fid : folderIds) {
+        std::vector<T> part = fetch(fid);
+        for (auto& item : part) {
+            std::string id = idOf(item);
+            if (id.empty() || seen.insert(id).second)
+                merged.push_back(std::move(item));
+        }
+    }
+    return merged;
+}
+
+// Append musicFolderId to an existing query-params string (which may be empty),
+// so a fanned-out request restricts to one library. A blank folderId leaves
+// params untouched — the unfiltered single-request path.
+static std::string withMusicFolder(std::string params, const std::string& folderId) {
+    if (folderId.empty()) return params;
+    if (!params.empty()) params += '&';
+    params += "musicFolderId=" + folderId;
+    return params;
+}
+
 // startScan.view / getScanStatus.view share this response shape.
 static navidrome::ScanStatus parseScanStatus(const std::string& root) {
     navidrome::ScanStatus result;
@@ -482,24 +530,69 @@ bool navidrome::SubsonicClientWin::ping(std::string& outError) {
     return !root.empty();
 }
 
-std::vector<navidrome::Artist> navidrome::SubsonicClientWin::getArtists(std::string& outError) {
-    std::string body = httpGet(buildURL("getArtists.view"), outError);
+std::vector<navidrome::MusicFolder>
+navidrome::SubsonicClientWin::getMusicFolders(std::string& outError) {
+    std::string body = httpGet(buildURL("getMusicFolders.view"), outError);
     if (body.empty()) return {};
     auto root = checkResponse(body, outError);
     if (root.empty()) return {};
 
-    std::vector<Artist> result;
-    for (auto& idxObj : jarr(root, "index")) {
-        for (auto& a : jarr(idxObj, "artist")) {
-            Artist ar;
-            ar.id         = jstr(a, "id");
-            ar.name       = jstr(a, "name", "Unknown Artist");
-            ar.coverArtId = jstr(a, "coverArt");
-            ar.albumCount = jint(a, "albumCount");
-            result.push_back(std::move(ar));
-        }
+    std::vector<MusicFolder> result;
+    for (auto& f : jarr(root, "musicFolder")) {
+        MusicFolder mf;
+        mf.id   = jstrOrInt(f, "id");   // Subsonic reports musicFolder id numerically
+        mf.name = jstr(f, "name");
+        if (!mf.id.empty()) result.push_back(std::move(mf));
     }
     return result;
+}
+
+void navidrome::SubsonicClientWin::refreshMusicFolders() {
+    m_musicFoldersFetched = false;
+    m_musicFoldersCache.clear();
+}
+
+std::vector<navidrome::MusicFolder> navidrome::SubsonicClientWin::cachedMusicFolders() {
+    if (!m_musicFoldersFetched) {
+        std::string err;
+        auto folders = getMusicFolders(err);
+        if (!folders.empty()) {          // latch only on a good answer; retry after a failure
+            m_musicFoldersCache = std::move(folders);
+            m_musicFoldersFetched = true;
+        }
+    }
+    return m_musicFoldersCache;
+}
+
+std::vector<std::string> navidrome::SubsonicClientWin::activeMusicFolderIds() {
+    if (!cfg_library_filter.get()) return {};
+    return navidrome::effectiveMusicFolderIds(
+        true, cfg_library_ids.get().c_str(), cachedMusicFolders());
+}
+
+std::vector<navidrome::Artist> navidrome::SubsonicClientWin::getArtists(std::string& outError) {
+    auto fetch = [&](const std::string& folderId) -> std::vector<Artist> {
+        std::string body = httpGet(
+            buildURL("getArtists.view", withMusicFolder("", folderId)), outError);
+        if (body.empty()) return {};
+        auto root = checkResponse(body, outError);
+        if (root.empty()) return {};
+
+        std::vector<Artist> result;
+        for (auto& idxObj : jarr(root, "index")) {
+            for (auto& a : jarr(idxObj, "artist")) {
+                Artist ar;
+                ar.id         = jstr(a, "id");
+                ar.name       = jstr(a, "name", "Unknown Artist");
+                ar.coverArtId = jstr(a, "coverArt");
+                ar.albumCount = jint(a, "albumCount");
+                result.push_back(std::move(ar));
+            }
+        }
+        return result;
+    };
+    return fanOutFolders<Artist>(activeMusicFolderIds(), fetch,
+                                 [](const Artist& a) { return a.id; });
 }
 
 std::vector<navidrome::Album>
@@ -538,24 +631,44 @@ navidrome::SubsonicClientWin::getSongsForAlbum(const std::string& albumId,
 
 navidrome::SearchResults
 navidrome::SubsonicClientWin::search(const std::string& query, std::string& outError) {
-    std::string params = "query=" + urlEncode(query) +
-                         "&artistCount=20&albumCount=20&songCount=50";
-    std::string body = httpGet(buildURL("search3.view", params), outError);
-    if (body.empty()) return {};
-    auto root = checkResponse(body, outError);
-    if (root.empty()) return {};
+    const std::string base = "query=" + urlEncode(query) +
+                             "&artistCount=20&albumCount=20&songCount=50";
 
-    SearchResults r;
-    for (auto& a : jarr(root, "artist")) {
-        Artist ar; ar.id = jstr(a,"id"); ar.name = jstr(a,"name"); ar.coverArtId = jstr(a,"coverArt");
-        ar.starred = !jstr(a,"starred").empty();
-        r.artists.push_back(ar);
+    auto fetch = [&](const std::string& folderId) -> SearchResults {
+        std::string body = httpGet(
+            buildURL("search3.view", withMusicFolder(base, folderId)), outError);
+        if (body.empty()) return {};
+        auto root = checkResponse(body, outError);
+        if (root.empty()) return {};
+
+        SearchResults r;
+        for (auto& a : jarr(root, "artist")) {
+            Artist ar; ar.id = jstr(a,"id"); ar.name = jstr(a,"name"); ar.coverArtId = jstr(a,"coverArt");
+            ar.starred = !jstr(a,"starred").empty();
+            r.artists.push_back(ar);
+        }
+        for (auto& a : jarr(root, "album"))
+            r.albums.push_back(parseAlbumObj(a));
+        for (auto& s : jarr(root, "song"))
+            r.songs.push_back(parseSongObj(s));
+        return r;
+    };
+
+    const auto folderIds = activeMusicFolderIds();
+    if (folderIds.empty()) return fetch(std::string());
+
+    SearchResults merged;
+    std::unordered_set<std::string> seenArtists, seenAlbums, seenSongs;
+    for (const auto& fid : folderIds) {
+        SearchResults part = fetch(fid);
+        for (auto& a : part.artists)
+            if (a.id.empty() || seenArtists.insert(a.id).second) merged.artists.push_back(std::move(a));
+        for (auto& a : part.albums)
+            if (a.id.empty() || seenAlbums.insert(a.id).second) merged.albums.push_back(std::move(a));
+        for (auto& s : part.songs)
+            if (s.id.empty() || seenSongs.insert(s.id).second) merged.songs.push_back(std::move(s));
     }
-    for (auto& a : jarr(root, "album"))
-        r.albums.push_back(parseAlbumObj(a));
-    for (auto& s : jarr(root, "song"))
-        r.songs.push_back(parseSongObj(s));
-    return r;
+    return merged;
 }
 
 // ---------------------------------------------------------------------------
@@ -565,33 +678,43 @@ navidrome::SubsonicClientWin::search(const std::string& query, std::string& outE
 std::vector<navidrome::Album>
 navidrome::SubsonicClientWin::getAlbumList(AlbumListType type, int size,
                                             std::string& outError) {
-    std::string params = std::string("type=") + albumListTypeName(type) +
-                         "&size=" + std::to_string(size);
-    std::string body = httpGet(buildURL("getAlbumList2.view", params), outError);
-    if (body.empty()) return {};
-    auto root = checkResponse(body, outError);
-    if (root.empty()) return {};
+    const std::string base = std::string("type=") + albumListTypeName(type) +
+                             "&size=" + std::to_string(size);
+    auto fetch = [&](const std::string& folderId) -> std::vector<Album> {
+        std::string body = httpGet(
+            buildURL("getAlbumList2.view", withMusicFolder(base, folderId)), outError);
+        if (body.empty()) return {};
+        auto root = checkResponse(body, outError);
+        if (root.empty()) return {};
 
-    std::vector<Album> result;
-    for (auto& a : jarr(root, "album"))
-        result.push_back(parseAlbumObj(a));
-    return result;
+        std::vector<Album> result;
+        for (auto& a : jarr(root, "album"))
+            result.push_back(parseAlbumObj(a));
+        return result;
+    };
+    return fanOutFolders<Album>(activeMusicFolderIds(), fetch,
+                                [](const Album& a) { return a.id; });
 }
 
 std::vector<navidrome::Song>
 navidrome::SubsonicClientWin::getStarredSongs(std::string& outError) {
-    std::string body = httpGet(buildURL("getStarred2.view"), outError);
-    if (body.empty()) return {};
-    auto root = checkResponse(body, outError);
-    if (root.empty()) return {};
+    auto fetch = [&](const std::string& folderId) -> std::vector<Song> {
+        std::string body = httpGet(
+            buildURL("getStarred2.view", withMusicFolder("", folderId)), outError);
+        if (body.empty()) return {};
+        auto root = checkResponse(body, outError);
+        if (root.empty()) return {};
 
-    std::vector<Song> result;
-    for (auto& s : jarr(root, "song")) {
-        Song so = parseSongObj(s);
-        so.starred = true;   // getStarred2 omits the per-item "starred" field
-        result.push_back(std::move(so));
-    }
-    return result;
+        std::vector<Song> result;
+        for (auto& s : jarr(root, "song")) {
+            Song so = parseSongObj(s);
+            so.starred = true;   // getStarred2 omits the per-item "starred" field
+            result.push_back(std::move(so));
+        }
+        return result;
+    };
+    return fanOutFolders<Song>(activeMusicFolderIds(), fetch,
+                               [](const Song& s) { return s.id; });
 }
 
 std::vector<navidrome::Genre>
@@ -619,16 +742,21 @@ std::vector<navidrome::Song>
 navidrome::SubsonicClientWin::getSongsForGenre(const std::string& genre, int count,
                                                 std::string& outError) {
     if (genre.empty()) return {};
-    std::string params = "genre=" + urlEncode(genre) + "&count=" + std::to_string(count);
-    std::string body = httpGet(buildURL("getSongsByGenre.view", params), outError);
-    if (body.empty()) return {};
-    auto root = checkResponse(body, outError);
-    if (root.empty()) return {};
+    const std::string base = "genre=" + urlEncode(genre) + "&count=" + std::to_string(count);
+    auto fetch = [&](const std::string& folderId) -> std::vector<Song> {
+        std::string body = httpGet(
+            buildURL("getSongsByGenre.view", withMusicFolder(base, folderId)), outError);
+        if (body.empty()) return {};
+        auto root = checkResponse(body, outError);
+        if (root.empty()) return {};
 
-    std::vector<Song> result;
-    for (auto& s : jarr(root, "song"))
-        result.push_back(parseSongObj(s));
-    return result;
+        std::vector<Song> result;
+        for (auto& s : jarr(root, "song"))
+            result.push_back(parseSongObj(s));
+        return result;
+    };
+    return fanOutFolders<Song>(activeMusicFolderIds(), fetch,
+                               [](const Song& s) { return s.id; });
 }
 
 std::vector<navidrome::Song>
@@ -649,16 +777,33 @@ navidrome::SubsonicClientWin::getSimilarSongs(const std::string& itemId, int cou
 
 std::vector<navidrome::Song>
 navidrome::SubsonicClientWin::getRandomSongs(int count, std::string& outError) {
-    std::string params = "size=" + std::to_string(count);
-    std::string body = httpGet(buildURL("getRandomSongs.view", params), outError);
-    if (body.empty()) return {};
-    auto root = checkResponse(body, outError);
-    if (root.empty()) return {};
+    const auto folderIds = activeMusicFolderIds();
+    // Split the requested size across the fanned-out libraries so the merged
+    // result stays near `count` rather than count-per-library.
+    const int perFolder = folderIds.empty()
+        ? count
+        : (std::max)(1, count / static_cast<int>(folderIds.size()) + 1);
 
-    std::vector<Song> result;
-    for (auto& s : jarr(root, "song"))
-        result.push_back(parseSongObj(s));
-    return result;
+    auto fetch = [&](const std::string& folderId) -> std::vector<Song> {
+        std::string body = httpGet(
+            buildURL("getRandomSongs.view",
+                     withMusicFolder("size=" + std::to_string(perFolder), folderId)),
+            outError);
+        if (body.empty()) return {};
+        auto root = checkResponse(body, outError);
+        if (root.empty()) return {};
+
+        std::vector<Song> result;
+        for (auto& s : jarr(root, "song"))
+            result.push_back(parseSongObj(s));
+        return result;
+    };
+
+    auto merged = fanOutFolders<Song>(folderIds, fetch,
+                                      [](const Song& s) { return s.id; });
+    if (!folderIds.empty() && static_cast<int>(merged.size()) > count)
+        merged.resize(count);
+    return merged;
 }
 
 bool navidrome::SubsonicClientWin::setStarred(bool starred, const std::string& itemId,

@@ -62,6 +62,8 @@ static constexpr GUID guid_cfg_custom_headers = { 0xa1b2c3d4,0x1111,0x2222,{0xaa
 static constexpr GUID guid_cfg_scrobble   = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x0b} };
 static constexpr GUID guid_cfg_stream_format = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x0c} };
 static constexpr GUID guid_cfg_max_bitrate   = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x0d} };
+static constexpr GUID guid_cfg_library_filter = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x10} };
+static constexpr GUID guid_cfg_library_ids   = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x11} };
 
 // ---------------------------------------------------------------------------
 // Config vars
@@ -91,6 +93,14 @@ namespace navidrome {
     // serializes differently.
     cfg_string cfg_stream_format(guid_cfg_stream_format, "");
     cfg_var_modern::cfg_int cfg_max_bitrate(guid_cfg_max_bitrate, 0);
+
+    // Multi-library filter. cfg_library_filter off (the default) => every
+    // request behaves exactly as before, no getMusicFolders round-trip.
+    // When on, cfg_library_ids is a comma-separated list of getMusicFolders
+    // ids to restrict browsing to; empty or "covers every library" both mean
+    // "no restriction". Qualified cfg_bool for the same reason as cfg_scrobble.
+    cfg_var_modern::cfg_bool cfg_library_filter(guid_cfg_library_filter, false);
+    cfg_string cfg_library_ids(guid_cfg_library_ids, "");
 }
 
 // ---------------------------------------------------------------------------
@@ -187,6 +197,7 @@ private:
     void OnSave(UINT, int, HWND) {
         navidrome::cfg_custom_headers.set(editTextU8().c_str());
         navidrome::CoverCache::instance().clear();
+        navidrome::SubsonicClientWin::get().refreshMusicFolders();
         refreshEsLyricBridge();
         ShowWindow(SW_HIDE);
     }
@@ -236,6 +247,7 @@ public:
     void apply()  override {
         saveSettings();
         navidrome::CoverCache::instance().clear();
+        navidrome::SubsonicClientWin::get().refreshMusicFolders();
         refreshEsLyricBridge();
         m_changed = false;
         notifyCb();

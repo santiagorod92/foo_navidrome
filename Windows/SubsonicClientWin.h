@@ -34,6 +34,16 @@ public:
     // from "connection reset" (transient) without string-matching outError.
     const Error& lastError() const { return m_lastError; }
 
+    // Music folders / "libraries" (getMusicFolders.view). A single-library
+    // server reports exactly one. Result is cached for the session after the
+    // first successful call (invalidate with refreshMusicFolders()).
+    std::vector<MusicFolder> getMusicFolders(std::string& outError);
+    // Same list, served from the session cache — fetches once on demand, then
+    // returns the cached copy (empty if that fetch failed). Used by the browse
+    // methods to decide the multi-library fan-out, and by the prefs UI.
+    std::vector<MusicFolder> cachedMusicFolders();
+    void refreshMusicFolders();
+
     std::vector<Artist>  getArtists(std::string& outError);
     std::vector<Album>   getAlbumsForArtist(const std::string& artistId, std::string& outError);
     std::vector<Song>    getSongsForAlbum(const std::string& albumId, std::string& outError);
@@ -175,7 +185,15 @@ private:
     // or "" (sets outError + m_lastError with the classified error code).
     std::string checkResponse(const std::string& body, std::string& outError) const;
 
+    // The musicFolderId values a browse/search request should fan out over,
+    // per the cfg_library_filter toggle + cfg_library_ids selection + the
+    // cached server folder list. Empty => a single request with no
+    // musicFolderId param (unchanged behaviour).
+    std::vector<std::string> activeMusicFolderIds();
+
     mutable Error m_lastError;
+    std::vector<MusicFolder> m_musicFoldersCache;
+    bool m_musicFoldersFetched = false;
 };
 
 } // namespace navidrome
