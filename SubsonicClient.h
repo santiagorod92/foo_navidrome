@@ -58,6 +58,13 @@
 @property (nonatomic, assign) NSInteger albumCount;
 @end
 
+// A music folder / "library" (getMusicFolders.view). Subsonic reports the id
+// as a JSON number; it's normalized to a string here to match every other id.
+@interface SubsonicMusicFolder : NSObject
+@property (nonatomic, copy) NSString *folderId;
+@property (nonatomic, copy) NSString *name;
+@end
+
 // An internet radio station (getInternetRadioStations.view). Playback uses
 // streamUrl directly — no navidrome:// URI, no transcoding.
 @interface SubsonicRadioStation : NSObject
@@ -101,6 +108,15 @@ typedef NS_ENUM(NSInteger, SubsonicStarKind) {
 // status). Lets a caller tell "credentials rejected" (surface to the user) from
 // "connection reset" (transient) without matching on NSError strings.
 - (navidrome::Error)lastError;
+
+// Music folders / "libraries" (getMusicFolders.view). A single-library server
+// reports exactly one. -cachedMusicFolders fetches once per session on demand
+// then serves a cached copy (empty array if that fetch failed); the browse
+// methods use it to decide the multi-library fan-out, and the prefs UI reads
+// it to populate its checklist. -refreshMusicFolders drops the cache.
+- (NSArray<SubsonicMusicFolder *> *)getMusicFoldersWithError:(NSError **)error;
+- (NSArray<SubsonicMusicFolder *> *)cachedMusicFolders;
+- (void)refreshMusicFolders;
 
 // Browse hierarchy
 - (NSArray<SubsonicArtist *> *)getArtistsWithError:(NSError **)error;

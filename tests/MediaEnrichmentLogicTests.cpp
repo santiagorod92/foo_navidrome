@@ -493,6 +493,50 @@ void testScrobbleThreshold() {
     check(scrobbleSubmitThreshold(-1.0) == 240.0, "negative length falls back to the cap");
 }
 
+void testMusicFolderFilter() {
+    using navidrome::MusicFolder;
+    using navidrome::parseMusicFolderIds;
+    using navidrome::joinMusicFolderIds;
+    using navidrome::effectiveMusicFolderIds;
+
+    // parse: trim, drop empties, de-dupe, keep order.
+    const auto ids = parseMusicFolderIds(" 1, 2 ,,3, 2 ");
+    check((ids == std::vector<std::string>{"1", "2", "3"}),
+        "parseMusicFolderIds trims, de-dupes and drops empty entries");
+    check(parseMusicFolderIds("").empty(), "empty csv parses to no ids");
+    check(parseMusicFolderIds("  ,  , ").empty(),
+        "a csv of only separators/space parses to no ids");
+    check(joinMusicFolderIds({"1", "2", "3"}) == "1,2,3",
+        "joinMusicFolderIds is the inverse form");
+    check(joinMusicFolderIds({}).empty(), "joining nothing yields an empty string");
+
+    const std::vector<MusicFolder> one   = {{"1", "Music"}};
+    const std::vector<MusicFolder> two    = {{"1", "Music"}, {"2", "Audiobooks"}};
+    const std::vector<MusicFolder> three  = {{"1", "Music"}, {"2", "Audiobooks"}, {"3", "Podcasts"}};
+
+    // Every "do nothing" branch returns {} — byte-for-byte today's behaviour.
+    check(effectiveMusicFolderIds(false, "1", two).empty(),
+        "filter disabled -> no fan-out even with a selection");
+    check(effectiveMusicFolderIds(true, "", two).empty(),
+        "empty selection -> no fan-out");
+    check(effectiveMusicFolderIds(true, "1", one).empty(),
+        "server with a single library -> no fan-out");
+    check(effectiveMusicFolderIds(true, "1,2", two).empty(),
+        "selection covering every server folder -> one unfiltered request");
+    check(effectiveMusicFolderIds(true, "7,8,9", two).empty(),
+        "a selection that is entirely stale -> no fan-out");
+
+    // Real subset -> fan-out list, in server order, stale ids dropped.
+    check((effectiveMusicFolderIds(true, "1", two) == std::vector<std::string>{"1"}),
+        "one-of-two selected -> fan out over that id");
+    check((effectiveMusicFolderIds(true, "3,1", three) ==
+           std::vector<std::string>{"1", "3"}),
+        "fan-out list follows server order, not selection order");
+    check((effectiveMusicFolderIds(true, "2,9", three) ==
+           std::vector<std::string>{"2"}),
+        "a stale id in an otherwise valid selection is dropped");
+}
+
 void testRawQueryParam() {
     using navidrome::rawQueryParam;
     const std::string legacy =
@@ -688,6 +732,7 @@ int main() {
     testFileNames();
     testQueryParams();
     testScrobbleThreshold();
+    testMusicFolderFilter();
     testRawQueryParam();
     testTrackURICodec();
     testMd5KnownAnswers();

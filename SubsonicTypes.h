@@ -2,6 +2,7 @@
 // Pure C++ types shared between all platform implementations.
 // No ObjC, no Windows headers — safe to include anywhere.
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
@@ -60,6 +61,15 @@ struct Genre {
     std::string name;
     int songCount  = 0;
     int albumCount = 0;
+};
+
+// A music folder ("library") from getMusicFolders.view. Subsonic reports the
+// id as a JSON number; both clients normalize it to a string so it sits next
+// to every other id in the codebase. A server with a single library reports
+// exactly one of these — the multi-library filter only engages past that.
+struct MusicFolder {
+    std::string id;
+    std::string name;
 };
 
 // An internet radio station (getInternetRadioStations.view). Unlike every
@@ -523,6 +533,83 @@ inline std::vector<std::string> parseHeaderLines(const std::string& blob) {
     }
     flush();
     return out;
+}
+
+// ---------------------------------------------------------------------------
+// Multi-library ("music folder") filter — shared by both Subsonic clients.
+//
+// Navidrome can expose more than one library; getMusicFolders.view lists them.
+// Most browse/list/search endpoints accept a single `musicFolderId`, never a
+// list, so restricting to a subset means one request per selected id merged
+// client-side. These three helpers own the cfg_string <-> id-list conversion
+// and the "which ids does this request actually fan out over" decision, so the
+// per-platform code stays a thin loop.
+// ---------------------------------------------------------------------------
+
+// Parse the cfg_string form (comma-separated folder ids) into trimmed,
+// non-empty, de-duplicated entries with their original order preserved.
+inline std::vector<std::string> parseMusicFolderIds(const std::string& csv) {
+    std::vector<std::string> out;
+    std::string cur;
+    auto flush = [&]() {
+        const char* ws = " \t\r\n";
+        size_t b = cur.find_first_not_of(ws);
+        size_t e = cur.find_last_not_of(ws);
+        if (b != std::string::npos) {
+            std::string id = cur.substr(b, e - b + 1);
+            if (std::find(out.begin(), out.end(), id) == out.end())
+                out.push_back(id);
+        }
+        cur.clear();
+    };
+    for (char ch : csv) {
+        if (ch == ',') flush();
+        else           cur.push_back(ch);
+    }
+    flush();
+    return out;
+}
+
+// Serialize an id list back to the cfg_string form.
+inline std::string joinMusicFolderIds(const std::vector<std::string>& ids) {
+    std::string out;
+    for (const auto& id : ids) {
+        if (!out.empty()) out += ',';
+        out += id;
+    }
+    return out;
+}
+
+// The set of `musicFolderId` values a browse/search request should be fanned
+// out over, given the user's filter toggle, their saved selection, and what
+// the server currently reports.
+//
+//   filter disabled                       -> {}   (send no musicFolderId)
+//   selection empty                       -> {}
+//   server reports < 2 folders            -> {}   (multi-library not in play)
+//   selection covers every server folder  -> {}   (1 unfiltered request beats N)
+//   otherwise -> selected ids that still exist server-side, in server order
+//
+// An empty return ALWAYS means "one request, no musicFolderId param" — i.e.
+// byte-for-byte today's behaviour. A non-empty return is the fan-out list.
+inline std::vector<std::string> effectiveMusicFolderIds(
+        bool filterEnabled,
+        const std::string& selectedCsv,
+        const std::vector<MusicFolder>& serverFolders) {
+    if (!filterEnabled)              return {};
+    if (serverFolders.size() < 2)   return {};
+
+    std::vector<std::string> selected = parseMusicFolderIds(selectedCsv);
+    if (selected.empty())           return {};
+
+    std::vector<std::string> result;
+    for (const auto& f : serverFolders) {
+        if (std::find(selected.begin(), selected.end(), f.id) != selected.end())
+            result.push_back(f.id);
+    }
+    if (result.empty())                       return {};   // selection all stale
+    if (result.size() == serverFolders.size()) return {};  // covers everything
+    return result;
 }
 
 } // namespace navidrome
