@@ -1,3 +1,10 @@
+## [1.13.1](https://github.com/santiagorod92/foo_navidrome/compare/v1.13.0...v1.13.1) (2026-09-07)
+
+
+### Bug Fixes
+
+* scope artist albums by library and group the browser tree by library ([#11](https://github.com/santiagorod92/foo_navidrome/issues/11)) ([d91e0e4](https://github.com/santiagorod92/foo_navidrome/commit/d91e0e47f863e634b38bc0f92b9453c7fef8719e)), closes [#9](https://github.com/santiagorod92/foo_navidrome/issues/9)
+
 ## [1.13.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.12.2...v1.13.0) (2026-09-06)
 
 
