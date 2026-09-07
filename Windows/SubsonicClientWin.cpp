@@ -570,38 +570,79 @@ std::vector<std::string> navidrome::SubsonicClientWin::activeMusicFolderIds() {
         true, cfg_library_ids.get().c_str(), cachedMusicFolders());
 }
 
-std::vector<navidrome::Artist> navidrome::SubsonicClientWin::getArtists(std::string& outError) {
-    auto fetch = [&](const std::string& folderId) -> std::vector<Artist> {
-        std::string body = httpGet(
-            buildURL("getArtists.view", withMusicFolder("", folderId)), outError);
-        if (body.empty()) return {};
-        auto root = checkResponse(body, outError);
-        if (root.empty()) return {};
+std::vector<std::string> navidrome::SubsonicClientWin::libraryGroupingIds() {
+    auto folders = cachedMusicFolders();
+    if (folders.size() < 2) return {};   // single-library server → flat list, always
 
-        std::vector<Artist> result;
-        for (auto& idxObj : jarr(root, "index")) {
-            for (auto& a : jarr(idxObj, "artist")) {
-                Artist ar;
-                ar.id         = jstr(a, "id");
-                ar.name       = jstr(a, "name", "Unknown Artist");
-                ar.coverArtId = jstr(a, "coverArt");
-                ar.albumCount = jint(a, "albumCount");
-                result.push_back(std::move(ar));
-            }
+    std::vector<std::string> allIds;
+    for (auto& f : folders) allIds.push_back(f.id);
+
+    // Grouping by library is independent of the "Only include selected
+    // libraries" checkbox: a multi-library server always groups. The checkbox
+    // only narrows *which* libraries show — and only when 2+ are ticked (1
+    // ticked is a single-library scope, handled flat by activeMusicFolderIds()).
+    if (cfg_library_filter.get()) {
+        auto sel = navidrome::parseMusicFolderIds(cfg_library_ids.get().c_str());
+        std::vector<std::string> picked;
+        for (auto& id : allIds)
+            if (std::find(sel.begin(), sel.end(), id) != sel.end())
+                picked.push_back(id);
+        if (picked.size() >= 2) return picked;
+        if (picked.size() == 1) return {};   // scoped to one library → flat
+        // 0 ticked → fall through to "all libraries"
+    }
+    return allIds;
+}
+
+// Parse one getArtists.view response, optionally restricted to a single
+// library. folderId empty => no musicFolderId param (all accessible libraries).
+std::vector<navidrome::Artist>
+navidrome::SubsonicClientWin::fetchArtistsForFolder(const std::string& folderId,
+                                                     std::string& outError) {
+    std::string body = httpGet(
+        buildURL("getArtists.view", withMusicFolder("", folderId)), outError);
+    if (body.empty()) return {};
+    auto root = checkResponse(body, outError);
+    if (root.empty()) return {};
+
+    std::vector<Artist> result;
+    for (auto& idxObj : jarr(root, "index")) {
+        for (auto& a : jarr(idxObj, "artist")) {
+            Artist ar;
+            ar.id         = jstr(a, "id");
+            ar.name       = jstr(a, "name", "Unknown Artist");
+            ar.coverArtId = jstr(a, "coverArt");
+            ar.albumCount = jint(a, "albumCount");
+            result.push_back(std::move(ar));
         }
-        return result;
+    }
+    return result;
+}
+
+std::vector<navidrome::Artist> navidrome::SubsonicClientWin::getArtists(std::string& outError) {
+    auto fetch = [&](const std::string& folderId) {
+        return fetchArtistsForFolder(folderId, outError);
     };
     return fanOutFolders<Artist>(activeMusicFolderIds(), fetch,
                                  [](const Artist& a) { return a.id; });
 }
 
+std::vector<navidrome::Artist>
+navidrome::SubsonicClientWin::getArtistsForLibrary(const std::string& libraryId,
+                                                    std::string& outError) {
+    return fetchArtistsForFolder(libraryId, outError);
+}
+
 std::vector<navidrome::Album>
 navidrome::SubsonicClientWin::getAlbumsForArtist(const std::string& artistId,
-                                                  std::string& outError) {
+                                                  std::string& outError,
+                                                  const std::string& scopeLibraryId) {
     std::string body = httpGet(buildURL("getArtist.view", "id=" + urlEncode(artistId)), outError);
     if (body.empty()) return {};
     auto root = checkResponse(body, outError);
     if (root.empty()) return {};
+
+    const std::string artistName = jstr(root, "name");
 
     std::vector<Album> result;
     for (auto& a : jarr(root, "album")) {
@@ -609,7 +650,51 @@ navidrome::SubsonicClientWin::getAlbumsForArtist(const std::string& artistId,
         if (al.artistId.empty()) al.artistId = artistId;
         result.push_back(std::move(al));
     }
-    return result;
+
+    // getArtist.view ignores musicFolderId server-side and AlbumID3 carries no
+    // library id, so when the library filter is active we can't scope the album
+    // list directly. search3.view *does* honor musicFolderId: fan it out over
+    // the selected libraries, keep the album ids that belong to this artist, and
+    // filter the getArtist.view list against that allow-set (order preserved).
+    // A caller browsing under a per-library tree node passes scopeLibraryId to
+    // pin the album list to that one library; otherwise scope to every selected
+    // library (the flat-list case).
+    const std::vector<std::string> folderIds =
+        scopeLibraryId.empty() ? activeMusicFolderIds()
+                               : std::vector<std::string>{ scopeLibraryId };
+    if (folderIds.empty() || result.empty() || artistName.empty())
+        return result;
+
+    std::unordered_set<std::string> allowed;
+    const std::string base = "query=" + urlEncode(artistName) +
+                             "&artistCount=0&albumCount=500&songCount=0";
+    for (const auto& fid : folderIds) {
+        std::string sBody = httpGet(
+            buildURL("search3.view", withMusicFolder(base, fid)), outError);
+        if (sBody.empty()) continue;
+        auto sRoot = checkResponse(sBody, outError);
+        if (sRoot.empty()) continue;
+        for (auto& a : jarr(sRoot, "album")) {
+            Album al = parseAlbumObj(a);
+            if (!al.id.empty() && al.artistId == artistId)
+                allowed.insert(al.id);
+        }
+    }
+
+    // The search passes are best-effort scoping; a failure there must not turn
+    // into a user-visible error when getArtist.view itself succeeded.
+    outError.clear();
+
+    if (allowed.empty()) {
+        NAVIDROME_WARN("HTTP", "library filter: could not confirm album "
+                       "membership for artist " + artistId + " — showing all albums");
+        return result;
+    }
+
+    std::vector<Album> filtered;
+    for (auto& al : result)
+        if (allowed.count(al.id)) filtered.push_back(std::move(al));
+    return filtered;
 }
 
 std::vector<navidrome::Song>

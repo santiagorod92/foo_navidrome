@@ -117,11 +117,30 @@ typedef NS_ENUM(NSInteger, SubsonicStarKind) {
 - (NSArray<SubsonicMusicFolder *> *)getMusicFoldersWithError:(NSError **)error;
 - (NSArray<SubsonicMusicFolder *> *)cachedMusicFolders;
 - (void)refreshMusicFolders;
+// The musicFolderId values a browse/search request fans out over, per the
+// cfg_library_filter toggle + selection + cached folder list. Empty => one
+// request, no musicFolderId (unchanged behaviour).
+- (NSArray<NSString *> *)activeMusicFolderIds;
+// Library ids the browser shows as top-level "group by library" nodes. A 2+
+// library server ALWAYS groups (independent of the "Only include selected
+// libraries" checkbox); the checkbox only narrows which libraries appear, and
+// only when 2+ are ticked. @[] for a single-library server or a one-library
+// scope. Browser groups when this has 2+ entries.
+- (NSArray<NSString *> *)libraryGroupingIds;
 
 // Browse hierarchy
 - (NSArray<SubsonicArtist *> *)getArtistsWithError:(NSError **)error;
+// Artists of one specific library (getArtists.view?musicFolderId=). Backs the
+// per-library tree nodes shown when 2+ libraries are selected in the filter.
+- (NSArray<SubsonicArtist *> *)getArtistsForLibrary:(NSString *)libraryId
+                                              error:(NSError **)error;
 - (NSArray<SubsonicAlbum *> *)getAlbumsForArtist:(NSString *)artistId
                                             error:(NSError **)error;
+// scopeLibrary (nil = whole selection): pins the album list to one library —
+// used when browsing under a per-library tree node.
+- (NSArray<SubsonicAlbum *> *)getAlbumsForArtist:(NSString *)artistId
+                                            error:(NSError **)error
+                                   scopeLibrary:(NSString *)scopeLibraryId;
 - (NSArray<SubsonicSong *> *)getSongsForAlbum:(NSString *)albumId
                                          error:(NSError **)error;
 

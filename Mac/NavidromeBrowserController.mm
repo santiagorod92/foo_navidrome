@@ -106,6 +106,15 @@ static NSString *formatDuration(NSTimeInterval secs) {
     return n;
 }
 
++ (instancetype)libraryNodeWithId:(NSString *)libraryId name:(NSString *)name {
+    NavidromeNode *n = [NavidromeNode new];
+    n.type        = NavidromeNodeTypeLibrary;
+    n.nodeId      = libraryId;
+    n.displayName = name;
+    n.children    = [NSMutableArray array];
+    return n;
+}
+
 + (instancetype)loadingNode {
     NavidromeNode *n = [NavidromeNode new];
     n.type        = NavidromeNodeTypeLoading;
@@ -480,8 +489,33 @@ static NSString *formatDuration(NSTimeInterval secs) {
     [self refreshRadioStations];
 
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        SubsonicClient *client = SubsonicClient.sharedClient;
+
+        // Multi-library server → group the tree by library: one Library node per
+        // library, each lazily expanding to its own artists. The "Only include
+        // selected libraries" checkbox only narrows which libraries show.
+        // Single-library server (or a one-library scope) → flat artist list.
+        NSArray<NSString *> *groupIds = [client libraryGroupingIds];
+        if (groupIds.count >= 2) {
+            NSArray<SubsonicMusicFolder *> *folders = [client cachedMusicFolders];  // warmed by libraryGroupingIds
+            NSMutableDictionary<NSString *, NSString *> *names = [NSMutableDictionary dictionary];
+            for (SubsonicMusicFolder *f in folders)
+                if (f.folderId) names[f.folderId] = f.name ?: f.folderId;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [_spinner stopAnimation:nil];
+                [_rootNodes addObjectsFromArray:[self buildCategoryNodes]];
+                for (NSString *lid in groupIds)
+                    [_rootNodes addObject:[NavidromeNode libraryNodeWithId:lid
+                                                                     name:names[lid] ?: lid]];
+                _statusLabel.stringValue = [NSString stringWithFormat:@"%lu libraries",
+                                            (unsigned long)groupIds.count];
+                [_outlineView reloadData];
+            });
+            return;
+        }
+
         NSError *err = nil;
-        NSArray<SubsonicArtist *> *artists = [SubsonicClient.sharedClient getArtistsWithError:&err];
+        NSArray<SubsonicArtist *> *artists = [client getArtistsWithError:&err];
         dispatch_async(dispatch_get_main_queue(), ^{
             [_spinner stopAnimation:nil];
             if (err || !artists) {
@@ -507,8 +541,18 @@ static NSString *formatDuration(NSTimeInterval secs) {
     SubsonicClient *client = SubsonicClient.sharedClient;
 
     switch (node.type) {
+        case NavidromeNodeTypeLibrary: {
+            for (SubsonicArtist *a in [client getArtistsForLibrary:node.nodeId error:outError]) {
+                NavidromeNode *n = [NavidromeNode artistNode:a];
+                n.libraryId = node.nodeId;   // pin this artist's albums to the library
+                [childNodes addObject:n];
+            }
+            break;
+        }
         case NavidromeNodeTypeArtist: {
-            for (SubsonicAlbum *a in [client getAlbumsForArtist:node.nodeId error:outError])
+            for (SubsonicAlbum *a in [client getAlbumsForArtist:node.nodeId
+                                                          error:outError
+                                                 scopeLibrary:node.libraryId])
                 [childNodes addObject:[NavidromeNode albumNode:a]];
             break;
         }

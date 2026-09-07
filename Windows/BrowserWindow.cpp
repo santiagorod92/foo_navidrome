@@ -978,8 +978,32 @@ void BrowserWindow::loadArtists() {
 
     std::thread([this]() {
         auto* payload = new LoadedPayload{};
+        auto& client = navidrome::SubsonicClientWin::get();
+
+        // Multi-library server → group the tree by library: one Library node
+        // per library, each lazily expanding to its own artists. The "Only
+        // include selected libraries" checkbox only narrows which libraries
+        // show. Single-library server (or a one-library scope) → flat list.
+        auto groupIds = client.libraryGroupingIds();
+        if (groupIds.size() >= 2) {
+            auto folders = client.cachedMusicFolders();   // warmed by libraryGroupingIds()
+            for (auto& n : buildCategoryNodes()) payload->nodes.push_back(n);
+            for (auto& id : groupIds) {
+                std::string name = id;
+                for (auto& f : folders)
+                    if (f.id == id) { name = f.name; break; }
+                auto n = std::make_shared<NavidromeNode>();
+                n->type        = NavidromeNode::Library;
+                n->id          = id;
+                n->displayName = name;
+                payload->nodes.push_back(n);
+            }
+            PostMessage(WM_NAVIDROME_LOADED, reinterpret_cast<WPARAM>(payload), 0);
+            return;
+        }
+
         std::string err;
-        auto artists = navidrome::SubsonicClientWin::get().getArtists(err);
+        auto artists = client.getArtists(err);
         payload->error = err;
         if (err.empty()) {
             for (auto& n : buildCategoryNodes()) payload->nodes.push_back(n);
@@ -1063,8 +1087,21 @@ BrowserWindow::fetchChildren(const std::shared_ptr<NavidromeNode>& node,
     };
 
     switch (node->type) {
+        case NavidromeNode::Library:
+            for (auto& a : client.getArtistsForLibrary(node->id, outError)) {
+                auto n = std::make_shared<NavidromeNode>();
+                n->type        = NavidromeNode::Artist;
+                n->id          = a.id;
+                n->displayName = a.name;
+                n->coverArtId  = a.coverArtId;
+                n->starred     = a.starred;
+                n->libraryId   = node->id;   // pin this artist's albums to the library
+                out.push_back(n);
+            }
+            break;
         case NavidromeNode::Artist:
-            for (auto& a : client.getAlbumsForArtist(node->id, outError)) addAlbum(a);
+            for (auto& a : client.getAlbumsForArtist(node->id, outError, node->libraryId))
+                addAlbum(a);
             break;
         case NavidromeNode::Album:
             for (auto& s : client.getSongsForAlbum(node->id, outError)) addSong(s);
@@ -1218,12 +1255,14 @@ void BrowserWindow::populateRoot(LoadedPayload* payload) {
         setStatus("Error: " + payload->error); return;
     }
     m_rootNodes = payload->nodes;
-    std::size_t artists = 0;
+    std::size_t artists = 0, libraries = 0;
     for (auto& n : m_rootNodes) {
         insertNode(TVI_ROOT, n);
-        if (n->type == NavidromeNode::Artist) ++artists;
+        if (n->type == NavidromeNode::Artist)  ++artists;
+        if (n->type == NavidromeNode::Library) ++libraries;
     }
-    setStatus(std::to_string(artists) + " artists");
+    if (libraries) setStatus(std::to_string(libraries) + " libraries");
+    else           setStatus(std::to_string(artists) + " artists");
 }
 
 // Renders m_searchResultNodes in place of the browse tree. m_rootNodes is
@@ -1250,15 +1289,17 @@ void BrowserWindow::restoreBrowseTree() {
     m_searchResultNodes.clear();
     m_tree.DeleteAllItems();
     m_nodeMap.clear();
-    std::size_t artists = 0;
+    std::size_t artists = 0, libraries = 0;
     for (auto& n : m_rootNodes) {
         n->children.clear();
         n->childrenLoaded = false;
         n->hItem           = nullptr;
         insertNode(TVI_ROOT, n);
-        if (n->type == NavidromeNode::Artist) ++artists;
+        if (n->type == NavidromeNode::Artist)  ++artists;
+        if (n->type == NavidromeNode::Library) ++libraries;
     }
-    setStatus(std::to_string(artists) + " artists");
+    if (libraries) setStatus(std::to_string(libraries) + " libraries");
+    else           setStatus(std::to_string(artists) + " artists");
 }
 
 void BrowserWindow::populateChildren(LoadedPayload* payload) {

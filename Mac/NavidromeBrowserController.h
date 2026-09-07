@@ -13,6 +13,7 @@ typedef NS_ENUM(NSInteger, NavidromeNodeType) {
     NavidromeNodeTypePlaylist,  // A playlist stored on the server
     NavidromeNodeTypeGenre,     // A genre from getGenres.view
     NavidromeNodeTypeRadioStation, // A saved internet radio station
+    NavidromeNodeTypeLibrary,   // A Navidrome library — shown when 2+ are selected in the filter
     NavidromeNodeTypeLoading,   // Placeholder while loading children
     NavidromeNodeTypeError,     // Placeholder when load fails
 };
@@ -39,6 +40,7 @@ typedef NS_ENUM(NSInteger, NavidromeCategoryKind) {
 @property (nonatomic, copy)   NSString *subtitle;       // artist (for albums/songs)
 @property (nonatomic, copy)   NSString *albumName;      // album name (for song nodes)
 @property (nonatomic, copy)   NSString *albumId;        // album id (song nodes; startup refresh)
+@property (nonatomic, copy)   NSString *libraryId;      // set on artist nodes under a Library node — pins their albums to that library
 @property (nonatomic, assign) NSInteger trackNumber;
 @property (nonatomic, assign) NSInteger year;
 @property (nonatomic, assign) NSTimeInterval duration;
@@ -65,6 +67,7 @@ typedef NS_ENUM(NSInteger, NavidromeCategoryKind) {
 + (instancetype)genreNode:(SubsonicGenre *)genre;
 + (instancetype)radioStationNode:(SubsonicRadioStation *)station;
 + (instancetype)categoryNode:(NavidromeCategoryKind)kind title:(NSString *)title;
++ (instancetype)libraryNodeWithId:(NSString *)libraryId name:(NSString *)name;
 + (instancetype)loadingNode;
 + (instancetype)errorNodeWithMessage:(NSString *)msg;
 
