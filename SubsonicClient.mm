@@ -464,6 +464,35 @@ static SubsonicAlbum *parseAlbum(NSDictionary *a) {
     return out;
 }
 
+// Library ids the browser shows as top-level "group by library" nodes. A 2+
+// library server ALWAYS groups (independent of the "Only include selected
+// libraries" checkbox); the checkbox only narrows which libraries appear, and
+// only when 2+ are ticked. Returns @[] for a single-library server, or when the
+// filter is on with exactly one library ticked (single-library scope, shown
+// flat via -activeMusicFolderIds). Browser groups when this has 2+ entries.
+- (NSArray<NSString *> *)libraryGroupingIds {
+    NSArray<SubsonicMusicFolder *> *folders = [self cachedMusicFolders];
+    if (folders.count < 2) return @[];
+
+    NSMutableArray<NSString *> *allIds = [NSMutableArray array];
+    for (SubsonicMusicFolder *f in folders)
+        if (f.folderId) [allIds addObject:f.folderId];
+
+    if (navidrome::cfg_library_filter.get()) {
+        auto sel = navidrome::parseMusicFolderIds(navidrome::cfg_library_ids.get().c_str());
+        NSMutableArray<NSString *> *picked = [NSMutableArray array];
+        for (NSString *lid in allIds) {
+            std::string fid = lid.UTF8String ?: "";
+            if (std::find(sel.begin(), sel.end(), fid) != sel.end())
+                [picked addObject:lid];
+        }
+        if (picked.count >= 2) return picked;
+        if (picked.count == 1) return @[];   // scoped to one library → flat
+        // 0 ticked → fall through to "all libraries"
+    }
+    return allIds;
+}
+
 // Run `fetch` once per folder id (or once with nil when the list is empty),
 // concatenating results and dropping duplicates by -valueForKey:idKey.
 - (NSArray *)fanOutOverFolders:(NSArray<NSString *> *)folderIds
@@ -484,58 +513,117 @@ static SubsonicAlbum *parseAlbum(NSDictionary *a) {
     return merged;
 }
 
+// Parse one getArtists.view response, optionally restricted to a single
+// library. folderId nil/empty => no musicFolderId param.
+- (NSArray<SubsonicArtist *> *)fetchArtistsForFolder:(NSString *)folderId
+                                               error:(NSError **)error {
+    NSURL *url = [self urlForEndpoint:@"getArtists.view"
+                               params:appendMusicFolder(@"", folderId)];
+    NSDictionary *root = [self fetchJSON:url error:error];
+    if (!root) return nil;
+
+    NSMutableArray<SubsonicArtist *> *result = [NSMutableArray array];
+    NSDictionary *artistsObj = root[@"artists"];
+    NSArray *indexArray = artistsObj[@"index"];
+
+    for (NSDictionary *index in indexArray) {
+        NSArray *artists = index[@"artist"];
+        if (![artists isKindOfClass:[NSArray class]]) {
+            // Single artist returned as dict
+            if ([artists isKindOfClass:[NSDictionary class]]) {
+                artists = @[(NSDictionary *)artists];
+            } else {
+                continue;
+            }
+        }
+        for (NSDictionary *a in artists) {
+            SubsonicArtist *artist = [[SubsonicArtist alloc] init];
+            artist.artistId  = a[@"id"] ?: @"";
+            artist.name      = a[@"name"] ?: @"Unknown Artist";
+            artist.albumCount = [a[@"albumCount"] integerValue];
+            artist.coverArtId = a[@"coverArt"] ?: @"";
+            artist.starred    = a[@"starred"] != nil;
+            [result addObject:artist];
+        }
+    }
+    return result;
+}
+
 - (NSArray<SubsonicArtist *> *)getArtistsWithError:(NSError **)error {
     return [self fanOutOverFolders:[self activeMusicFolderIds]
                              idKey:@"artistId"
                              fetch:^NSArray *(NSString *folderId) {
-        NSURL *url = [self urlForEndpoint:@"getArtists.view"
-                                   params:appendMusicFolder(@"", folderId)];
-        NSDictionary *root = [self fetchJSON:url error:error];
-        if (!root) return nil;
-
-        NSMutableArray<SubsonicArtist *> *result = [NSMutableArray array];
-        NSDictionary *artistsObj = root[@"artists"];
-        NSArray *indexArray = artistsObj[@"index"];
-
-        for (NSDictionary *index in indexArray) {
-            NSArray *artists = index[@"artist"];
-            if (![artists isKindOfClass:[NSArray class]]) {
-                // Single artist returned as dict
-                if ([artists isKindOfClass:[NSDictionary class]]) {
-                    artists = @[(NSDictionary *)artists];
-                } else {
-                    continue;
-                }
-            }
-            for (NSDictionary *a in artists) {
-                SubsonicArtist *artist = [[SubsonicArtist alloc] init];
-                artist.artistId  = a[@"id"] ?: @"";
-                artist.name      = a[@"name"] ?: @"Unknown Artist";
-                artist.albumCount = [a[@"albumCount"] integerValue];
-                artist.coverArtId = a[@"coverArt"] ?: @"";
-                artist.starred    = a[@"starred"] != nil;
-                [result addObject:artist];
-            }
-        }
-        return result;
+        return [self fetchArtistsForFolder:folderId error:error];
     }];
 }
 
+- (NSArray<SubsonicArtist *> *)getArtistsForLibrary:(NSString *)libraryId
+                                              error:(NSError **)error {
+    return [self fetchArtistsForFolder:libraryId error:error] ?: @[];
+}
+
 - (NSArray<SubsonicAlbum *> *)getAlbumsForArtist:(NSString *)artistId error:(NSError **)error {
+    return [self getAlbumsForArtist:artistId error:error scopeLibrary:nil];
+}
+
+- (NSArray<SubsonicAlbum *> *)getAlbumsForArtist:(NSString *)artistId
+                                            error:(NSError **)error
+                                   scopeLibrary:(NSString *)scopeLibraryId {
     NSString *params = [NSString stringWithFormat:@"id=%@", urlEncode(artistId)];
     NSURL *url = [self urlForEndpoint:@"getArtist.view" params:params];
     NSDictionary *root = [self fetchJSON:url error:error];
     if (!root) return nil;
 
-    NSMutableArray<SubsonicAlbum *> *result = [NSMutableArray array];
     NSDictionary *artistObj = root[@"artist"];
+    NSString *artistName = artistObj[@"name"] ?: @"";
+
+    NSMutableArray<SubsonicAlbum *> *result = [NSMutableArray array];
     for (NSDictionary *a in asArray(artistObj[@"album"])) {
         SubsonicAlbum *album = parseAlbum(a);
         if (album.artistId.length == 0) album.artistId = artistId;
         [result addObject:album];
     }
 
-    return result;
+    // getArtist.view ignores musicFolderId server-side and AlbumID3 carries no
+    // library id, so when the library filter is active we can't scope the album
+    // list directly. search3.view *does* honor musicFolderId: fan it out over the
+    // selected libraries, keep the album ids that belong to this artist, and
+    // filter the getArtist.view list against that allow-set (order preserved).
+    // scopeLibraryId pins that to one library (a per-library tree node).
+    NSArray<NSString *> *folderIds = scopeLibraryId.length
+        ? @[ scopeLibraryId ] : [self activeMusicFolderIds];
+    if (folderIds.count == 0 || result.count == 0 || artistName.length == 0)
+        return result;
+
+    NSMutableSet<NSString *> *allowed = [NSMutableSet set];
+    NSString *base = [NSString stringWithFormat:
+                      @"query=%@&artistCount=0&albumCount=500&songCount=0",
+                      urlEncode(artistName)];
+    for (NSString *fid in folderIds) {
+        NSURL *sUrl = [self urlForEndpoint:@"search3.view"
+                                    params:appendMusicFolder(base, fid)];
+        NSError *ignored = nil;
+        NSDictionary *sRoot = [self fetchJSON:sUrl error:&ignored];
+        if (!sRoot) continue;
+        for (NSDictionary *a in asArray(sRoot[@"searchResult3"][@"album"])) {
+            NSString *aid = a[@"id"] ?: @"";
+            NSString *aArtist = a[@"artistId"] ?: @"";
+            if (aid.length && [aArtist isEqualToString:artistId])
+                [allowed addObject:aid];
+        }
+    }
+
+    if (allowed.count == 0) {
+        NAVIDROME_WARN("HTTP", "library filter: could not confirm album membership "
+                       "for artist " + std::string(artistId.UTF8String ?: "") +
+                       " — showing all albums");
+        return result;
+    }
+
+    NSMutableArray<SubsonicAlbum *> *filtered = [NSMutableArray array];
+    for (SubsonicAlbum *album in result)
+        if ([allowed containsObject:album.albumId]) [filtered addObject:album];
+    return filtered;
 }
 
 - (NSArray<SubsonicSong *> *)getSongsForAlbum:(NSString *)albumId error:(NSError **)error {

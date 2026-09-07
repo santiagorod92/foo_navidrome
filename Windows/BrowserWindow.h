@@ -25,7 +25,7 @@
 // Tree node
 // ---------------------------------------------------------------------------
 struct NavidromeNode {
-    enum Type { Artist, Album, Song, Category, Playlist, Genre, Radio, Loading, Error };
+    enum Type { Artist, Album, Song, Category, Playlist, Genre, Radio, Library, Loading, Error };
     // Smart-list roots shown above the artist list; each maps to one Subsonic
     // endpoint (see BrowserWindow::fetchChildren).
     enum CategoryKind {
@@ -52,6 +52,7 @@ struct NavidromeNode {
     int         year         = 0;
     double      duration     = 0.0;
     std::string albumId;               // album id (song nodes; startup refresh)
+    std::string libraryId;             // set on artist nodes shown under a Library node — pins their album list to that library
     bool        starred      = false;   // server-side favorite
     int         rating       = 0;       // 0 = unrated, else 1-5
     double      bookmarkPositionMs = 0.0; // > 0 when this song has a saved resume position

@@ -43,9 +43,29 @@ public:
     // methods to decide the multi-library fan-out, and by the prefs UI.
     std::vector<MusicFolder> cachedMusicFolders();
     void refreshMusicFolders();
+    // The musicFolderId values a browse/search request fans out over, per the
+    // cfg_library_filter toggle + selection + cached folder list. Empty => one
+    // request, no musicFolderId (unchanged behaviour).
+    std::vector<std::string> activeMusicFolderIds();
+    // Library ids the browser should show as top-level "group by library" nodes.
+    // A 2+ library server ALWAYS groups (independent of the "Only include
+    // selected libraries" checkbox); the checkbox only narrows which libraries
+    // appear, and only when 2+ are ticked. Returns {} for a single-library
+    // server, or when the filter is on with exactly one library ticked (that's a
+    // single-library scope, shown flat via activeMusicFolderIds()). Browser
+    // groups when this has 2+ entries.
+    std::vector<std::string> libraryGroupingIds();
 
     std::vector<Artist>  getArtists(std::string& outError);
-    std::vector<Album>   getAlbumsForArtist(const std::string& artistId, std::string& outError);
+    // Artists of one specific library (getArtists.view?musicFolderId=). Backs the
+    // per-library tree nodes shown when 2+ libraries are selected in the filter.
+    std::vector<Artist>  getArtistsForLibrary(const std::string& libraryId,
+                                              std::string& outError);
+    // scopeLibraryId (optional): when set, the album list is pinned to that one
+    // library instead of the whole selected set — used under a per-library node.
+    std::vector<Album>   getAlbumsForArtist(const std::string& artistId,
+                                            std::string& outError,
+                                            const std::string& scopeLibraryId = "");
     std::vector<Song>    getSongsForAlbum(const std::string& albumId, std::string& outError);
     SearchResults        search(const std::string& query, std::string& outError);
 
@@ -185,11 +205,9 @@ private:
     // or "" (sets outError + m_lastError with the classified error code).
     std::string checkResponse(const std::string& body, std::string& outError) const;
 
-    // The musicFolderId values a browse/search request should fan out over,
-    // per the cfg_library_filter toggle + cfg_library_ids selection + the
-    // cached server folder list. Empty => a single request with no
-    // musicFolderId param (unchanged behaviour).
-    std::vector<std::string> activeMusicFolderIds();
+    // Parse one getArtists.view response; folderId empty => no musicFolderId.
+    std::vector<Artist> fetchArtistsForFolder(const std::string& folderId,
+                                              std::string& outError);
 
     mutable Error m_lastError;
     std::vector<MusicFolder> m_musicFoldersCache;
