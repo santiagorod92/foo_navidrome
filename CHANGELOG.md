@@ -1,5 +1,10 @@
 ## [1.13.2](https://github.com/santiagorod92/foo_navidrome/compare/v1.13.1...v1.13.2) (2026-09-08)
 
+
+### Code Refactoring
+
+* share the browser tree logic across Windows and macOS ([#12](https://github.com/santiagorod92/foo_navidrome/issues/12)) ([6932aa3](https://github.com/santiagorod92/foo_navidrome/commit/6932aa3618fb569b2482f8ecf94a0dac3109d949))
+
 ## [1.13.1](https://github.com/santiagorod92/foo_navidrome/compare/v1.13.0...v1.13.1) (2026-09-07)
 
 
