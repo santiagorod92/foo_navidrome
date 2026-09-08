@@ -729,6 +729,351 @@ void testErrorModel() {
     }
 }
 
+void testFanOutMerge() {
+    using navidrome::Album;
+    auto id = [](const Album& a) { return a.id; };
+    auto mk = [](const char* i) { Album a; a.id = i; return a; };
+
+    // empty folder list -> one call with an empty id, result passed straight through
+    {
+        int calls = 0;
+        auto out = navidrome::mergeFanOut<Album>({}, [&](const std::string& fid) {
+            ++calls;
+            check(fid.empty(), "empty folder list calls fetch once with no id");
+            return std::vector<Album>{ mk("a"), mk("b") };
+        }, id);
+        check(calls == 1 && out.size() == 2, "single-request path");
+    }
+
+    // two folders, overlapping ids -> merged, first occurrence wins, order kept
+    {
+        auto out = navidrome::mergeFanOut<Album>({"1", "2"}, [&](const std::string& fid) {
+            if (fid == "1") return std::vector<Album>{ mk("a"), mk("b") };
+            return std::vector<Album>{ mk("b"), mk("c") };
+        }, id);
+        check(out.size() == 3, "duplicate id dropped across folders");
+        check(out[0].id == "a" && out[1].id == "b" && out[2].id == "c",
+            "merge preserves first-seen order");
+    }
+
+    // items with an empty id are never treated as duplicates
+    {
+        auto out = navidrome::mergeFanOut<Album>({"1", "2"}, [&](const std::string&) {
+            return std::vector<Album>{ mk("") };
+        }, id);
+        check(out.size() == 2, "empty-id items are all kept");
+    }
+}
+
+void testAlbumArtistFilter() {
+    using navidrome::Album;
+    auto mk = [](const char* i, const char* artist) {
+        Album a; a.id = i; a.artistId = artist; return a;
+    };
+
+    std::vector<Album> fromArtist = { mk("al1", "art1"), mk("al2", "art1"), mk("al3", "art1") };
+
+    // search confirms al1 + al3 belong to art1 (al2 only in another library)
+    {
+        std::vector<Album> search = { mk("al1", "art1"), mk("al3", "art1"), mk("alX", "other") };
+        bool unconfirmed = true;
+        auto out = navidrome::filterAlbumsByArtistSearch(fromArtist, "art1", search, unconfirmed);
+        check(!unconfirmed, "a non-empty allow-set is 'confirmed'");
+        check(out.size() == 2 && out[0].id == "al1" && out[1].id == "al3",
+            "keeps only confirmed albums, order preserved");
+    }
+
+    // search returned nothing for this artist -> full list back, flagged
+    {
+        std::vector<Album> search = { mk("alX", "other") };
+        bool unconfirmed = false;
+        auto out = navidrome::filterAlbumsByArtistSearch(fromArtist, "art1", search, unconfirmed);
+        check(unconfirmed, "empty allow-set sets outUnconfirmed");
+        check(out.size() == 3, "and returns the unfiltered list");
+    }
+
+    // an album search row with no id is ignored
+    {
+        std::vector<Album> search = { mk("", "art1") };
+        bool unconfirmed = false;
+        auto out = navidrome::filterAlbumsByArtistSearch(fromArtist, "art1", search, unconfirmed);
+        check(unconfirmed && out.size() == 3, "a blank-id search row doesn't confirm anything");
+    }
+}
+
+void testPrefsOptions() {
+    const auto& fmts = navidrome::streamFormatOptions();
+    check(fmts.size() == 7, "7 transcode format rows");
+    check(std::string(fmts.front().value).empty() && std::string(fmts.front().label) == "Server default",
+        "first row is the server-default (empty value)");
+    check(std::string(fmts[1].value) == "raw", "second row forces the original file");
+    check(std::string(fmts[2].value) == "mp3" && std::string(fmts.back().value) == "wav",
+        "mp3 first real codec, wav last");
+
+    const auto& br = navidrome::maxBitrateOptions();
+    check(br.size() == 7 && br.front() == 0 && br.back() == 320,
+        "bitrate ceilings 0..320, 0 = unlimited");
+
+    check(navidrome::kScanPollIntervalMs == 1500, "rescan re-poll interval");
+}
+
+void testRetryPolicy() {
+    using navidrome::Error;
+    using navidrome::ErrorKind;
+    namespace retry = navidrome::retry;
+
+    check(retry::kMaxAttempts == 3, "3 attempts total");
+
+    Error transient{ErrorKind::Timeout, 0, 0, "t"};
+    Error fatal{ErrorKind::Auth, 401, 0, "a"};
+    Error ok;
+
+    check(retry::again(transient, 1), "retry a transient failure after attempt 1");
+    check(retry::again(transient, 2), "retry a transient failure after attempt 2");
+    check(!retry::again(transient, 3), "no retry after the last attempt");
+    check(!retry::again(fatal, 1), "never retry a deterministic failure");
+    check(!retry::again(ok, 1), "nothing to retry on success");
+
+    check(retry::backoffMs(1, 0) == 300, "attempt 1 backoff is 300ms + jitter");
+    check(retry::backoffMs(2, 0) == 600, "attempt 2 backoff is 600ms + jitter");
+    check(retry::backoffMs(1, 199) == 499, "jitter is added on top");
+}
+
+void testScrobbleTracker() {
+    // A real navidrome:// URI (10s track) and something that isn't ours.
+    const std::string ours = "navidrome://track/s1?duration=10";
+    const std::string alien = "https://example.com/song.mp3";
+    const double len = 10.0;
+
+    // --- not one of ours: nothing happens ---
+    {
+        navidrome::ScrobbleTracker t;
+        auto a = t.onNewTrack(alien, len, true);
+        check(a.refreshRatingId.empty() && a.scrobbleNowId.empty(),
+            "an alien track triggers no refresh and no scrobble");
+        check(t.onPlaybackTime(9.0).empty(), "and never submits");
+    }
+
+    // --- ours, scrobbling OFF: refresh only, never a scrobble ---
+    {
+        navidrome::ScrobbleTracker t;
+        auto a = t.onNewTrack(ours, len, false);
+        check(a.refreshRatingId == "s1", "rating refresh fires even with scrobbling off");
+        check(a.scrobbleNowId.empty(), "no now-playing scrobble when the pref is off");
+        check(t.onPlaybackTime(999.0).empty(), "no submission when scrobbling is off");
+    }
+
+    // --- ours, scrobbling ON: refresh + now-playing, then submit once ---
+    {
+        navidrome::ScrobbleTracker t;
+        auto a = t.onNewTrack(ours, len, true);
+        check(a.refreshRatingId == "s1" && a.scrobbleNowId == "s1",
+            "refresh + now-playing both fire for our track with scrobbling on");
+        const double thr = navidrome::scrobbleSubmitThreshold(len);
+        check(t.onPlaybackTime(thr - 0.01).empty(), "no submit before the threshold");
+        check(t.onPlaybackTime(thr + 0.01) == "s1", "submits once the threshold is crossed");
+        check(t.onPlaybackTime(thr + 5.0).empty(), "does not submit again");
+    }
+
+    // --- onStop resets, so the same instance is reusable across tracks ---
+    {
+        navidrome::ScrobbleTracker t;
+        t.onNewTrack(ours, len, true);
+        t.onPlaybackTime(999.0);   // submitted
+        t.onStop();
+        check(t.onPlaybackTime(999.0).empty(), "after onStop there is nothing to submit");
+        auto a = t.onNewTrack(ours, len, true);
+        check(a.scrobbleNowId == "s1", "a fresh track after stop is tracked again");
+        check(t.onPlaybackTime(999.0) == "s1", "and can submit again");
+    }
+}
+
+void testSessionEnv() {
+    navidrome::SessionEnv e;
+    e.platform        = "Windows";
+    e.configured      = true;
+    e.serverUrl       = "https://music.example";
+    e.transcodeFormat = "";
+    e.maxBitrate      = 192;
+    e.scrobble        = true;
+    e.startupRefresh  = false;
+    e.customHeaders   = true;
+    const std::string s = navidrome::describeSessionEnv(e);
+    check(s == "platform=Windows  configured=yes  server=https://music.example  "
+               "transcode=server-default  maxBitrate=192  scrobble=on  "
+               "startupRefresh=off  customHeaders=yes",
+        "describeSessionEnv formats the whole line, empty format -> server-default");
+
+    navidrome::SessionEnv d;
+    d.platform = "macOS";
+    d.transcodeFormat = "opus";
+    check(navidrome::describeSessionEnv(d) ==
+          "platform=macOS  configured=no  server=  transcode=opus  maxBitrate=0  "
+          "scrobble=off  startupRefresh=off  customHeaders=no",
+        "defaults render as no/off/0 and an explicit format passes through");
+}
+
+void testJson() {
+    using navidrome::json::Value;
+    std::string err;
+
+    // --- primitives ---
+    Value n = navidrome::json::parse("  42  ", err);
+    check(err.empty() && n.type() == Value::Number && n.asNumber() == 42.0,
+        "parses a bare number with surrounding whitespace");
+    check(navidrome::json::parse("-3.5e2", err).asNumber() == -350.0 && err.empty(),
+        "parses a signed number with exponent");
+    check(navidrome::json::parse("true", err).asBool() == true && err.empty(),
+        "parses true");
+    check(navidrome::json::parse("false", err).asBool() == false && err.empty(),
+        "parses false");
+    check(navidrome::json::parse("null", err).isNull() && err.empty(),
+        "parses null");
+
+    // --- strings + escapes ---
+    Value s = navidrome::json::parse("\"a\\\"b\\\\c\\/d\\n\"", err);
+    check(err.empty() && s.type() == Value::String && s.asString() == "a\"b\\c/d\n",
+        "decodes \\\" \\\\ \\/ \\n escapes");
+    check(navidrome::json::parse("\"caf\\u00e9\"", err).asString() == "caf\xC3\xA9" && err.empty(),
+        "\\u00e9 decodes to 2-byte UTF-8");
+    check(navidrome::json::parse("\"\\uD83D\\uDE00\"", err).asString() == "\xF0\x9F\x98\x80" && err.empty(),
+        "a surrogate pair decodes to 4-byte UTF-8");
+
+    // --- object + array, missing-key safety ---
+    Value o = navidrome::json::parse(
+        "{\"a\":1,\"b\":[10,20,30],\"c\":{\"d\":\"x\"},\"e\":null}", err);
+    check(err.empty() && o.isObject() && o.size() == 4, "object with 4 members");
+    check(o["a"].asNumber() == 1.0, "object[\"a\"]");
+    check(o["b"].isArray() && o["b"].size() == 3 && o["b"][1u].asNumber() == 20.0,
+        "nested array indexing");
+    check(o["c"]["d"].asString() == "x", "nested object indexing");
+    check(o["missing"].isNull() && o["missing"]["deeper"].isNull(),
+        "a missing key chains to Null without faulting");
+    check(o["a"].asString().empty() && o["b"].asNumber(-1) == -1.0,
+        "type-mismatched access returns the default");
+    check(o.has("e") && o["e"].isNull(), "has() is true for an explicit null");
+    check(!o.has("nope"), "has() is false for an absent key");
+
+    // --- items(): Subsonic single-element-array collapse ---
+    Value arr = navidrome::json::parse("{\"x\":[{\"id\":1},{\"id\":2}]}", err);
+    check(arr["x"].items().size() == 2, "items() over a real array");
+    Value one = navidrome::json::parse("{\"x\":{\"id\":9}}", err);
+    check(one["x"].items().size() == 1 && (*one["x"].items()[0])["id"].asNumber() == 9.0,
+        "items() wraps a collapsed single object");
+    check(navidrome::json::parse("{}", err)["x"].items().empty(),
+        "items() over a missing field is empty");
+
+    // --- error cases ---
+    navidrome::json::parse("{\"a\":}", err);
+    check(!err.empty(), "reports an error on a missing value");
+    navidrome::json::parse("[1,2", err);
+    check(!err.empty(), "reports an error on an unterminated array");
+    navidrome::json::parse("{\"a\":1} trailing", err);
+    check(!err.empty(), "rejects trailing content after the value");
+    navidrome::json::parse("\"unterminated", err);
+    check(!err.empty(), "reports an error on an unterminated string");
+}
+
+void testSubsonicParsers() {
+    std::string err;
+    auto parse = [&](const std::string& body) {
+        return navidrome::json::parse(body, err);
+    };
+
+    // --- parseSong: defaults, starred-by-presence, numeric id coercion ---
+    navidrome::Song s1 = navidrome::parseSong(parse(
+        "{\"id\":\"t1\",\"title\":\"Song\",\"artist\":\"A\",\"artistId\":42,"
+        "\"album\":\"Alb\",\"albumId\":\"al1\",\"coverArt\":\"c1\",\"suffix\":\"flac\","
+        "\"track\":3,\"year\":2001,\"duration\":123.5,\"starred\":\"2020-01-01T00:00:00Z\","
+        "\"userRating\":4}"));
+    check(s1.id == "t1" && s1.title == "Song" && s1.artist == "A", "parseSong basic fields");
+    check(s1.artistId == "42", "parseSong coerces a numeric artistId to string");
+    check(s1.track == 3 && s1.year == 2001 && s1.duration == 123.5, "parseSong numerics");
+    check(s1.starred && s1.rating == 4, "parseSong: starred by key presence, rating from userRating");
+
+    navidrome::Song s2 = navidrome::parseSong(parse("{\"id\":\"t2\"}"));
+    check(s2.title == "Unknown Title" && !s2.starred && s2.rating == 0 && s2.duration == 0.0,
+        "parseSong defaults when fields are absent");
+
+    // --- parseAlbum ---
+    navidrome::Album al = navidrome::parseAlbum(parse(
+        "{\"id\":\"al1\",\"name\":\"Rec\",\"artist\":\"A\",\"artistId\":\"ar1\","
+        "\"coverArt\":\"c\",\"year\":1999,\"songCount\":10,\"starred\":\"x\"}"));
+    check(al.id == "al1" && al.name == "Rec" && al.year == 1999 && al.songCount == 10 && al.starred,
+        "parseAlbum fields");
+    check(navidrome::parseAlbum(parse("{}")).name == "Unknown Album",
+        "parseAlbum name default");
+
+    // --- parseArtist ---
+    navidrome::Artist ar = navidrome::parseArtist(parse(
+        "{\"id\":\"ar1\",\"name\":\"Band\",\"albumCount\":7}"));
+    check(ar.id == "ar1" && ar.name == "Band" && ar.albumCount == 7, "parseArtist fields");
+    check(navidrome::parseArtist(parse("{}")).name == "Unknown Artist",
+        "parseArtist name default");
+
+    // --- parsePlaylist ---
+    navidrome::Playlist pl = navidrome::parsePlaylist(parse(
+        "{\"id\":9,\"name\":\"Mix\",\"owner\":\"me\",\"songCount\":4,\"duration\":88.0}"));
+    check(pl.id == "9" && pl.name == "Mix" && pl.owner == "me" && pl.songCount == 4,
+        "parsePlaylist fields, numeric id coerced");
+
+    // --- parseGenre: the "value"-not-"name" quirk ---
+    navidrome::Genre g = navidrome::parseGenre(parse(
+        "{\"value\":\"Jazz\",\"songCount\":12,\"albumCount\":3}"));
+    check(g.name == "Jazz" && g.songCount == 12 && g.albumCount == 3,
+        "parseGenre reads the genre string from \"value\"");
+
+    // --- parseMusicFolder: id arrives as a JSON number ---
+    navidrome::MusicFolder mf = navidrome::parseMusicFolder(parse(
+        "{\"id\":1,\"name\":\"Music\"}"));
+    check(mf.id == "1" && mf.name == "Music", "parseMusicFolder coerces a numeric id");
+
+    // --- parseRadioStation ---
+    navidrome::RadioStation st = navidrome::parseRadioStation(parse(
+        "{\"id\":\"r1\",\"name\":\"Radio\",\"streamUrl\":\"http://s/\",\"homePageUrl\":\"http://h/\"}"));
+    check(st.id == "r1" && st.streamUrl == "http://s/" && st.homePageUrl == "http://h/",
+        "parseRadioStation fields");
+    check(navidrome::parseRadioStation(parse("{\"id\":\"r2\"}")).name == "Unnamed station",
+        "parseRadioStation name default");
+
+    // --- parseBookmark: wraps an "entry" song + ms position ---
+    navidrome::Bookmark bm;
+    bool okBm = navidrome::parseBookmark(parse(
+        "{\"position\":45000,\"comment\":\"resume\",\"entry\":{\"id\":\"t9\",\"title\":\"X\"}}"), bm);
+    check(okBm && bm.song.id == "t9" && bm.positionMs == 45000.0 && bm.comment == "resume",
+        "parseBookmark extracts the entry song and ms position");
+    check(!navidrome::parseBookmark(parse("{\"position\":1}"), bm),
+        "parseBookmark returns false with no entry");
+
+    // --- parseScanStatus: array-collapsed scanStatus ---
+    navidrome::ScanStatus ss = navidrome::parseScanStatus(parse(
+        "{\"scanStatus\":{\"scanning\":true,\"count\":1234}}"));
+    check(ss.scanning && ss.count == 1234, "parseScanStatus reads scanning + count");
+
+    // --- parseSubsonicResponse: envelope handling ---
+    navidrome::SubsonicResponse okResp = navidrome::parseSubsonicResponse(
+        "{\"subsonic-response\":{\"status\":\"ok\",\"version\":\"1.16.1\","
+        "\"songsByGenre\":{\"song\":[{\"id\":\"a\"},{\"id\":\"b\"}]}}}");
+    check(okResp.ok && okResp.error.ok(), "parseSubsonicResponse: status ok");
+    check(okResp.inner()["songsByGenre"]["song"].items().size() == 2,
+        "parseSubsonicResponse: payload walkable off inner()");
+
+    navidrome::SubsonicResponse errResp = navidrome::parseSubsonicResponse(
+        "{\"subsonic-response\":{\"status\":\"failed\","
+        "\"error\":{\"code\":40,\"message\":\"Wrong username or password\"}}}");
+    check(!errResp.ok && errResp.error.kind == navidrome::ErrorKind::Auth &&
+          errResp.error.code == 40 && errResp.error.message == "Wrong username or password",
+        "parseSubsonicResponse maps a Subsonic error code to ErrorKind");
+
+    navidrome::SubsonicResponse badJson = navidrome::parseSubsonicResponse("not json{");
+    check(!badJson.ok && badJson.error.kind == navidrome::ErrorKind::Parse,
+        "parseSubsonicResponse: invalid JSON -> Parse error");
+
+    navidrome::SubsonicResponse noWrap = navidrome::parseSubsonicResponse("{\"foo\":1}");
+    check(!noWrap.ok && noWrap.error.kind == navidrome::ErrorKind::Parse,
+        "parseSubsonicResponse: missing subsonic-response wrapper -> Parse error");
+}
+
 void testBrowserModel() {
     using navidrome::BrowserNode;
 
@@ -1101,6 +1446,14 @@ int main() {
     testMd5KnownAnswers();
     testCrossParserParity();
     testErrorModel();
+    testJson();
+    testSubsonicParsers();
+    testRetryPolicy();
+    testScrobbleTracker();
+    testSessionEnv();
+    testFanOutMerge();
+    testAlbumArtistFilter();
+    testPrefsOptions();
     if (failures != 0) {
         std::cerr << failures << " test(s) failed\n";
         return 1;

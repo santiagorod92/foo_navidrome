@@ -14,28 +14,22 @@ namespace navidrome {
     extern cfg_var_modern::cfg_int cfg_max_bitrate;
 }
 
-// Streaming transcode options. The stored value is what goes on the wire as
-// stream.view's `format` — "" leaves the decision to the server's own
-// transcoding rules, "raw" forces the original file.
-//
-// The server can only honour a format it has a transcoding configured for.
-// Navidrome ships mp3 / opus / aac; FLAC and WAV need a transcoding row added
-// in its admin UI first, and are mainly useful as lossless normalisation
-// targets for source codecs foobar2000 can't decode itself.
+// Transcode format + max-bitrate choices are shared with the Windows prefs UI —
+// navidrome::streamFormatOptions() / navidrome::maxBitrateOptions() in
+// SubsonicTypes.h. `[entry[1]]` is the Subsonic `format=` value ("" = server
+// default, "raw" = original file).
 static NSArray<NSArray *> *NavidromeStreamFormats(void) {
-    return @[ @[@"Server default", @""],
-              @[@"Original (no transcoding)", @"raw"],
-              @[@"MP3", @"mp3"],
-              @[@"Opus", @"opus"],
-              @[@"AAC", @"aac"],
-              @[@"FLAC (lossless)", @"flac"],
-              @[@"WAV (uncompressed)", @"wav"] ];
+    NSMutableArray<NSArray *> *out = [NSMutableArray array];
+    for (const auto &o : navidrome::streamFormatOptions())
+        [out addObject:@[ @(o.label), @(o.value) ]];
+    return out;
 }
 
-// kbps ceiling; 0 means "no limit", which is also what Subsonic reads when the
-// parameter is absent.
 static NSArray<NSNumber *> *NavidromeMaxBitrates(void) {
-    return @[ @0, @64, @96, @128, @192, @256, @320 ];
+    NSMutableArray<NSNumber *> *out = [NSMutableArray array];
+    for (int kbps : navidrome::maxBitrateOptions())
+        [out addObject:@(kbps)];
+    return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -525,7 +519,7 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
         }
 
         while (scanning) {
-            [NSThread sleepForTimeInterval:1.5];
+            [NSThread sleepForTimeInterval:navidrome::kScanPollIntervalMs / 1000.0];
             NSError *pollErr = nil;
             BOOL polled = [SubsonicClient.sharedClient getScanStatusWithScanning:&scanning
                                                                              count:&count

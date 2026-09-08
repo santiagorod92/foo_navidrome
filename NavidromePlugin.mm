@@ -94,35 +94,21 @@ public:
     }
 
     void on_playback_new_track(metadb_handle_ptr track) override {
-        m_songId.clear();
-        m_submitted = false;
-        m_length    = 0.0;
-        if (track.is_empty()) return;
-
-        const std::string songId = navidrome::trackIdFromURI(track->get_path());
-        if (songId.empty()) return;   // not one of ours
-
-        // Deliberately ahead of the scrobble gate: this is a display refresh,
-        // not a play report, so it must not follow the scrobbling preference.
-        refreshRatingAsync(songId);
-
-        if (!navidrome::cfg_scrobble.get()) return;
-        m_songId = songId;
-        m_length = track->get_length();
-        scrobbleAsync(m_songId, NO);
+        auto a = m_tracker.onNewTrack(
+            track.is_empty() ? std::string() : std::string(track->get_path()),
+            track.is_empty() ? 0.0 : track->get_length(),
+            navidrome::cfg_scrobble.get());
+        if (!a.refreshRatingId.empty()) refreshRatingAsync(a.refreshRatingId);
+        if (!a.scrobbleNowId.empty())   scrobbleAsync(a.scrobbleNowId, NO);
     }
 
     void on_playback_time(double time) override {
-        if (m_songId.empty() || m_submitted) return;
-        double threshold = navidrome::scrobbleSubmitThreshold(m_length);
-        if (time < threshold) return;
-        m_submitted = true;
-        scrobbleAsync(m_songId, YES);
+        std::string id = m_tracker.onPlaybackTime(time);
+        if (!id.empty()) scrobbleAsync(id, YES);
     }
 
     void on_playback_stop(play_control::t_stop_reason) override {
-        m_songId.clear();
-        m_submitted = false;
+        m_tracker.onStop();
     }
 
     // Unused callbacks (not requested in get_flags, but the interface is pure).
@@ -182,9 +168,7 @@ private:
         });
     }
 
-    std::string m_songId;
-    double      m_length    = 0.0;
-    bool        m_submitted = false;
+    navidrome::ScrobbleTracker m_tracker;
 };
 
 static play_callback_static_factory_t<navidrome_scrobbler> g_navidrome_scrobbler_factory;
@@ -200,15 +184,16 @@ static play_callback_static_factory_t<navidrome_scrobbler> g_navidrome_scrobbler
 // in effect without a second round-trip.
 static void navidromeLogSessionEnv() {
 #ifdef NAVIDROME_DEBUG_LOG
-    std::string fmt = navidrome::cfg_stream_format.get().c_str();
-    NAVIDROME_LOG("Env", std::string("platform=macOS")
-        + "  configured=" + ([SubsonicClient.sharedClient isConfigured] ? "yes" : "no")
-        + "  server=" + navidrome::cfg_server_url.get().c_str()
-        + "  transcode=" + (fmt.empty() ? "server-default" : fmt)
-        + "  maxBitrate=" + std::to_string((int)navidrome::cfg_max_bitrate.get())
-        + "  scrobble=" + (navidrome::cfg_scrobble.get() ? "on" : "off")
-        + "  startupRefresh=" + (navidrome::refreshRatingsOnStartEnabled() ? "on" : "off")
-        + "  customHeaders=" + (navidrome::cfg_custom_headers.get().length() ? "yes" : "no"));
+    navidrome::SessionEnv e;
+    e.platform        = "macOS";
+    e.configured      = [SubsonicClient.sharedClient isConfigured];
+    e.serverUrl       = navidrome::cfg_server_url.get().c_str();
+    e.transcodeFormat = navidrome::cfg_stream_format.get().c_str();
+    e.maxBitrate      = (int)navidrome::cfg_max_bitrate.get();
+    e.scrobble        = navidrome::cfg_scrobble.get();
+    e.startupRefresh  = navidrome::refreshRatingsOnStartEnabled();
+    e.customHeaders   = navidrome::cfg_custom_headers.get().length() > 0;
+    NAVIDROME_LOG("Env", navidrome::describeSessionEnv(e));
 #endif
 }
 

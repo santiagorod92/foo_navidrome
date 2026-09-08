@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace navidrome {
@@ -242,6 +243,35 @@ inline std::string streamTranscodeParams(const std::string& format, int maxBitRa
     if (maxBitRate > 0)   out += "&maxBitRate=" + std::to_string(maxBitRate);
     return out;
 }
+
+// The transcoding-format and max-bitrate choices offered by the prefs UI on
+// both platforms. `value` is the Subsonic `format=` string ("" = server
+// default, "raw" = original file); `label` is UTF-8 for the platform to widen /
+// NSString-ify. The server only honours a format it has a transcoding row
+// configured for — FLAC/WAV need one added in Navidrome's admin UI.
+struct StreamFormatOption { const char* label; const char* value; };
+
+inline const std::vector<StreamFormatOption>& streamFormatOptions() {
+    static const std::vector<StreamFormatOption> k = {
+        { "Server default",            ""     },
+        { "Original (no transcoding)", "raw"  },
+        { "MP3",                       "mp3"  },
+        { "Opus",                      "opus" },
+        { "AAC",                       "aac"  },
+        { "FLAC (lossless)",           "flac" },
+        { "WAV (uncompressed)",        "wav"  },
+    };
+    return k;
+}
+
+// kbps ceilings; 0 = "no limit" (also what Subsonic reads when the param is absent).
+inline const std::vector<int>& maxBitrateOptions() {
+    static const std::vector<int> k = { 0, 64, 96, 128, 192, 256, 320 };
+    return k;
+}
+
+// How often the "Rescan Library Now" flow re-polls getScanStatus.view.
+constexpr int kScanPollIntervalMs = 1500;
 
 // The codec the server will actually send for the configured format, given the
 // track's own suffix. Used as the decoder hint: transcoding to mp3 means a FLAC
@@ -610,6 +640,629 @@ inline std::vector<std::string> effectiveMusicFolderIds(
     if (result.empty())                       return {};   // selection all stale
     if (result.size() == serverFolders.size()) return {};  // covers everything
     return result;
+}
+
+// Append `&musicFolderId=<id>` to an existing query-params string (which may be
+// empty). A blank folderId leaves params untouched — the unfiltered single-
+// request path. Folder ids are numeric server-side, so no encoding is needed.
+inline std::string appendMusicFolderParam(std::string params,
+                                          const std::string& folderId) {
+    if (folderId.empty()) return params;
+    if (!params.empty()) params += '&';
+    params += "musicFolderId=" + folderId;
+    return params;
+}
+
+// Run `fetch` once per folder id (or once with an empty id when the list is
+// empty — the unchanged single-request path), concatenating results and
+// dropping later duplicates by `idOf` (order preserved; an empty id is never a
+// duplicate). Shared by every fanned-out list endpoint on the Windows client;
+// the macOS client keeps its own NSArray/KVC twin (`-fanOutOverFolders:`) since
+// it merges ObjC objects, not `navidrome::` structs. Unit-tested (testFanOutMerge).
+template <class T, class Fetch, class IdOf>
+inline std::vector<T> mergeFanOut(const std::vector<std::string>& folderIds,
+                                  Fetch fetch, IdOf idOf) {
+    if (folderIds.empty()) return fetch(std::string());
+    std::vector<T> merged;
+    std::vector<std::string> seen;
+    for (const auto& fid : folderIds) {
+        std::vector<T> part = fetch(fid);
+        for (auto& item : part) {
+            std::string id = idOf(item);
+            if (id.empty() ||
+                std::find(seen.begin(), seen.end(), id) == seen.end()) {
+                if (!id.empty()) seen.push_back(id);
+                merged.push_back(std::move(item));
+            }
+        }
+    }
+    return merged;
+}
+
+// getArtist.view ignores `musicFolderId` server-side and its AlbumID3 rows carry
+// no library id, so a library-scoped album list can't be built from it directly.
+// search3.view *does* honour `musicFolderId`: the caller fans it out over the
+// scoped libraries, and this keeps the getArtist album list (order preserved) to
+// the ids that search confirmed belong to `artistId`. `searchAlbums` is every
+// album search returned (already merged across folders). An empty allow-set
+// (odd name, search miss) returns the full list and sets `outUnconfirmed` so the
+// caller can log a warning rather than silently hiding everything.
+// Unit-tested (testAlbumArtistFilter).
+inline std::vector<Album> filterAlbumsByArtistSearch(
+        const std::vector<Album>& artistAlbums,
+        const std::string& artistId,
+        const std::vector<Album>& searchAlbums,
+        bool& outUnconfirmed) {
+    outUnconfirmed = false;
+    std::vector<std::string> allowed;
+    for (const auto& a : searchAlbums)
+        if (!a.id.empty() && a.artistId == artistId)
+            allowed.push_back(a.id);
+    if (allowed.empty()) { outUnconfirmed = true; return artistAlbums; }
+
+    std::vector<Album> filtered;
+    for (const auto& a : artistAlbums)
+        if (std::find(allowed.begin(), allowed.end(), a.id) != allowed.end())
+            filtered.push_back(a);
+    return filtered;
+}
+
+// ---------------------------------------------------------------------------
+// HTTP retry policy — shared by SubsonicClientWin::httpGet and the macOS
+// client's -fetchInner:. The loop body (WinHTTP vs NSURLSession) and the jitter
+// RNG stay platform-side; the attempt count and the backoff formula live here
+// so they can't drift apart. Unit-tested (testRetryPolicy).
+// ---------------------------------------------------------------------------
+namespace retry {
+
+constexpr int kMaxAttempts = 3;
+
+// Retry after a failed attempt? `attempt` is 1-based (the one that just ran).
+inline bool again(const Error& e, int attempt) {
+    return e.retryable() && attempt < kMaxAttempts;
+}
+
+// Milliseconds to wait before attempt #(attempt+1): 300ms * attempt plus the
+// caller-supplied jitter in [0, 200). Escalates 0.3s, 0.6s across the retries.
+inline int backoffMs(int attempt, int jitterMs) {
+    return 300 * attempt + jitterMs;
+}
+
+}  // namespace retry
+
+// ---------------------------------------------------------------------------
+// Scrobble state machine — shared by both `play_callback_static` scrobblers
+// (NavidromePlugin.mm / NavidromePluginWin.cpp). Pure state, no SDK, no
+// threading: the platform feeds it playback events and fires the HTTP calls it
+// asks for. Centralizes the gate ordering the CLAUDE.md gotcha calls out — the
+// rating refresh runs for any of our tracks, the scrobble only when the pref is
+// on. Unit-tested (testScrobbleTracker).
+// ---------------------------------------------------------------------------
+struct ScrobbleTracker {
+    struct NewTrackActions {
+        std::string refreshRatingId;  // fire the rating refresh — any of our tracks
+        std::string scrobbleNowId;    // fire scrobble(id, submission=false) — pref on too
+    };
+
+    // On a new track. `rawUri` is the track path (empty if none), `lengthSec`
+    // its length, `scrobbleEnabled` the cfg_scrobble pref.
+    NewTrackActions onNewTrack(const std::string& rawUri, double lengthSec,
+                               bool scrobbleEnabled) {
+        songId_.clear();
+        length_    = 0.0;
+        submitted_ = false;
+
+        NewTrackActions a;
+        std::string id = trackIdFromURI(rawUri);
+        if (id.empty()) return a;            // not one of ours
+        a.refreshRatingId = id;              // display refresh — never gated
+        if (!scrobbleEnabled) return a;
+        songId_ = id;
+        length_ = lengthSec;
+        a.scrobbleNowId = id;
+        return a;
+    }
+
+    // On each playback-time tick. Returns the songId once, when the submission
+    // threshold is first crossed; "" otherwise.
+    std::string onPlaybackTime(double timeSec) {
+        if (songId_.empty() || submitted_) return {};
+        if (timeSec < scrobbleSubmitThreshold(length_)) return {};
+        submitted_ = true;
+        return songId_;
+    }
+
+    void onStop() {
+        songId_.clear();
+        submitted_ = false;
+    }
+
+private:
+    std::string songId_;
+    double      length_    = 0.0;
+    bool        submitted_ = false;
+};
+
+// ---------------------------------------------------------------------------
+// One-line session-env summary for the startup `Env` trace line. Both
+// `navidromeLogSessionEnv()` twins gather these values and format them the same
+// way; this owns the format. Unit-tested (testSessionEnv).
+// ---------------------------------------------------------------------------
+struct SessionEnv {
+    std::string platform;         // "macOS" / "Windows"
+    bool        configured = false;
+    std::string serverUrl;
+    std::string transcodeFormat;  // "" -> "server-default"
+    int         maxBitrate = 0;
+    bool        scrobble = false;
+    bool        startupRefresh = false;
+    bool        customHeaders = false;
+};
+
+inline std::string describeSessionEnv(const SessionEnv& e) {
+    return "platform=" + e.platform
+        + "  configured=" + (e.configured ? "yes" : "no")
+        + "  server=" + e.serverUrl
+        + "  transcode=" + (e.transcodeFormat.empty() ? "server-default" : e.transcodeFormat)
+        + "  maxBitrate=" + std::to_string(e.maxBitrate)
+        + "  scrobble=" + (e.scrobble ? "on" : "off")
+        + "  startupRefresh=" + (e.startupRefresh ? "on" : "off")
+        + "  customHeaders=" + (e.customHeaders ? "yes" : "no");
+}
+
+// ---------------------------------------------------------------------------
+// Minimal JSON DOM + parser.
+//
+// Every Subsonic struct on both platforms is built from this one parser: the
+// Windows client dropped its `"key":` substring scanner and the macOS client
+// stopped calling NSJSONSerialization, so a field name, a default, or a quirk
+// like getGenres' "value"-not-"name" is now fixed in exactly one place. Scope
+// is deliberately only what Subsonic sends — objects, arrays, strings, numbers,
+// true/false/null, shallow nesting; UTF-8 in, UTF-8 out (\uXXXX and surrogate
+// pairs decoded). Unit-tested in tests/MediaEnrichmentLogicTests.cpp
+// (testJson / testSubsonicParsers).
+// ---------------------------------------------------------------------------
+namespace json {
+
+class Parser;  // defined below; friended so it can fill Value's private state
+
+class Value {
+public:
+    enum Type { Null, Bool, Number, String, Array, Object };
+
+    Value() = default;
+
+    Type type() const { return type_; }
+    bool isNull()   const { return type_ == Null; }
+    bool isObject() const { return type_ == Object; }
+    bool isArray()  const { return type_ == Array; }
+
+    bool   asBool(bool def = false)   const { return type_ == Bool   ? b_ : def; }
+    double asNumber(double def = 0.0) const { return type_ == Number ? n_ : def; }
+    const std::string& asString() const {
+        static const std::string kEmpty;
+        return type_ == String ? s_ : kEmpty;
+    }
+
+    bool has(const std::string& key) const {
+        if (type_ != Object) return false;
+        for (const auto& kv : obj_) if (kv.first == key) return true;
+        return false;
+    }
+
+    // Object member lookup; a missing key (or non-object receiver) yields a
+    // shared Null, so `v["a"]["b"]` never faults.
+    const Value& operator[](const std::string& key) const {
+        if (type_ == Object)
+            for (const auto& kv : obj_)
+                if (kv.first == key) return kv.second;
+        return nullRef();
+    }
+    const Value& operator[](const char* key) const {
+        return (*this)[std::string(key)];
+    }
+
+    std::size_t size() const {
+        return type_ == Array ? arr_.size() : (type_ == Object ? obj_.size() : 0);
+    }
+    const Value& operator[](std::size_t i) const {
+        return (type_ == Array && i < arr_.size()) ? arr_[i] : nullRef();
+    }
+
+    // Subsonic collapses a one-element list to a bare object. Walk any "list"
+    // field through this: Array -> its elements, Object -> [this], else -> {}.
+    std::vector<const Value*> items() const {
+        std::vector<const Value*> out;
+        if (type_ == Array) {
+            out.reserve(arr_.size());
+            for (const auto& e : arr_) out.push_back(&e);
+        } else if (type_ == Object) {
+            out.push_back(this);
+        }
+        return out;
+    }
+
+private:
+    static const Value& nullRef() { static const Value kNull; return kNull; }
+
+    Type type_ = Null;
+    bool b_ = false;
+    double n_ = 0.0;
+    std::string s_;
+    std::vector<Value> arr_;
+    std::vector<std::pair<std::string, Value>> obj_;
+
+    friend class Parser;
+};
+
+class Parser {
+public:
+    // Parse `text`; on failure returns a Null Value and sets `err` non-empty.
+    static Value parse(const std::string& text, std::string& err) {
+        Parser p(text);
+        p.ws();
+        Value v = p.value();
+        if (!p.err_.empty()) { err = p.err_; return Value(); }
+        p.ws();
+        if (p.i_ != p.text_.size()) { err = "trailing content after JSON value"; return Value(); }
+        err.clear();
+        return v;
+    }
+
+private:
+    explicit Parser(const std::string& t) : text_(t) {}
+
+    const std::string& text_;
+    std::size_t i_ = 0;
+    std::string err_;
+
+    void fail(const char* m) { if (err_.empty()) err_ = m; }
+    bool bad() const { return !err_.empty(); }
+
+    void ws() {
+        while (i_ < text_.size()) {
+            char c = text_[i_];
+            if (c == ' ' || c == '\t' || c == '\n' || c == '\r') ++i_;
+            else break;
+        }
+    }
+
+    Value value() {
+        if (bad()) return Value();
+        if (i_ >= text_.size()) { fail("unexpected end of JSON"); return Value(); }
+        switch (text_[i_]) {
+            case '{': return object();
+            case '[': return array();
+            case '"': { Value v; v.type_ = Value::String; v.s_ = str(); return v; }
+            case 't': case 'f': return boolean();
+            case 'n': return null();
+            default:  return number();
+        }
+    }
+
+    Value object() {
+        Value v; v.type_ = Value::Object;
+        ++i_; ws();                       // consume '{'
+        if (i_ < text_.size() && text_[i_] == '}') { ++i_; return v; }
+        for (;;) {
+            ws();
+            if (i_ >= text_.size() || text_[i_] != '"') { fail("expected string key"); return Value(); }
+            std::string key = str();
+            if (bad()) return Value();
+            ws();
+            if (i_ >= text_.size() || text_[i_] != ':') { fail("expected ':'"); return Value(); }
+            ++i_; ws();
+            Value child = value();
+            if (bad()) return Value();
+            v.obj_.emplace_back(std::move(key), std::move(child));
+            ws();
+            if (i_ >= text_.size()) { fail("unterminated object"); return Value(); }
+            if (text_[i_] == ',') { ++i_; continue; }
+            if (text_[i_] == '}') { ++i_; break; }
+            fail("expected ',' or '}'"); return Value();
+        }
+        return v;
+    }
+
+    Value array() {
+        Value v; v.type_ = Value::Array;
+        ++i_; ws();                       // consume '['
+        if (i_ < text_.size() && text_[i_] == ']') { ++i_; return v; }
+        for (;;) {
+            ws();
+            Value child = value();
+            if (bad()) return Value();
+            v.arr_.push_back(std::move(child));
+            ws();
+            if (i_ >= text_.size()) { fail("unterminated array"); return Value(); }
+            if (text_[i_] == ',') { ++i_; continue; }
+            if (text_[i_] == ']') { ++i_; break; }
+            fail("expected ',' or ']'"); return Value();
+        }
+        return v;
+    }
+
+    Value boolean() {
+        if (text_.compare(i_, 4, "true") == 0)  { i_ += 4; Value v; v.type_ = Value::Bool; v.b_ = true;  return v; }
+        if (text_.compare(i_, 5, "false") == 0) { i_ += 5; Value v; v.type_ = Value::Bool; v.b_ = false; return v; }
+        fail("invalid literal"); return Value();
+    }
+
+    Value null() {
+        if (text_.compare(i_, 4, "null") == 0) { i_ += 4; return Value(); }
+        fail("invalid literal"); return Value();
+    }
+
+    Value number() {
+        std::size_t start = i_;
+        if (i_ < text_.size() && (text_[i_] == '-' || text_[i_] == '+')) ++i_;
+        bool any = false;
+        while (i_ < text_.size()) {
+            char c = text_[i_];
+            if ((c >= '0' && c <= '9') || c == '.' || c == 'e' || c == 'E' ||
+                c == '+' || c == '-') { any = true; ++i_; }
+            else break;
+        }
+        if (!any) { fail("invalid value"); return Value(); }
+        Value v; v.type_ = Value::Number;
+        v.n_ = std::strtod(text_.c_str() + start, nullptr);
+        return v;
+    }
+
+    // Reads a JSON string starting at the opening quote; returns the decoded
+    // UTF-8 bytes and leaves i_ just past the closing quote.
+    std::string str() {
+        std::string out;
+        ++i_;                            // consume opening '"'
+        while (i_ < text_.size()) {
+            char c = text_[i_++];
+            if (c == '"') return out;
+            if (c != '\\') { out.push_back(c); continue; }
+            if (i_ >= text_.size()) break;
+            char e = text_[i_++];
+            switch (e) {
+                case '"':  out.push_back('"');  break;
+                case '\\': out.push_back('\\'); break;
+                case '/':  out.push_back('/');  break;
+                case 'b':  out.push_back('\b'); break;
+                case 'f':  out.push_back('\f'); break;
+                case 'n':  out.push_back('\n'); break;
+                case 'r':  out.push_back('\r'); break;
+                case 't':  out.push_back('\t'); break;
+                case 'u': {
+                    unsigned cp = hex4();
+                    if (cp >= 0xD800 && cp <= 0xDBFF &&
+                        i_ + 1 < text_.size() && text_[i_] == '\\' && text_[i_ + 1] == 'u') {
+                        i_ += 2;
+                        unsigned lo = hex4();
+                        cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
+                    }
+                    appendUtf8(out, cp);
+                    break;
+                }
+                default: out.push_back(e); break;
+            }
+        }
+        fail("unterminated string");
+        return out;
+    }
+
+    unsigned hex4() {
+        unsigned v = 0;
+        for (int k = 0; k < 4 && i_ < text_.size(); ++k) {
+            char c = text_[i_++];
+            v <<= 4;
+            if      (c >= '0' && c <= '9') v |= unsigned(c - '0');
+            else if (c >= 'a' && c <= 'f') v |= unsigned(c - 'a' + 10);
+            else if (c >= 'A' && c <= 'F') v |= unsigned(c - 'A' + 10);
+            else { fail("invalid \\u escape"); return v; }
+        }
+        return v;
+    }
+
+    static void appendUtf8(std::string& out, unsigned cp) {
+        if (cp <= 0x7F) {
+            out.push_back(char(cp));
+        } else if (cp <= 0x7FF) {
+            out.push_back(char(0xC0 | (cp >> 6)));
+            out.push_back(char(0x80 | (cp & 0x3F)));
+        } else if (cp <= 0xFFFF) {
+            out.push_back(char(0xE0 | (cp >> 12)));
+            out.push_back(char(0x80 | ((cp >> 6) & 0x3F)));
+            out.push_back(char(0x80 | (cp & 0x3F)));
+        } else {
+            out.push_back(char(0xF0 | (cp >> 18)));
+            out.push_back(char(0x80 | ((cp >> 12) & 0x3F)));
+            out.push_back(char(0x80 | ((cp >> 6) & 0x3F)));
+            out.push_back(char(0x80 | (cp & 0x3F)));
+        }
+    }
+};
+
+inline Value parse(const std::string& text, std::string& err) {
+    return Parser::parse(text, err);
+}
+
+}  // namespace json
+
+// ---------------------------------------------------------------------------
+// json::Value field accessors + Subsonic object -> struct parsers.
+// One implementation each, shared by both HTTP clients.
+// ---------------------------------------------------------------------------
+
+inline std::string jStr(const json::Value& o, const char* key,
+                        const std::string& def = std::string()) {
+    const json::Value& v = o[key];
+    return v.type() == json::Value::String ? v.asString() : def;
+}
+
+inline int jInt(const json::Value& o, const char* key, int def = 0) {
+    const json::Value& v = o[key];
+    return v.type() == json::Value::Number ? int(v.asNumber()) : def;
+}
+
+inline long long jLong(const json::Value& o, const char* key, long long def = 0) {
+    const json::Value& v = o[key];
+    return v.type() == json::Value::Number ? static_cast<long long>(v.asNumber()) : def;
+}
+
+inline double jDouble(const json::Value& o, const char* key, double def = 0.0) {
+    const json::Value& v = o[key];
+    return v.type() == json::Value::Number ? v.asNumber() : def;
+}
+
+// A field Subsonic may send quoted ("id":"7") or bare ("id":7 — getMusicFolders,
+// and some artistId / coverArt forms). Normalized to a string either way.
+inline std::string jId(const json::Value& o, const char* key) {
+    const json::Value& v = o[key];
+    if (v.type() == json::Value::String) return v.asString();
+    if (v.type() == json::Value::Number) {
+        double d = v.asNumber();
+        long long i = static_cast<long long>(d);
+        return static_cast<double>(i) == d ? std::to_string(i) : std::to_string(d);
+    }
+    return std::string();
+}
+
+// Subsonic marks a favorite by *emitting* a "starred" timestamp string — the
+// value is irrelevant, only that the key is present.
+inline bool jFlag(const json::Value& o, const char* key) { return o.has(key); }
+
+// Subsonic reports a song as "song" / "entry" / "child" depending on endpoint;
+// the object shape is identical.
+inline Song parseSong(const json::Value& s) {
+    Song so;
+    so.id         = jId(s, "id");
+    so.title      = jStr(s, "title", "Unknown Title");
+    so.artist     = jStr(s, "artist");
+    so.artistId   = jId(s, "artistId");
+    so.album      = jStr(s, "album");
+    so.albumId    = jId(s, "albumId");
+    so.coverArtId = jId(s, "coverArt");
+    so.suffix     = jStr(s, "suffix");
+    so.track      = jInt(s, "track");
+    so.year       = jInt(s, "year");
+    so.duration   = jDouble(s, "duration");
+    so.starred    = jFlag(s, "starred");
+    so.rating     = jInt(s, "userRating");
+    return so;
+}
+
+inline Album parseAlbum(const json::Value& a) {
+    Album al;
+    al.id         = jId(a, "id");
+    al.name       = jStr(a, "name", "Unknown Album");
+    al.artist     = jStr(a, "artist");
+    al.artistId   = jId(a, "artistId");
+    al.coverArtId = jId(a, "coverArt");
+    al.year       = jInt(a, "year");
+    al.songCount  = jInt(a, "songCount");
+    al.starred    = jFlag(a, "starred");
+    return al;
+}
+
+inline Artist parseArtist(const json::Value& a) {
+    Artist ar;
+    ar.id         = jId(a, "id");
+    ar.name       = jStr(a, "name", "Unknown Artist");
+    ar.coverArtId = jId(a, "coverArt");
+    ar.albumCount = jInt(a, "albumCount");
+    ar.starred    = jFlag(a, "starred");
+    return ar;
+}
+
+inline Playlist parsePlaylist(const json::Value& p) {
+    Playlist pl;
+    pl.id        = jId(p, "id");
+    pl.name      = jStr(p, "name", "Unnamed playlist");
+    pl.owner     = jStr(p, "owner");
+    pl.songCount = jInt(p, "songCount");
+    pl.duration  = jDouble(p, "duration");
+    return pl;
+}
+
+// getGenres.view names the genre string "value", not "name".
+inline Genre parseGenre(const json::Value& g) {
+    Genre gen;
+    gen.name       = jStr(g, "value");
+    gen.songCount  = jInt(g, "songCount");
+    gen.albumCount = jInt(g, "albumCount");
+    return gen;
+}
+
+inline MusicFolder parseMusicFolder(const json::Value& f) {
+    MusicFolder mf;
+    mf.id   = jId(f, "id");
+    mf.name = jStr(f, "name");
+    return mf;
+}
+
+inline RadioStation parseRadioStation(const json::Value& s) {
+    RadioStation st;
+    st.id          = jId(s, "id");
+    st.name        = jStr(s, "name", "Unnamed station");
+    st.streamUrl   = jStr(s, "streamUrl");
+    st.homePageUrl = jStr(s, "homePageUrl");
+    return st;
+}
+
+// A bookmark wraps the full song object as "entry" plus a millisecond position.
+// Returns false when the bookmark carries no entry (nothing playable).
+inline bool parseBookmark(const json::Value& b, Bookmark& out) {
+    auto entries = b["entry"].items();
+    if (entries.empty()) return false;
+    out.song       = parseSong(*entries[0]);
+    out.positionMs = jDouble(b, "position");
+    out.comment    = jStr(b, "comment");
+    return true;
+}
+
+// startScan.view / getScanStatus.view: the inner response object carries a
+// "scanStatus" object (Subsonic may array-collapse it).
+inline ScanStatus parseScanStatus(const json::Value& inner) {
+    ScanStatus st;
+    auto items = inner["scanStatus"].items();
+    if (!items.empty()) {
+        st.scanning = (*items[0])["scanning"].asBool();
+        st.count    = jLong(*items[0], "count");
+    }
+    return st;
+}
+
+// The parsed top-level Subsonic response. `root` owns the DOM; walk the payload
+// off `inner()` (valid only while this struct lives). On any failure `ok` is
+// false and `error` says why — same ErrorKind axis both clients already use.
+struct SubsonicResponse {
+    bool        ok = false;
+    json::Value root;
+    Error       error;
+
+    const json::Value& inner() const { return root["subsonic-response"]; }
+};
+
+inline SubsonicResponse parseSubsonicResponse(const std::string& body) {
+    SubsonicResponse r;
+    std::string perr;
+    r.root = json::parse(body, perr);
+    if (!perr.empty()) {
+        r.error = { ErrorKind::Parse, 200, 0, "JSON parse failed: " + perr };
+        return r;
+    }
+    const json::Value& inner = r.root["subsonic-response"];
+    if (!inner.isObject()) {
+        r.error = { ErrorKind::Parse, 200, 0, "response missing subsonic-response wrapper" };
+        return r;
+    }
+    if (jStr(inner, "status") != "ok") {
+        auto es = inner["error"].items();
+        int code = es.empty() ? 0 : jInt(*es[0], "code");
+        std::string msg = es.empty() ? std::string("Unknown Subsonic error")
+                                     : jStr(*es[0], "message", "Unknown Subsonic error");
+        r.error = { subsonicCodeToErrorKind(code), 200, code, msg };
+        return r;
+    }
+    r.ok = true;
+    return r;
 }
 
 } // namespace navidrome

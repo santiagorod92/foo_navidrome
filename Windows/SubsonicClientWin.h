@@ -201,9 +201,10 @@ private:
     // transient failures (timeout / 5xx / connection reset) up to 3x with
     // backoff; deterministic failures (auth, 404) return immediately.
     std::string httpGet(const std::string& url, std::string& outError) const;
-    // Validates the Subsonic status wrapper, returns the inner response object
-    // or "" (sets outError + m_lastError with the classified error code).
-    std::string checkResponse(const std::string& body, std::string& outError) const;
+    // Parses the body, validates the Subsonic status wrapper, and returns the
+    // inner "subsonic-response" object as a json::Value — or a Null Value on any
+    // failure (sets outError + m_lastError with the classified error code).
+    json::Value checkResponse(const std::string& body, std::string& outError) const;
 
     // Parse one getArtists.view response; folderId empty => no musicFolderId.
     std::vector<Artist> fetchArtistsForFolder(const std::string& folderId,

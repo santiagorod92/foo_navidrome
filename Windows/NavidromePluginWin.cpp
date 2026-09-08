@@ -282,35 +282,11 @@ private:
            IDC_HEADERS=1006, IDC_SCROBBLE=1007, IDC_FORMAT=1008, IDC_BITRATE=1009,
            IDC_RESCAN=1010, IDC_SCAN_STATUS=1011 };
 
-    // Streaming transcode options. The stored value is what goes on the wire as
-    // stream.view's `format` — "" leaves the decision to the server's own
-    // transcoding rules, "raw" forces the original file.
-    //
-    // The server can only honour a format it has a transcoding configured for.
-    // Navidrome ships mp3 / opus / aac; FLAC and WAV need a transcoding row
-    // added in its admin UI first, and are mainly useful as lossless
-    // normalisation targets for source codecs foobar2000 can't decode itself.
-    struct FormatOption { const wchar_t* label; const char* value; };
-    static const FormatOption* formatOptions(std::size_t& count) {
-        static const FormatOption kFormats[] = {
-            { L"Server default",            ""     },
-            { L"Original (no transcoding)", "raw"  },
-            { L"MP3",                       "mp3"  },
-            { L"Opus",                      "opus" },
-            { L"AAC",                       "aac"  },
-            { L"FLAC (lossless)",           "flac" },
-            { L"WAV (uncompressed)",        "wav"  },
-        };
-        count = sizeof(kFormats) / sizeof(kFormats[0]);
-        return kFormats;
-    }
-    // kbps ceiling; 0 means "no limit", which is also what Subsonic reads when
-    // the parameter is absent.
-    static const int* bitrateOptions(std::size_t& count) {
-        static const int kBitrates[] = { 0, 64, 96, 128, 192, 256, 320 };
-        count = sizeof(kBitrates) / sizeof(kBitrates[0]);
-        return kBitrates;
-    }
+    // Transcode format + max-bitrate choices are shared with the macOS prefs UI
+    // — navidrome::streamFormatOptions() / navidrome::maxBitrateOptions() in
+    // SubsonicTypes.h. The stored `format` value goes on the wire as
+    // stream.view's `format=`; "" = server default, "raw" = original file.
+
     // Posted from the background ping thread back to the UI thread (see OnTest).
     static constexpr UINT WM_TEST_RESULT = WM_USER + 200;
     // Posted from the background scan thread back to the UI thread (see OnRescan).
@@ -369,20 +345,17 @@ private:
             WS_CHILD|WS_VISIBLE|WS_TABSTOP|WS_VSCROLL|CBS_DROPDOWNLIST, 0, IDC_FORMAT);
         m_format.SetWindowPos(nullptr, 92, 194, 180, 200, SWP_NOZORDER);
         m_format.SetFont(f);
-        std::size_t formatCount = 0;
-        const FormatOption* formats = formatOptions(formatCount);
-        for (std::size_t i = 0; i < formatCount; ++i) m_format.AddString(formats[i].label);
+        for (const auto& opt : navidrome::streamFormatOptions())
+            m_format.AddString(pfc::stringcvt::string_wide_from_utf8(opt.label));
 
         m_bitrate.Create(*this, CWindow::rcDefault, nullptr,
             WS_CHILD|WS_VISIBLE|WS_TABSTOP|WS_VSCROLL|CBS_DROPDOWNLIST, 0, IDC_BITRATE);
         m_bitrate.SetWindowPos(nullptr, 92, 224, 180, 200, SWP_NOZORDER);
         m_bitrate.SetFont(f);
-        std::size_t bitrateCount = 0;
-        const int* bitrates = bitrateOptions(bitrateCount);
-        for (std::size_t i = 0; i < bitrateCount; ++i) {
-            m_bitrate.AddString(bitrates[i] == 0
+        for (int kbps : navidrome::maxBitrateOptions()) {
+            m_bitrate.AddString(kbps == 0
                 ? L"Unlimited"
-                : (std::to_wstring(bitrates[i]) + L" kbps").c_str());
+                : (std::to_wstring(kbps) + L" kbps").c_str());
         }
 
         // Rescan button — useful if files were added/removed server-side and
@@ -409,18 +382,16 @@ private:
         CheckDlgButton(IDC_SCROBBLE, navidrome::cfg_scrobble.get() ? BST_CHECKED : BST_UNCHECKED);
 
         std::string format = navidrome::cfg_stream_format.get().c_str();
-        std::size_t formatCount = 0;
-        const FormatOption* formats = formatOptions(formatCount);
+        const auto& formats = navidrome::streamFormatOptions();
         int formatIndex = 0;
-        for (std::size_t i = 0; i < formatCount; ++i)
+        for (std::size_t i = 0; i < formats.size(); ++i)
             if (format == formats[i].value) { formatIndex = static_cast<int>(i); break; }
         m_format.SetCurSel(formatIndex);
 
         int bitrate = static_cast<int>(navidrome::cfg_max_bitrate.get());
-        std::size_t bitrateCount = 0;
-        const int* bitrates = bitrateOptions(bitrateCount);
+        const auto& bitrates = navidrome::maxBitrateOptions();
         int bitrateIndex = 0;
-        for (std::size_t i = 0; i < bitrateCount; ++i)
+        for (std::size_t i = 0; i < bitrates.size(); ++i)
             if (bitrates[i] == bitrate) { bitrateIndex = static_cast<int>(i); break; }
         m_bitrate.SetCurSel(bitrateIndex);
     }
@@ -436,16 +407,14 @@ private:
         navidrome::cfg_password.set(getText(IDC_PASS).c_str());
         navidrome::cfg_scrobble.set(IsDlgButtonChecked(IDC_SCROBBLE) == BST_CHECKED);
 
-        std::size_t formatCount = 0;
-        const FormatOption* formats = formatOptions(formatCount);
+        const auto& formats = navidrome::streamFormatOptions();
         int fi = m_format.GetCurSel();
-        if (fi >= 0 && static_cast<std::size_t>(fi) < formatCount)
+        if (fi >= 0 && static_cast<std::size_t>(fi) < formats.size())
             navidrome::cfg_stream_format.set(formats[fi].value);
 
-        std::size_t bitrateCount = 0;
-        const int* bitrates = bitrateOptions(bitrateCount);
+        const auto& bitrates = navidrome::maxBitrateOptions();
         int bi = m_bitrate.GetCurSel();
-        if (bi >= 0 && static_cast<std::size_t>(bi) < bitrateCount)
+        if (bi >= 0 && static_cast<std::size_t>(bi) < bitrates.size())
             navidrome::cfg_max_bitrate.set(bitrates[bi]);
     }
 
@@ -494,7 +463,8 @@ private:
             }
 
             while (status.scanning) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+                std::this_thread::sleep_for(
+                    std::chrono::milliseconds(navidrome::kScanPollIntervalMs));
                 std::string pollErr;
                 auto polled = navidrome::SubsonicClientWin::get().getScanStatus(pollErr);
                 if (!pollErr.empty()) break;   // transient error — stop polling, last known count stands
@@ -790,35 +760,21 @@ public:
     }
 
     void on_playback_new_track(metadb_handle_ptr track) override {
-        m_songId.clear();
-        m_submitted = false;
-        m_length    = 0.0;
-        if (track.is_empty()) return;
-
-        const std::string songId = navidrome::trackIdFromURI(track->get_path());
-        if (songId.empty()) return;   // not one of ours
-
-        // Deliberately ahead of the scrobble gate: this is a display refresh,
-        // not a play report, so it must not follow the scrobbling preference.
-        refreshRatingAsync(songId);
-
-        if (!navidrome::cfg_scrobble.get()) return;
-        m_songId = songId;
-        m_length = track->get_length();
-        scrobbleAsync(m_songId, false);
+        auto a = m_tracker.onNewTrack(
+            track.is_empty() ? std::string() : std::string(track->get_path()),
+            track.is_empty() ? 0.0 : track->get_length(),
+            navidrome::cfg_scrobble.get());
+        if (!a.refreshRatingId.empty()) refreshRatingAsync(a.refreshRatingId);
+        if (!a.scrobbleNowId.empty())   scrobbleAsync(a.scrobbleNowId, false);
     }
 
     void on_playback_time(double time) override {
-        if (m_songId.empty() || m_submitted) return;
-        double threshold = navidrome::scrobbleSubmitThreshold(m_length);
-        if (time < threshold) return;
-        m_submitted = true;
-        scrobbleAsync(m_songId, true);
+        std::string id = m_tracker.onPlaybackTime(time);
+        if (!id.empty()) scrobbleAsync(id, true);
     }
 
     void on_playback_stop(play_control::t_stop_reason) override {
-        m_songId.clear();
-        m_submitted = false;
+        m_tracker.onStop();
     }
 
     // Unused callbacks (not requested in get_flags, but the interface is pure).
@@ -873,9 +829,7 @@ private:
         }).detach();
     }
 
-    std::string m_songId;
-    double      m_length    = 0.0;
-    bool        m_submitted = false;
+    navidrome::ScrobbleTracker m_tracker;
 };
 static play_callback_static_factory_t<NavidromeScrobbler> g_navidrome_scrobbler_factory;
 
@@ -899,15 +853,16 @@ bool navidrome::setStarredOnServer(const std::string& songId, bool starred) {
 // macOS twin in NavidromePlugin.mm.
 static void navidromeLogSessionEnv() {
 #ifdef NAVIDROME_DEBUG_LOG
-    std::string fmt = navidrome::cfg_stream_format.get().c_str();
-    NAVIDROME_LOG("Env", std::string("platform=Windows")
-        + "  configured=" + (navidrome::SubsonicClientWin::get().isConfigured() ? "yes" : "no")
-        + "  server=" + navidrome::cfg_server_url.get().c_str()
-        + "  transcode=" + (fmt.empty() ? "server-default" : fmt)
-        + "  maxBitrate=" + std::to_string((int)navidrome::cfg_max_bitrate.get())
-        + "  scrobble=" + (navidrome::cfg_scrobble.get() ? "on" : "off")
-        + "  startupRefresh=" + (navidrome::refreshRatingsOnStartEnabled() ? "on" : "off")
-        + "  customHeaders=" + (navidrome::cfg_custom_headers.get().length() ? "yes" : "no"));
+    navidrome::SessionEnv e;
+    e.platform        = "Windows";
+    e.configured      = navidrome::SubsonicClientWin::get().isConfigured();
+    e.serverUrl       = navidrome::cfg_server_url.get().c_str();
+    e.transcodeFormat = navidrome::cfg_stream_format.get().c_str();
+    e.maxBitrate      = (int)navidrome::cfg_max_bitrate.get();
+    e.scrobble        = navidrome::cfg_scrobble.get();
+    e.startupRefresh  = navidrome::refreshRatingsOnStartEnabled();
+    e.customHeaders   = navidrome::cfg_custom_headers.get().length() > 0;
+    NAVIDROME_LOG("Env", navidrome::describeSessionEnv(e));
 #endif
 }
 
