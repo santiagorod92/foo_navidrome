@@ -7,13 +7,7 @@
 
 namespace navidrome {
 
-namespace {
-
-// Push the freshly fetched server-side rating / favorite of these song nodes
-// onto any matching playlist entry, so a value changed elsewhere (the Navidrome
-// web UI, another client) catches up as soon as the user looks at the album
-// here. Costs no extra request — the values arrived with the browse response.
-void syncSongNodesToPlaylists(const std::vector<BrowserNodePtr>& nodes) {
+void syncBrowserNodesToPlaylists(const std::vector<BrowserNodePtr>& nodes) {
     std::vector<RatingUpdate> updates;
     for (const auto& n : nodes) {
         if (!n || n->type != BrowserNode::Song || n->id.empty()) continue;
@@ -25,6 +19,8 @@ void syncSongNodesToPlaylists(const std::vector<BrowserNodePtr>& nodes) {
     }
     syncRatingsToPlaylists(std::move(updates));
 }
+
+namespace {
 
 BrowserNodePtr makeLibraryArtistNode(const Artist& a, const std::string& libraryId) {
     auto n = makeArtistNode(a);
@@ -127,7 +123,7 @@ std::vector<BrowserNodePtr> fetchChildren(IBrowserClient& client,
     }
 
     if (!outError.empty()) out.clear();
-    else                   syncSongNodesToPlaylists(out);
+    else                   syncBrowserNodesToPlaylists(out);
     return out;
 }
 

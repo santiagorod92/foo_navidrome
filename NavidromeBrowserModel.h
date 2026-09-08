@@ -353,4 +353,12 @@ void collectSongsDeep(IBrowserClient& client, const BrowserNodePtr& node,
 std::vector<std::string> collectSongIdsDeep(IBrowserClient& client,
                                             const std::vector<BrowserNodePtr>& nodes);
 
+// Push the server-side rating / favorite carried by any Song nodes in `nodes`
+// onto matching playlist entries (via navidrome::syncRatingsToPlaylists), so a
+// value changed elsewhere catches up as soon as the user looks at the album.
+// Costs no request — the values arrived with the browse response. Non-Song and
+// id-less nodes are skipped. fetchChildren() already calls this on its result;
+// the browser views call it directly for search results and rate/star actions.
+void syncBrowserNodesToPlaylists(const std::vector<BrowserNodePtr>& nodes);
+
 } // namespace navidrome

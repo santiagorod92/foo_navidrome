@@ -1,7 +1,6 @@
 #import "NavidromeBrowserController.h"
 #import "MacSubsonicBrowserClient.h"
 #include "../SubsonicTypes.h"
-#include "../NavidromePlaylistSync.h"
 #include "../NavidromeBrowserModel.h"
 #include "../NavidromeBrowserEnqueue.h"
 #include <SDK/playlist.h>
@@ -520,21 +519,15 @@ NBCWrapList(const std::vector<navidrome::BrowserNodePtr> &nodes) {
     return NBCWrapList(kids);
 }
 
-// Pushes the freshly fetched server-side rating / favorite of these nodes onto
-// any matching playlist entry, so a value changed elsewhere (the Navidrome web
-// UI, another client) catches up as soon as the user looks at the album here.
-// Costs no extra request — the values arrived with the browse response.
+// Marshal the view-models to shared nodes and hand off — the Song filter and
+// the rating push-back itself live in navidrome::syncBrowserNodesToPlaylists
+// (NavidromeBrowserModel.h), shared with Windows.
 static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
-    std::vector<navidrome::RatingUpdate> updates;
-    for (NavidromeNode *n in nodes) {
-        if (n.type != NavidromeNodeTypeSong || n.nodeId.length == 0) continue;
-        navidrome::RatingUpdate u;
-        u.songId  = [n.nodeId UTF8String];
-        u.rating  = (int)n.rating;
-        u.starred = n.starred ? true : false;
-        updates.push_back(std::move(u));
-    }
-    navidrome::syncRatingsToPlaylists(std::move(updates));
+    std::vector<navidrome::BrowserNodePtr> core;
+    core.reserve(nodes.count);
+    for (NavidromeNode *n in nodes)
+        core.push_back(std::make_shared<navidrome::BrowserNode>([n coreNode]));
+    navidrome::syncBrowserNodesToPlaylists(core);
 }
 
 - (void)loadChildrenOfNode:(NavidromeNode *)node inOutlineView:(NSOutlineView *)ov {

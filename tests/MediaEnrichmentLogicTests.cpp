@@ -14,10 +14,14 @@
 #include "../NavidromePlaylistSync.h"
 
 // NavidromeBrowserModel.cpp calls navidrome::syncRatingsToPlaylists after a
-// successful child fetch; the real implementation lives in main.cpp (SDK-only)
-// which this standalone host does not link. A no-op stub satisfies the link and
-// the fetch-dispatch tests don't care about the push-back.
-namespace navidrome { void syncRatingsToPlaylists(std::vector<RatingUpdate>) {} }
+// successful child fetch and from syncBrowserNodesToPlaylists; the real
+// implementation lives in main.cpp (SDK-only) which this standalone host does
+// not link. This stub records what it was handed so the tests can assert the
+// node -> RatingUpdate filtering.
+namespace navidrome {
+std::vector<RatingUpdate> g_lastRatingSync;
+void syncRatingsToPlaylists(std::vector<RatingUpdate> u) { g_lastRatingSync = std::move(u); }
+}
 
 #include <cstdint>
 #include <iostream>
@@ -1047,6 +1051,26 @@ void testBrowserFetchDispatch() {
         auto ids = navidrome::collectSongIdsDeep(fc, { artistNode });
         check(ids.size() == 1 && ids[0] == "s1",
               "collectSongIdsDeep returns the non-empty song ids");
+    }
+
+    // --- syncBrowserNodesToPlaylists: Song filter + RatingUpdate build ---
+    {
+        navidrome::Song s1; s1.id = "s1"; s1.rating = 4; s1.starred = true;
+        navidrome::Song s2; s2.id = "";   s2.rating = 2;      // no id -> skipped
+        std::vector<navidrome::BrowserNodePtr> mixed = {
+            navidrome::makeSongNode(s1),
+            navidrome::makeSongNode(s2),
+            navidrome::makeAlbumNode([]{ navidrome::Album a; a.id = "al"; return a; }()),
+            navidrome::makeCategoryNode(BrowserNode::CatStarred, "x"),
+            nullptr,
+        };
+        navidrome::g_lastRatingSync.clear();
+        navidrome::syncBrowserNodesToPlaylists(mixed);
+        check(navidrome::g_lastRatingSync.size() == 1 &&
+              navidrome::g_lastRatingSync[0].songId == "s1" &&
+              navidrome::g_lastRatingSync[0].rating == 4 &&
+              navidrome::g_lastRatingSync[0].starred,
+              "syncBrowserNodesToPlaylists forwards only id-bearing Song nodes");
     }
 }
 

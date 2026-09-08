@@ -1,7 +1,6 @@
 #include "stdafx.h"
 #include "BrowserWindow.h"
 #include "SubsonicClientWin.h"
-#include "../NavidromePlaylistSync.h"
 #include "../NavidromeBrowserEnqueue.h"
 #include <SDK/playlist.h>
 #include <SDK/metadb.h>
@@ -1014,23 +1013,9 @@ void BrowserWindow::loadArtists() {
     }).detach();
 }
 
-// Pushes the freshly fetched server-side rating / favorite of these nodes onto
-// any matching playlist entry, so a value changed elsewhere (the Navidrome web
-// UI, another client) catches up as soon as the user looks at the album here.
-// Costs no extra request — the values arrived with the browse response.
-static void syncSongNodesToPlaylists(
-        const std::vector<std::shared_ptr<NavidromeNode>>& nodes) {
-    std::vector<navidrome::RatingUpdate> updates;
-    for (auto& n : nodes) {
-        if (!n || n->type != NavidromeNode::Song || n->id.empty()) continue;
-        navidrome::RatingUpdate u;
-        u.songId  = n->id;
-        u.rating  = n->rating;
-        u.starred = n->starred;
-        updates.push_back(std::move(u));
-    }
-    navidrome::syncRatingsToPlaylists(std::move(updates));
-}
+// syncBrowserNodesToPlaylists (the search + rate/star rating push-back) is
+// shared with macOS — see NavidromeBrowserModel.h.
+using navidrome::syncBrowserNodesToPlaylists;
 
 // Song -> tree node (browse tree, "Play Similar", search results). Shared with
 // macOS — see navidrome::makeSongNode() in NavidromeBrowserModel.h.
@@ -1540,7 +1525,7 @@ void BrowserWindow::applyStarred(bool starred) {
                 err = one;
             }
         }
-        syncSongNodesToPlaylists(targets);
+        syncBrowserNodesToPlaylists(targets);
         fb2k::inMainThread([this, targets, starred, done, err]() {
             if (!IsWindow()) return;
             for (auto& n : targets) refreshLabel(n);
@@ -1606,7 +1591,7 @@ void BrowserWindow::OnRate(UINT, int id, HWND) {
             else if (err.empty())
                 err = one;
         }
-        syncSongNodesToPlaylists(songs);
+        syncBrowserNodesToPlaylists(songs);
         fb2k::inMainThread([this, songs, err]() {
             if (!IsWindow()) return;
             for (auto& n : songs) refreshLabel(n);
@@ -2118,7 +2103,7 @@ void BrowserWindow::OnTimer(UINT_PTR id) {
             n->childrenLoaded = true;
             payload->nodes.push_back(n);
         }
-        syncSongNodesToPlaylists(payload->nodes);
+        syncBrowserNodesToPlaylists(payload->nodes);
         if (!PostMessage(WM_NAVIDROME_SEARCH, reinterpret_cast<WPARAM>(payload), 0))
             delete payload;   // window already gone
     }).detach();
