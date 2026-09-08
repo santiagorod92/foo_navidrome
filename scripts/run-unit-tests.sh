@@ -21,7 +21,9 @@ set -euo pipefail
 
 MODE="${1:-auto}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SRC=("$ROOT/tests/MediaEnrichmentLogicTests.cpp" "$ROOT/Windows/MediaEnrichmentLogic.cpp")
+SRC=("$ROOT/tests/MediaEnrichmentLogicTests.cpp" \
+     "$ROOT/Windows/MediaEnrichmentLogic.cpp" \
+     "$ROOT/NavidromeBrowserModel.cpp")
 
 if [ "$MODE" = "auto" ]; then
   case "$(uname -s)" in

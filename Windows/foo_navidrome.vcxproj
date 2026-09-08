@@ -152,6 +152,9 @@
     <ClCompile Include="NavidromePluginWin.cpp" />
     <ClCompile Include="NavidromeInputWin.cpp" />
     <ClCompile Include="BrowserWindow.cpp" />
+    <ClCompile Include="..\NavidromeBrowserModel.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="MediaEnrichmentLogic.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
@@ -163,9 +166,10 @@
   <ItemGroup>
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="..\SubsonicTypes.h" />
+    <ClInclude Include="..\NavidromeBrowserModel.h" />
+    <ClInclude Include="..\NavidromeBrowserEnqueue.h" />
     <ClInclude Include="..\NavidromeDebugLog.h" />
     <ClInclude Include="SubsonicClientWin.h" />
-    <ClInclude Include="NavidromeInputWin.h" />
     <ClInclude Include="BrowserWindow.h" />
     <ClInclude Include="MediaEnrichmentLogic.h" />
     <ClInclude Include="EsLyricBridge.h" />

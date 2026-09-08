@@ -1,6 +1,7 @@
 #pragma once
 #include "stdafx.h"
 #include "../SubsonicTypes.h"
+#include "../NavidromeBrowserModel.h"
 #include <SDK/coreDarkMode.h>
 #include <SDK/ui_element.h>
 #include <cstdint>
@@ -22,45 +23,18 @@
 #define WM_NAVIDROME_SEARCH (WM_USER + 105)
 
 // ---------------------------------------------------------------------------
-// Tree node
+// Tree node — the model is shared with macOS in NavidromeBrowserModel.h.
+// The Win32 HTREEITEM lives in the shared node's opaque `viewHandle` slot;
+// NodeItem()/SetNodeItem() below are the typed accessors.
 // ---------------------------------------------------------------------------
-struct NavidromeNode {
-    enum Type { Artist, Album, Song, Category, Playlist, Genre, Radio, Library, Loading, Error };
-    // Smart-list roots shown above the artist list; each maps to one Subsonic
-    // endpoint (see BrowserWindow::fetchChildren).
-    enum CategoryKind {
-        CatStarred,          // getStarred2.view       → songs
-        CatRecentlyAdded,    // getAlbumList2 newest   → albums
-        CatMostPlayed,       // getAlbumList2 frequent → albums
-        CatRecentlyPlayed,   // getAlbumList2 recent   → albums
-        CatRandom,           // getAlbumList2 random   → albums
-        CatGenres,           // getGenres.view         → genres
-        CatPlaylists,        // getPlaylists.view      → playlists
-        CatBookmarks,        // getBookmarks.view      → songs
-        CatRadio,            // getInternetRadioStations.view → stations
-    };
+using NavidromeNode = navidrome::BrowserNode;
 
-    Type        type         = Loading;
-    CategoryKind category    = CatStarred;   // category nodes only
-    std::string id;
-    std::string displayName;
-    std::string subtitle;    // artist name for albums/songs
-    std::string album;       // album name for songs
-    std::string coverArtId;
-    std::string suffix;      // codec suffix (mp3/flac/…) for songs
-    int         track        = 0;
-    int         year         = 0;
-    double      duration     = 0.0;
-    std::string albumId;               // album id (song nodes; startup refresh)
-    std::string libraryId;             // set on artist nodes shown under a Library node — pins their album list to that library
-    bool        starred      = false;   // server-side favorite
-    int         rating       = 0;       // 0 = unrated, else 1-5
-    double      bookmarkPositionMs = 0.0; // > 0 when this song has a saved resume position
-    bool        childrenLoaded = false;
-    bool        isLoading    = false;
-    HTREEITEM   hItem        = nullptr;
-    std::vector<std::shared_ptr<NavidromeNode>> children;
-};
+inline HTREEITEM NodeItem(const std::shared_ptr<NavidromeNode>& n) {
+    return n ? static_cast<HTREEITEM>(n->viewHandle) : nullptr;
+}
+inline void SetNodeItem(const std::shared_ptr<NavidromeNode>& n, HTREEITEM h) {
+    if (n) n->viewHandle = h;
+}
 
 // Payload sent from background thread to main thread
 struct LoadedPayload {
@@ -253,11 +227,6 @@ private:
     std::string radioStationURL(const std::string& stationId);
     std::shared_ptr<NavidromeNode> singleSelectedRadioStation();
     void    invalidateRadioCategory();
-    // Polls playback_can_seek() briefly on a background thread, then seeks on
-    // the main thread. Used to resume into a bookmarked position right after
-    // enqueueNodes() calls playback_control::start() — the stream isn't
-    // necessarily seekable the instant playback starts.
-    static void seekWhenReady(double positionSeconds);
 
     // ui_config_callback: fires when the user changes Colours and Fonts
     // (or toggles dark mode) while the browser is open.

@@ -1,11 +1,15 @@
 #include "stdafx.h"
 #include "NavidromePlaylistSync.h"
+#include "NavidromeBrowserEnqueue.h"
 #include "SubsonicTypes.h"
 #include <SDK/metadb.h>
 #include <SDK/playlist.h>
+#include <SDK/playable_location.h>
+#include <SDK/playback_control.h>
 #include <SDK/advconfig.h>
 #include <SDK/contextmenu.h>
 #include <helpers/advconfig_impl.h>
+#include <chrono>
 #include <unordered_map>
 #include <unordered_set>
 #include <cstring>
@@ -145,6 +149,126 @@ navidrome::PlaylistAlbumScan navidrome::scanPlaylistAlbums() {
         }
     }
     return scan;
+}
+
+// ---------------------------------------------------------------------------
+// Browser enqueue — see NavidromeBrowserEnqueue.h. SDK-only, so it isn't
+// written once per platform.
+// ---------------------------------------------------------------------------
+
+void navidrome::seekWhenReady(double positionSeconds) {
+    std::thread([positionSeconds]() {
+        auto pc = playback_control::get();
+        for (int i = 0; i < 30; ++i) {
+            if (pc->is_playing() && pc->playback_can_seek()) {
+                fb2k::inMainThread([positionSeconds]() {
+                    playback_control::get()->playback_seek(positionSeconds);
+                });
+                return;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    }).detach();
+}
+
+std::size_t navidrome::enqueueBrowserNodes(
+        const std::vector<BrowserNodePtr>& nodes,
+        bool play,
+        bool clearFirst,
+        const std::function<std::string(const std::string&)>& radioUrl,
+        std::string& statusOut) {
+    if (nodes.empty()) { statusOut = "No songs selected"; return 0; }
+
+    metadb_handle_list tracks;
+    auto hints = metadb_io_v2::get()->create_hint_list();
+
+    for (const auto& node : nodes) {
+        if (!node) continue;
+        metadb_handle_ptr handle;
+        playable_location_impl loc;
+
+        if (node->type == BrowserNode::Radio) {
+            // Raw stream URL — bypasses navidrome:// entirely; foobar's stock
+            // HTTP input plays it (and any Shoutcast/Icecast metadata) with no
+            // involvement from our input handler.
+            const std::string url = radioUrl ? radioUrl(node->id) : std::string();
+            if (url.empty()) continue;
+            loc.set_path(url.c_str());
+            loc.set_subsong(0);
+            metadb::get()->handle_create(handle, loc);
+            tracks += handle;
+
+            file_info_impl info;
+            if (!node->displayName.empty()) info.meta_set("title", node->displayName.c_str());
+            hints->add_hint(handle, info, filestats_invalid, true);
+            continue;
+        }
+
+        navidrome::TrackURI t;
+        t.id         = node->id;
+        t.title      = node->displayName;
+        t.artist     = node->subtitle;
+        t.album      = node->album;
+        t.coverArtId = node->coverArtId;
+        t.suffix     = node->suffix;
+        t.albumId    = node->albumId;
+        t.track      = node->track;
+        t.year       = node->year;
+        t.rating     = node->rating;
+        t.duration   = node->duration;
+        t.starred    = node->starred;
+        const std::string uri = navidrome::buildTrackURI(t);
+        if (uri.empty()) continue;
+
+        loc.set_path(uri.c_str());
+        loc.set_subsong(0);
+        metadb::get()->handle_create(handle, loc);
+        tracks += handle;
+
+        file_info_impl info;
+        if (!node->displayName.empty()) info.meta_set("title",  node->displayName.c_str());
+        if (!node->subtitle.empty())    info.meta_set("artist", node->subtitle.c_str());
+        if (!node->album.empty())       info.meta_set("album",  node->album.c_str());
+        if (node->track > 0)            info.meta_set("tracknumber", pfc::format_int(node->track));
+        if (node->year > 0)             info.meta_set("date",   pfc::format_int(node->year));
+        if (node->duration > 0)         info.set_length(node->duration);
+        // The hint pre-populates metadb, so get_info() is not called for a
+        // freshly enqueued track — the rating has to be set here too or the
+        // column stays empty until an info reload.
+        if (node->rating > 0)           info.meta_set(navidrome::kRatingTag, pfc::format_int(node->rating));
+        if (node->starred)              info.meta_set(navidrome::kStarredTag, "1");
+        hints->add_hint(handle, info, filestats_invalid, true);
+    }
+    hints->on_done();
+
+    auto pm = playlist_manager::get();
+    t_size pl = pm->get_active_playlist();
+    if (pl == pfc_infinite) {
+        pm->create_playlist("Navidrome", ~0, pfc_infinite);
+        pl = pm->get_active_playlist();
+    }
+    if (clearFirst) pm->playlist_clear(pl);
+    t_size insertPos = pm->playlist_get_item_count(pl);
+    pm->playlist_add_items(pl, tracks, pfc::bit_array_false());
+
+    if (play && tracks.get_count() > 0) {
+        // Start playback honoring the user's Playback > Order setting (Shuffle,
+        // Random, Default, ...). track_command_play asks the active playback
+        // order for the starting track; the focus biases in-order modes to the
+        // first newly-added track. (playlist_execute_default_action would
+        // instead pin that exact track and ignore the order.)
+        pm->set_active_playlist(pl);
+        pm->set_playing_playlist(pl);
+        pm->playlist_set_focus_item(pl, insertPos);
+        playback_control::get()->start(playback_control::track_command_play);
+
+        // Resume a saved position when this was a single bookmarked song.
+        if (nodes.size() == 1 && nodes[0] && nodes[0]->bookmarkPositionMs > 0)
+            navidrome::seekWhenReady(nodes[0]->bookmarkPositionMs / 1000.0);
+    }
+
+    statusOut = "Added " + std::to_string(tracks.get_count()) + " tracks";
+    return tracks.get_count();
 }
 
 // ---------------------------------------------------------------------------

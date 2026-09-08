@@ -6,6 +6,22 @@
 // SubsonicTypes.h is pure C++ (no SDK, no Windows headers), so its helpers can
 // be exercised from this standalone host executable too.
 #include "../SubsonicTypes.h"
+// NavidromeBrowserModel.h is the shared browser tree model (SDK-free) — the
+// node struct, category list and row-label formatting used by both platform
+// browser views. NavidromeBrowserModel.cpp (built into this host) adds the
+// child-fetch dispatch over the IBrowserClient seam.
+#include "../NavidromeBrowserModel.h"
+#include "../NavidromePlaylistSync.h"
+
+// NavidromeBrowserModel.cpp calls navidrome::syncRatingsToPlaylists after a
+// successful child fetch and from syncBrowserNodesToPlaylists; the real
+// implementation lives in main.cpp (SDK-only) which this standalone host does
+// not link. This stub records what it was handed so the tests can assert the
+// node -> RatingUpdate filtering.
+namespace navidrome {
+std::vector<RatingUpdate> g_lastRatingSync;
+void syncRatingsToPlaylists(std::vector<RatingUpdate> u) { g_lastRatingSync = std::move(u); }
+}
 
 #include <cstdint>
 #include <iostream>
@@ -713,6 +729,351 @@ void testErrorModel() {
     }
 }
 
+void testBrowserModel() {
+    using navidrome::BrowserNode;
+
+    // --- category list: canonical order, titles, all Category type ---
+    auto cats = navidrome::buildCategoryNodes();
+    check(cats.size() == 9, "buildCategoryNodes returns the 9 smart lists");
+    const BrowserNode::CategoryKind expectedOrder[] = {
+        BrowserNode::CatStarred, BrowserNode::CatRecentlyAdded,
+        BrowserNode::CatMostPlayed, BrowserNode::CatRecentlyPlayed,
+        BrowserNode::CatRandom, BrowserNode::CatGenres,
+        BrowserNode::CatPlaylists, BrowserNode::CatBookmarks,
+        BrowserNode::CatRadio,
+    };
+    bool orderOk = cats.size() == 9;
+    for (size_t i = 0; i < cats.size() && orderOk; ++i)
+        orderOk = cats[i]->type == BrowserNode::Category &&
+                  cats[i]->category == expectedOrder[i] &&
+                  !cats[i]->displayName.empty();
+    check(orderOk, "category nodes are in canonical order with non-empty titles");
+    check(cats[0]->displayName == "\xE2\x98\x85 Starred", "Starred keeps its icon prefix");
+    check(cats[7]->category == BrowserNode::CatBookmarks &&
+          cats[7]->displayName == "Bookmarks",
+          "Bookmarks sits between Playlists and Radio");
+
+    // --- album-list category mapping ---
+    check(navidrome::albumListTypeForCategory(BrowserNode::CatRecentlyAdded) ==
+          navidrome::AlbumListType::Newest, "RecentlyAdded -> Newest");
+    check(navidrome::albumListTypeForCategory(BrowserNode::CatMostPlayed) ==
+          navidrome::AlbumListType::Frequent, "MostPlayed -> Frequent");
+    check(navidrome::albumListTypeForCategory(BrowserNode::CatRecentlyPlayed) ==
+          navidrome::AlbumListType::Recent, "RecentlyPlayed -> Recent");
+    check(navidrome::albumListTypeForCategory(BrowserNode::CatRandom) ==
+          navidrome::AlbumListType::Random, "Random -> Random");
+
+    // --- model -> node mappers ---
+    navidrome::Song s;
+    s.id = "s1"; s.title = "Song"; s.artist = "A"; s.album = "Alb";
+    s.albumId = "alb1"; s.suffix = "flac"; s.track = 4; s.year = 2001;
+    s.duration = 183.0; s.starred = true; s.rating = 3;
+    auto sn = navidrome::makeSongNode(s, 42000.0);
+    check(sn->type == BrowserNode::Song && sn->id == "s1" && sn->album == "Alb" &&
+          sn->albumId == "alb1" && sn->suffix == "flac" && sn->track == 4 &&
+          sn->rating == 3 && sn->starred && sn->bookmarkPositionMs == 42000.0 &&
+          sn->childrenLoaded,
+          "makeSongNode copies every field and marks the node a loaded leaf");
+
+    navidrome::Album a; a.id = "al1"; a.name = "Album"; a.artist = "Artist";
+    a.coverArtId = "c1"; a.starred = true;
+    auto an = navidrome::makeAlbumNode(a);
+    check(an->type == BrowserNode::Album && an->id == "al1" &&
+          an->subtitle == "Artist" && an->coverArtId == "c1" && an->starred &&
+          !an->childrenLoaded,
+          "makeAlbumNode maps id/name/artist/cover/starred and stays expandable");
+
+    navidrome::Artist ar; ar.id = "ar1"; ar.name = "The Artist"; ar.starred = false;
+    auto arn = navidrome::makeArtistNode(ar);
+    check(arn->type == BrowserNode::Artist && arn->id == "ar1" &&
+          arn->displayName == "The Artist", "makeArtistNode maps id/name");
+
+    navidrome::Playlist p; p.id = "p1"; p.name = "Mix"; p.songCount = 1;
+    check(navidrome::makePlaylistNode(p)->subtitle == "1 track",
+          "playlist subtitle is singular for one track");
+    p.songCount = 12;
+    check(navidrome::makePlaylistNode(p)->subtitle == "12 tracks",
+          "playlist subtitle is plural otherwise");
+
+    navidrome::Genre g; g.name = "Jazz"; g.songCount = 7;
+    auto gn = navidrome::makeGenreNode(g);
+    check(gn->id == "Jazz" && gn->displayName == "Jazz" && gn->subtitle == "7 tracks",
+          "genre node keys id off the name (no genre id in Subsonic)");
+
+    navidrome::RadioStation rs; rs.id = "r1"; rs.name = "SomaFM";
+    rs.homePageUrl = "https://somafm.com";
+    auto rn = navidrome::makeRadioNode(rs);
+    check(rn->type == BrowserNode::Radio && rn->subtitle == "https://somafm.com" &&
+          rn->childrenLoaded, "radio node is a loaded leaf carrying the home URL");
+
+    auto ln = navidrome::makeLibraryNode("2", "Podcasts");
+    check(ln->type == BrowserNode::Library && ln->id == "2" &&
+          ln->displayName == "Podcasts", "library node carries folder id + name");
+
+    check(navidrome::isLeaf(*sn) && navidrome::isLeaf(*rn) &&
+          !navidrome::isLeaf(*an) && !navidrome::isLeaf(*arn),
+          "isLeaf: songs/radio are leaves, artists/albums expand");
+
+    // --- row display ---
+    navidrome::NodeDisplay d = navidrome::nodeDisplay(*sn);
+    check(d.name == "\xE2\x98\x85 4. Song",
+          "song row: track-number prefix then favorite marker");
+    check(d.ratingStars == "\xE2\x98\x85\xE2\x98\x85\xE2\x98\x85",
+          "rating renders as N stars, separate from the name");
+    check(d.durationText == "3:03", "duration formats as M:SS");
+    check(d.bookmarkText.rfind("\xE2\x8F\xB1", 0) == 0 &&
+          d.bookmarkText.find("0:42") != std::string::npos,
+          "bookmark position renders as a clock glyph + M:SS");
+
+    // Single-column label (Win32) concatenates the pieces; a category row keeps
+    // its icon and is never given a star prefix.
+    check(navidrome::singleColumnLabel(*sn) ==
+          "\xE2\x98\x85 4. Song  \xE2\x98\x85\xE2\x98\x85\xE2\x98\x85  " + d.bookmarkText,
+          "singleColumnLabel joins name + rating + bookmark with two spaces");
+    check(navidrome::nodeDisplay(*cats[0]).name == "\xE2\x98\x85 Starred",
+          "a starred-looking category title is not double-prefixed");
+
+    navidrome::Song plain; plain.id = "s2"; plain.title = "Plain";
+    auto pn = navidrome::makeSongNode(plain);
+    navidrome::NodeDisplay pd = navidrome::nodeDisplay(*pn);
+    check(pd.name == "Plain" && pd.ratingStars.empty() && pd.bookmarkText.empty() &&
+          pd.durationText.empty(),
+          "an unrated, unbookmarked, zero-length song shows just its title");
+    check(navidrome::singleColumnLabel(*pn) == "Plain",
+          "singleColumnLabel adds nothing when there are no markers");
+}
+
+// A recording IBrowserClient: every call appends its name to `calls` and
+// returns one canned item so the dispatch can be asserted without a network.
+struct FakeBrowserClient : navidrome::IBrowserClient {
+    std::vector<std::string> calls;
+    std::string error;                 // set non-empty to simulate a failure
+    std::vector<std::string> groupIds; // set 2+ to exercise the library grouping
+
+    template <class T> std::vector<T> one(const char* name, std::string& e, T v) {
+        calls.push_back(name);
+        e = error;
+        if (!error.empty()) return {};
+        return { std::move(v) };
+    }
+
+    std::vector<navidrome::Artist> getArtists(std::string& e) override {
+        navidrome::Artist a; a.id = "ar1"; a.name = "Artist";
+        return one("getArtists", e, a);
+    }
+    std::vector<navidrome::Artist> getArtistsForLibrary(const std::string& lib,
+                                                        std::string& e) override {
+        navidrome::Artist a; a.id = "ar-" + lib; a.name = "LibArtist";
+        return one("getArtistsForLibrary", e, a);
+    }
+    std::vector<navidrome::Album> getAlbumsForArtist(const std::string&,
+                                                     const std::string& scope,
+                                                     std::string& e) override {
+        calls.push_back("getAlbumsForArtist:" + scope);
+        e = error;
+        if (!error.empty()) return {};
+        navidrome::Album a; a.id = "al1"; a.name = "Album"; a.artist = "Artist";
+        return { a };
+    }
+    std::vector<navidrome::Song> getSongsForAlbum(const std::string&, std::string& e) override {
+        navidrome::Song s; s.id = "s1"; s.title = "Track"; return one("getSongsForAlbum", e, s);
+    }
+    std::vector<navidrome::Song> getPlaylistSongs(const std::string&, std::string& e) override {
+        navidrome::Song s; s.id = "s2"; s.title = "PL"; return one("getPlaylistSongs", e, s);
+    }
+    std::vector<navidrome::Song> getSongsForGenre(const std::string&, int count,
+                                                  std::string& e) override {
+        calls.push_back("getSongsForGenre:" + std::to_string(count));
+        e = error;
+        if (!error.empty()) return {};
+        navidrome::Song s; s.id = "s3"; s.title = "G"; return { s };
+    }
+    std::vector<navidrome::Song> getStarredSongs(std::string& e) override {
+        navidrome::Song s; s.id = "s4"; s.title = "Fav"; return one("getStarredSongs", e, s);
+    }
+    std::vector<navidrome::Genre> getGenres(std::string& e) override {
+        navidrome::Genre g; g.name = "Rock"; g.songCount = 3; return one("getGenres", e, g);
+    }
+    std::vector<navidrome::Playlist> getPlaylists(std::string& e) override {
+        navidrome::Playlist p; p.id = "p1"; p.name = "Mix"; p.songCount = 2;
+        return one("getPlaylists", e, p);
+    }
+    std::vector<navidrome::Album> getAlbumList(navidrome::AlbumListType t, int size,
+                                               std::string& e) override {
+        calls.push_back(std::string("getAlbumList:") +
+                        navidrome::albumListTypeName(t) + ":" + std::to_string(size));
+        e = error;
+        if (!error.empty()) return {};
+        navidrome::Album a; a.id = "al2"; a.name = "Newest"; return { a };
+    }
+    std::vector<navidrome::RadioStation> getRadioStations(std::string& e) override {
+        navidrome::RadioStation r; r.id = "r1"; r.name = "Radio";
+        return one("getRadioStations", e, r);
+    }
+    std::vector<navidrome::Bookmark> getBookmarks(std::string& e) override {
+        navidrome::Bookmark b; b.song.id = "s5"; b.song.title = "Resume"; b.positionMs = 5000;
+        return one("getBookmarks", e, b);
+    }
+    std::vector<std::string> groupingLibraryIds() override {
+        calls.push_back("groupingLibraryIds");
+        return groupIds;
+    }
+    std::vector<navidrome::MusicFolder> musicFolders() override {
+        calls.push_back("musicFolders");
+        return { {"1", "Music"}, {"2", "Podcasts"} };
+    }
+};
+
+void testBrowserFetchDispatch() {
+    using navidrome::BrowserNode;
+
+    // --- buildRootNodes: flat vs. library-grouped ---
+    {
+        FakeBrowserClient fc;
+        std::string err;
+        auto roots = navidrome::buildRootNodes(fc, err);
+        check(err.empty(), "flat root load reports no error");
+        check(roots.size() == 10 && roots.back()->type == BrowserNode::Artist,
+              "flat roots = 9 categories + the artist list");
+        check(roots.front()->type == BrowserNode::Category,
+              "categories come first in the root list");
+    }
+    {
+        FakeBrowserClient fc; fc.groupIds = {"1", "2"};
+        std::string err;
+        auto roots = navidrome::buildRootNodes(fc, err);
+        check(roots.size() == 11, "grouped roots = 9 categories + 2 library nodes");
+        check(roots[9]->type == BrowserNode::Library && roots[9]->id == "1" &&
+              roots[9]->displayName == "Music" && roots[10]->displayName == "Podcasts",
+              "library nodes carry the folder id and resolved name");
+        bool calledGetArtists = false;
+        for (auto& c : fc.calls) if (c == "getArtists") calledGetArtists = true;
+        check(!calledGetArtists, "grouped load never calls the flat getArtists");
+    }
+    {
+        FakeBrowserClient fc; fc.error = "boom";
+        std::string err;
+        auto roots = navidrome::buildRootNodes(fc, err);
+        check(err == "boom", "a flat-list failure propagates the error");
+        check(roots.empty(), "no category nodes are returned on a failed root load");
+    }
+
+    // --- fetchChildren: one representative case per node type ---
+    struct Case {
+        BrowserNode node;
+        const char* wantCall;
+        BrowserNode::Type wantChildType;
+    };
+    auto artist = [](const char* lib) {
+        BrowserNode n; n.type = BrowserNode::Artist; n.id = "ar1"; n.libraryId = lib; return n;
+    };
+    auto cat = [](BrowserNode::CategoryKind k) {
+        BrowserNode n; n.type = BrowserNode::Category; n.category = k; return n;
+    };
+
+    {
+        FakeBrowserClient fc; std::string err;
+        auto out = navidrome::fetchChildren(fc, artist(""), err);
+        check(fc.calls.size() == 1 && fc.calls[0] == "getAlbumsForArtist:",
+              "an unpinned artist fetches albums with an empty scope");
+        check(out.size() == 1 && out[0]->type == BrowserNode::Album, "-> album nodes");
+    }
+    {
+        FakeBrowserClient fc; std::string err;
+        navidrome::fetchChildren(fc, artist("2"), err);
+        check(fc.calls[0] == "getAlbumsForArtist:2",
+              "an artist under a Library node pins the album scope to that library");
+    }
+    {
+        FakeBrowserClient fc; std::string err;
+        BrowserNode lib; lib.type = BrowserNode::Library; lib.id = "2";
+        auto out = navidrome::fetchChildren(fc, lib, err);
+        check(fc.calls[0] == "getArtistsForLibrary" &&
+              out.size() == 1 && out[0]->type == BrowserNode::Artist &&
+              out[0]->libraryId == "2",
+              "a Library node fetches its artists and pins them to itself");
+    }
+    {
+        FakeBrowserClient fc; std::string err;
+        BrowserNode g; g.type = BrowserNode::Genre; g.id = "Rock";
+        navidrome::fetchChildren(fc, g, err);
+        check(fc.calls[0] == "getSongsForGenre:500",
+              "genre expansion asks for up to 500 songs in one request");
+    }
+    {
+        FakeBrowserClient fc; std::string err;
+        auto out = navidrome::fetchChildren(fc, cat(BrowserNode::CatBookmarks), err);
+        check(fc.calls[0] == "getBookmarks" && out.size() == 1 &&
+              out[0]->type == BrowserNode::Song && out[0]->bookmarkPositionMs == 5000,
+              "the Bookmarks category yields song nodes carrying the resume position");
+    }
+    {
+        FakeBrowserClient fc; std::string err;
+        navidrome::fetchChildren(fc, cat(BrowserNode::CatMostPlayed), err);
+        check(fc.calls[0] == std::string("getAlbumList:frequent:100"),
+              "Most Played maps to getAlbumList2 frequent, 100 rows");
+    }
+    {
+        FakeBrowserClient fc; std::string err;
+        navidrome::fetchChildren(fc, cat(BrowserNode::CatRecentlyAdded), err);
+        check(fc.calls[0] == std::string("getAlbumList:newest:100"),
+              "Recently Added maps to getAlbumList2 newest");
+    }
+    {
+        FakeBrowserClient fc; fc.error = "net";
+        std::string err;
+        auto out = navidrome::fetchChildren(fc, cat(BrowserNode::CatStarred), err);
+        check(err == "net" && out.empty(),
+              "a failed child fetch clears the result and surfaces the error");
+    }
+
+    // --- collectSongsDeep: recurses through the tree, reuses loaded children ---
+    {
+        FakeBrowserClient fc;
+        auto artistNode = std::make_shared<BrowserNode>();
+        artistNode->type = BrowserNode::Artist; artistNode->id = "ar1";
+        std::vector<navidrome::BrowserNodePtr> songs;
+        navidrome::collectSongsDeep(fc, artistNode, songs);
+        // artist -> (fetch) album -> (fetch) song
+        check(songs.size() == 1 && songs[0]->type == BrowserNode::Song,
+              "collectSongsDeep walks artist -> album -> song via fetches");
+
+        FakeBrowserClient fc2;
+        auto preloaded = std::make_shared<BrowserNode>();
+        preloaded->type = BrowserNode::Album; preloaded->childrenLoaded = true;
+        preloaded->children = { navidrome::makeSongNode([]{
+            navidrome::Song s; s.id = "x"; s.title = "cached"; return s; }()) };
+        songs.clear();
+        navidrome::collectSongsDeep(fc2, preloaded, songs);
+        check(songs.size() == 1 && songs[0]->id == "x" && fc2.calls.empty(),
+              "an already-loaded node is walked from its cached children, no fetch");
+
+        auto ids = navidrome::collectSongIdsDeep(fc, { artistNode });
+        check(ids.size() == 1 && ids[0] == "s1",
+              "collectSongIdsDeep returns the non-empty song ids");
+    }
+
+    // --- syncBrowserNodesToPlaylists: Song filter + RatingUpdate build ---
+    {
+        navidrome::Song s1; s1.id = "s1"; s1.rating = 4; s1.starred = true;
+        navidrome::Song s2; s2.id = "";   s2.rating = 2;      // no id -> skipped
+        std::vector<navidrome::BrowserNodePtr> mixed = {
+            navidrome::makeSongNode(s1),
+            navidrome::makeSongNode(s2),
+            navidrome::makeAlbumNode([]{ navidrome::Album a; a.id = "al"; return a; }()),
+            navidrome::makeCategoryNode(BrowserNode::CatStarred, "x"),
+            nullptr,
+        };
+        navidrome::g_lastRatingSync.clear();
+        navidrome::syncBrowserNodesToPlaylists(mixed);
+        check(navidrome::g_lastRatingSync.size() == 1 &&
+              navidrome::g_lastRatingSync[0].songId == "s1" &&
+              navidrome::g_lastRatingSync[0].rating == 4 &&
+              navidrome::g_lastRatingSync[0].starred,
+              "syncBrowserNodesToPlaylists forwards only id-bearing Song nodes");
+    }
+}
+
 } // namespace
 
 int main() {
@@ -735,6 +1096,8 @@ int main() {
     testMusicFolderFilter();
     testRawQueryParam();
     testTrackURICodec();
+    testBrowserModel();
+    testBrowserFetchDispatch();
     testMd5KnownAnswers();
     testCrossParserParity();
     testErrorModel();

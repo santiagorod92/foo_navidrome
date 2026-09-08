@@ -1,10 +1,13 @@
 #pragma once
 #import <Cocoa/Cocoa.h>
 #include "../SubsonicClient.h"
+#include "../NavidromeBrowserModel.h"
 
 // ---------------------------------------------------------------------------
 // Tree node types for the NSOutlineView
 // ---------------------------------------------------------------------------
+// Order MUST match navidrome::BrowserNode::Type in NavidromeBrowserModel.h —
+// bridged by a plain cast in NavidromeBrowserController.mm.
 typedef NS_ENUM(NSInteger, NavidromeNodeType) {
     NavidromeNodeTypeArtist,
     NavidromeNodeTypeAlbum,
@@ -19,15 +22,17 @@ typedef NS_ENUM(NSInteger, NavidromeNodeType) {
 };
 
 // Smart-list roots shown above the artist list. Each maps to one Subsonic
-// endpoint — see -loadChildrenOfNode:inOutlineView:.
+// endpoint (see -fetchChildrenOf:). Order MUST match
+// navidrome::BrowserNode::CategoryKind in NavidromeBrowserModel.h — the two
+// are bridged by a plain cast.
 typedef NS_ENUM(NSInteger, NavidromeCategoryKind) {
     NavidromeCategoryStarred,          // getStarred2.view       → songs
     NavidromeCategoryRecentlyAdded,    // getAlbumList2 newest   → albums
     NavidromeCategoryMostPlayed,       // getAlbumList2 frequent → albums
     NavidromeCategoryRecentlyPlayed,   // getAlbumList2 recent   → albums
     NavidromeCategoryRandom,           // getAlbumList2 random   → albums
-    NavidromeCategoryPlaylists,        // getPlaylists.view      → playlists
     NavidromeCategoryGenres,           // getGenres.view         → genres
+    NavidromeCategoryPlaylists,        // getPlaylists.view      → playlists
     NavidromeCategoryBookmarks,        // getBookmarks.view      → songs
     NavidromeCategoryRadio,            // getInternetRadioStations.view → stations
 };
@@ -58,16 +63,15 @@ typedef NS_ENUM(NSInteger, NavidromeCategoryKind) {
 // Child nodes (albums for artist nodes, songs for album nodes)
 @property (nonatomic, strong) NSMutableArray<NavidromeNode *> *children;
 
-// Convenience constructors
-+ (instancetype)artistNode:(SubsonicArtist *)artist;
-+ (instancetype)albumNode:(SubsonicAlbum *)album;
+// Bridge to the shared C++ tree model (NavidromeBrowserModel.h). The ObjC
+// class is the NSOutlineView view-model; browse/fetch/enqueue/label logic runs
+// on navidrome::BrowserNode. +wrapCoreNode: builds a view-model from a fetched
+// shared node; the model->node mappers all live in NavidromeBrowserModel.h now.
++ (instancetype)wrapCoreNode:(const navidrome::BrowserNode &)core;
+- (navidrome::BrowserNode)coreNode;
+
+// The three view-only node kinds the controller still builds directly.
 + (instancetype)songNode:(SubsonicSong *)song;
-+ (instancetype)bookmarkNode:(SubsonicBookmark *)bookmark;
-+ (instancetype)playlistNode:(SubsonicPlaylist *)playlist;
-+ (instancetype)genreNode:(SubsonicGenre *)genre;
-+ (instancetype)radioStationNode:(SubsonicRadioStation *)station;
-+ (instancetype)categoryNode:(NavidromeCategoryKind)kind title:(NSString *)title;
-+ (instancetype)libraryNodeWithId:(NSString *)libraryId name:(NSString *)name;
 + (instancetype)loadingNode;
 + (instancetype)errorNodeWithMessage:(NSString *)msg;
 

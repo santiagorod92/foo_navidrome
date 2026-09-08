@@ -1,18 +1,23 @@
 #import "NavidromeBrowserController.h"
-#import "../NavidromeInput.h"
+#import "MacSubsonicBrowserClient.h"
 #include "../SubsonicTypes.h"
-#include "../NavidromePlaylistSync.h"
+#include "../NavidromeBrowserModel.h"
+#include "../NavidromeBrowserEnqueue.h"
 #include <SDK/playlist.h>
 #include <SDK/metadb.h>
 #include <SDK/playable_location.h>
 #include <SDK/playback_control.h>
 
-// ---------------------------------------------------------------------------
-// Helper: format seconds as M:SS
-// ---------------------------------------------------------------------------
-static NSString *formatDuration(NSTimeInterval secs) {
-    int s = (int)secs;
-    return [NSString stringWithFormat:@"%d:%02d", s / 60, s % 60];
+// The shared browser core (NavidromeBrowserModel.h) talks to the Subsonic
+// client through this seam; the Mac adapter converts to/from the ObjC client.
+static navidrome::IBrowserClient& browserClient() {
+    static std::unique_ptr<navidrome::IBrowserClient> inst = navidrome::makeMacBrowserClient();
+    return *inst;
+}
+
+// nil-safe NSString -> std::string, for the ObjC-node <-> shared-node bridge.
+static std::string NBCStr(NSString *x) {
+    return x ? std::string(x.UTF8String) : std::string();
 }
 
 // ---------------------------------------------------------------------------
@@ -20,29 +25,6 @@ static NSString *formatDuration(NSTimeInterval secs) {
 // ---------------------------------------------------------------------------
 
 @implementation NavidromeNode
-
-+ (instancetype)artistNode:(SubsonicArtist *)a {
-    NavidromeNode *n = [NavidromeNode new];
-    n.type        = NavidromeNodeTypeArtist;
-    n.nodeId      = a.artistId;
-    n.displayName = a.name;
-    n.coverArtId  = a.coverArtId;
-    n.starred     = a.starred;
-    n.children    = [NSMutableArray array];
-    return n;
-}
-
-+ (instancetype)albumNode:(SubsonicAlbum *)a {
-    NavidromeNode *n = [NavidromeNode new];
-    n.type        = NavidromeNodeTypeAlbum;
-    n.nodeId      = a.albumId;
-    n.displayName = a.name;
-    n.subtitle    = a.artist;
-    n.coverArtId  = a.coverArtId;
-    n.starred     = a.starred;
-    n.children    = [NSMutableArray array];
-    return n;
-}
 
 + (instancetype)songNode:(SubsonicSong *)s {
     NavidromeNode *n = [NavidromeNode new];
@@ -61,57 +43,6 @@ static NSString *formatDuration(NSTimeInterval secs) {
     n.rating       = s.rating;
     n.children     = [NSMutableArray array];
     n.childrenLoaded = YES;  // Songs are always leaves
-    return n;
-}
-
-+ (instancetype)playlistNode:(SubsonicPlaylist *)p {
-    NavidromeNode *n = [NavidromeNode new];
-    n.type        = NavidromeNodeTypePlaylist;
-    n.nodeId      = p.playlistId;
-    n.displayName = p.name;
-    n.subtitle    = p.songCount == 1 ? @"1 track"
-                  : [NSString stringWithFormat:@"%ld tracks", (long)p.songCount];
-    n.children    = [NSMutableArray array];
-    return n;
-}
-
-+ (instancetype)genreNode:(SubsonicGenre *)g {
-    NavidromeNode *n = [NavidromeNode new];
-    n.type        = NavidromeNodeTypeGenre;
-    n.nodeId      = g.name;   // getSongsByGenre keys off the name, not an id
-    n.displayName = g.name;
-    n.subtitle    = g.songCount == 1 ? @"1 track"
-                  : [NSString stringWithFormat:@"%ld tracks", (long)g.songCount];
-    n.children    = [NSMutableArray array];
-    return n;
-}
-
-+ (instancetype)radioStationNode:(SubsonicRadioStation *)station {
-    NavidromeNode *n = [NavidromeNode new];
-    n.type         = NavidromeNodeTypeRadioStation;
-    n.nodeId       = station.stationId;
-    n.displayName  = station.name;
-    n.subtitle     = station.homePageUrl;
-    n.children     = [NSMutableArray array];
-    n.childrenLoaded = YES;  // Radio stations are always leaves
-    return n;
-}
-
-+ (instancetype)categoryNode:(NavidromeCategoryKind)kind title:(NSString *)title {
-    NavidromeNode *n = [NavidromeNode new];
-    n.type         = NavidromeNodeTypeCategory;
-    n.categoryKind = kind;
-    n.displayName  = title;
-    n.children     = [NSMutableArray array];
-    return n;
-}
-
-+ (instancetype)libraryNodeWithId:(NSString *)libraryId name:(NSString *)name {
-    NavidromeNode *n = [NavidromeNode new];
-    n.type        = NavidromeNodeTypeLibrary;
-    n.nodeId      = libraryId;
-    n.displayName = name;
-    n.children    = [NSMutableArray array];
     return n;
 }
 
@@ -138,7 +69,67 @@ static NSString *formatDuration(NSTimeInterval secs) {
                         self.type == NavidromeNodeTypeLoading ||
                         self.type == NavidromeNodeTypeError; }
 
+// ---- Bridge to the shared C++ node model (NavidromeBrowserModel.h) ----------
+// The ObjC class stays the NSOutlineView view-model; the shared code operates
+// on navidrome::BrowserNode. The enums are declared in the same order, so the
+// type/category fields bridge by a plain cast. `children` is view-only and is
+// not carried across.
+
++ (instancetype)wrapCoreNode:(const navidrome::BrowserNode &)c {
+    NavidromeNode *n = [NavidromeNode new];
+    n.type        = (NavidromeNodeType)(int)c.type;
+    n.categoryKind = (NavidromeCategoryKind)(int)c.category;
+    n.nodeId      = c.id.empty()         ? nil : @(c.id.c_str());
+    n.displayName = @(c.displayName.c_str());
+    n.subtitle    = c.subtitle.empty()   ? nil : @(c.subtitle.c_str());
+    n.albumName   = c.album.empty()      ? nil : @(c.album.c_str());
+    n.albumId     = c.albumId.empty()    ? nil : @(c.albumId.c_str());
+    n.libraryId   = c.libraryId.empty()  ? nil : @(c.libraryId.c_str());
+    n.coverArtId  = c.coverArtId.empty() ? nil : @(c.coverArtId.c_str());
+    n.suffix      = c.suffix.empty()     ? nil : @(c.suffix.c_str());
+    n.trackNumber = c.track;
+    n.year        = c.year;
+    n.duration    = c.duration;
+    n.starred     = c.starred;
+    n.rating      = c.rating;
+    n.bookmarkPositionMs = c.bookmarkPositionMs;
+    n.childrenLoaded = c.childrenLoaded;
+    n.children    = [NSMutableArray array];
+    return n;
+}
+
+- (navidrome::BrowserNode)coreNode {
+    navidrome::BrowserNode c;
+    c.type       = (navidrome::BrowserNode::Type)(int)self.type;
+    c.category   = (navidrome::BrowserNode::CategoryKind)(int)self.categoryKind;
+    c.id         = NBCStr(self.nodeId);
+    c.displayName = NBCStr(self.displayName);
+    c.subtitle   = NBCStr(self.subtitle);
+    c.album      = NBCStr(self.albumName);
+    c.albumId    = NBCStr(self.albumId);
+    c.libraryId  = NBCStr(self.libraryId);
+    c.coverArtId = NBCStr(self.coverArtId);
+    c.suffix     = NBCStr(self.suffix);
+    c.track      = (int)self.trackNumber;
+    c.year       = (int)self.year;
+    c.duration   = self.duration;
+    c.starred    = self.starred ? true : false;
+    c.rating     = (int)self.rating;
+    c.bookmarkPositionMs = self.bookmarkPositionMs;
+    c.childrenLoaded = self.childrenLoaded ? true : false;
+    return c;
+}
+
 @end
+
+// Wrap a fetched list of shared nodes as NSOutlineView view-models.
+static NSMutableArray<NavidromeNode *> *
+NBCWrapList(const std::vector<navidrome::BrowserNodePtr> &nodes) {
+    NSMutableArray<NavidromeNode *> *out = [NSMutableArray arrayWithCapacity:nodes.size()];
+    for (const auto &p : nodes)
+        if (p) [out addObject:[NavidromeNode wrapCoreNode:*p]];
+    return out;
+}
 
 // ---------------------------------------------------------------------------
 // NavidromeBrowserController
@@ -462,16 +453,9 @@ static NSString *formatDuration(NSTimeInterval secs) {
 // Smart-list roots, shown above the artist list. Each expands lazily like any
 // other node, so opening the browser still costs exactly one getArtists call.
 - (NSArray<NavidromeNode *> *)buildCategoryNodes {
-    return @[
-        [NavidromeNode categoryNode:NavidromeCategoryStarred        title:@"★ Starred"],
-        [NavidromeNode categoryNode:NavidromeCategoryRecentlyAdded  title:@"Recently Added"],
-        [NavidromeNode categoryNode:NavidromeCategoryMostPlayed     title:@"Most Played"],
-        [NavidromeNode categoryNode:NavidromeCategoryRecentlyPlayed title:@"Recently Played"],
-        [NavidromeNode categoryNode:NavidromeCategoryRandom         title:@"Random Albums"],
-        [NavidromeNode categoryNode:NavidromeCategoryGenres         title:@"Genres"],
-        [NavidromeNode categoryNode:NavidromeCategoryPlaylists      title:@"Playlists"],
-        [NavidromeNode categoryNode:NavidromeCategoryRadio          title:@"Radio"],
-    ];
+    // Canonical list (incl. Bookmarks) is shared with Windows — see
+    // navidrome::buildCategoryNodes() in NavidromeBrowserModel.h.
+    return NBCWrapList(navidrome::buildCategoryNodes());
 }
 
 - (void)loadArtists {
@@ -489,44 +473,27 @@ static NSString *formatDuration(NSTimeInterval secs) {
     [self refreshRadioStations];
 
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        SubsonicClient *client = SubsonicClient.sharedClient;
-
-        // Multi-library server → group the tree by library: one Library node per
-        // library, each lazily expanding to its own artists. The "Only include
-        // selected libraries" checkbox only narrows which libraries show.
-        // Single-library server (or a one-library scope) → flat artist list.
-        NSArray<NSString *> *groupIds = [client libraryGroupingIds];
-        if (groupIds.count >= 2) {
-            NSArray<SubsonicMusicFolder *> *folders = [client cachedMusicFolders];  // warmed by libraryGroupingIds
-            NSMutableDictionary<NSString *, NSString *> *names = [NSMutableDictionary dictionary];
-            for (SubsonicMusicFolder *f in folders)
-                if (f.folderId) names[f.folderId] = f.name ?: f.folderId;
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [_spinner stopAnimation:nil];
-                [_rootNodes addObjectsFromArray:[self buildCategoryNodes]];
-                for (NSString *lid in groupIds)
-                    [_rootNodes addObject:[NavidromeNode libraryNodeWithId:lid
-                                                                     name:names[lid] ?: lid]];
-                _statusLabel.stringValue = [NSString stringWithFormat:@"%lu libraries",
-                                            (unsigned long)groupIds.count];
-                [_outlineView reloadData];
-            });
-            return;
-        }
-
-        NSError *err = nil;
-        NSArray<SubsonicArtist *> *artists = [client getArtistsWithError:&err];
+        // Categories + either per-library nodes (multi-library server) or a flat
+        // artist list — the whole decision is shared with Windows.
+        std::string err;
+        NSMutableArray<NavidromeNode *> *roots =
+            NBCWrapList(navidrome::buildRootNodes(browserClient(), err));
+        std::string errCopy = err;
         dispatch_async(dispatch_get_main_queue(), ^{
             [_spinner stopAnimation:nil];
-            if (err || !artists) {
-                _statusLabel.stringValue = [NSString stringWithFormat:@"Error: %@", err.localizedDescription ?: @"Unknown"];
+            if (!errCopy.empty()) {
+                _statusLabel.stringValue = [NSString stringWithFormat:@"Error: %s", errCopy.c_str()];
                 return;
             }
-            [_rootNodes addObjectsFromArray:[self buildCategoryNodes]];
-            for (SubsonicArtist *a in artists) {
-                [_rootNodes addObject:[NavidromeNode artistNode:a]];
+            NSUInteger artists = 0, libraries = 0;
+            for (NavidromeNode *n in roots) {
+                if (n.type == NavidromeNodeTypeArtist)  ++artists;
+                if (n.type == NavidromeNodeTypeLibrary) ++libraries;
             }
-            _statusLabel.stringValue = [NSString stringWithFormat:@"%lu artists", (unsigned long)artists.count];
+            [_rootNodes addObjectsFromArray:roots];
+            _statusLabel.stringValue = libraries
+                ? [NSString stringWithFormat:@"%lu libraries", (unsigned long)libraries]
+                : [NSString stringWithFormat:@"%lu artists", (unsigned long)artists];
             [_outlineView reloadData];
         });
     });
@@ -534,94 +501,33 @@ static NSString *formatDuration(NSTimeInterval secs) {
 
 // Synchronous child fetch for any expandable node — background thread only.
 // Shared by lazy expansion and the deep song collector so both agree on what a
-// category / playlist / artist / album contains.
+// category / playlist / artist / album contains. The node-type dispatch, the
+// "N tracks" subtitles and the playlist rating push-back are shared with
+// Windows — see navidrome::fetchChildren in NavidromeBrowserModel.cpp.
 - (NSMutableArray<NavidromeNode *> *)fetchChildrenOf:(NavidromeNode *)node
                                                error:(NSError **)outError {
-    NSMutableArray<NavidromeNode *> *childNodes = [NSMutableArray array];
-    SubsonicClient *client = SubsonicClient.sharedClient;
-
-    switch (node.type) {
-        case NavidromeNodeTypeLibrary: {
-            for (SubsonicArtist *a in [client getArtistsForLibrary:node.nodeId error:outError]) {
-                NavidromeNode *n = [NavidromeNode artistNode:a];
-                n.libraryId = node.nodeId;   // pin this artist's albums to the library
-                [childNodes addObject:n];
-            }
-            break;
-        }
-        case NavidromeNodeTypeArtist: {
-            for (SubsonicAlbum *a in [client getAlbumsForArtist:node.nodeId
-                                                          error:outError
-                                                 scopeLibrary:node.libraryId])
-                [childNodes addObject:[NavidromeNode albumNode:a]];
-            break;
-        }
-        case NavidromeNodeTypeAlbum: {
-            for (SubsonicSong *s in [client getSongsForAlbum:node.nodeId error:outError])
-                [childNodes addObject:[NavidromeNode songNode:s]];
-            break;
-        }
-        case NavidromeNodeTypePlaylist: {
-            for (SubsonicSong *s in [client getPlaylistSongs:node.nodeId error:outError])
-                [childNodes addObject:[NavidromeNode songNode:s]];
-            break;
-        }
-        case NavidromeNodeTypeGenre: {
-            // getSongsByGenre is paged; 500 covers all but the largest genres
-            // and keeps a single request per expansion.
-            for (SubsonicSong *s in [client getSongsForGenre:node.nodeId
-                                                       count:500
-                                                       error:outError])
-                [childNodes addObject:[NavidromeNode songNode:s]];
-            break;
-        }
-        case NavidromeNodeTypeCategory: {
-            if (node.categoryKind == NavidromeCategoryStarred) {
-                for (SubsonicSong *s in [client getStarredSongsWithError:outError])
-                    [childNodes addObject:[NavidromeNode songNode:s]];
-            } else if (node.categoryKind == NavidromeCategoryPlaylists) {
-                for (SubsonicPlaylist *p in [client getPlaylistsWithError:outError])
-                    [childNodes addObject:[NavidromeNode playlistNode:p]];
-            } else if (node.categoryKind == NavidromeCategoryGenres) {
-                for (SubsonicGenre *g in [client getGenresWithError:outError])
-                    [childNodes addObject:[NavidromeNode genreNode:g]];
-            } else if (node.categoryKind == NavidromeCategoryRadio) {
-                for (SubsonicRadioStation *s in [client getRadioStationsWithError:outError])
-                    [childNodes addObject:[NavidromeNode radioStationNode:s]];
-            } else {
-                NSString *type = @"newest";
-                if (node.categoryKind == NavidromeCategoryMostPlayed)     type = @"frequent";
-                if (node.categoryKind == NavidromeCategoryRecentlyPlayed) type = @"recent";
-                if (node.categoryKind == NavidromeCategoryRandom)         type = @"random";
-                for (SubsonicAlbum *a in [client getAlbumListOfType:type size:100 error:outError])
-                    [childNodes addObject:[NavidromeNode albumNode:a]];
-            }
-            break;
-        }
-        default:
-            break;
+    std::string err;
+    navidrome::BrowserNode core = [node coreNode];
+    auto kids = navidrome::fetchChildren(browserClient(), core, err);
+    if (!err.empty()) {
+        if (outError)
+            *outError = [NSError errorWithDomain:@"Navidrome"
+                                            code:-1
+                                        userInfo:@{ NSLocalizedDescriptionKey: @(err.c_str()) }];
+        return [NSMutableArray array];
     }
-
-    if (outError && *outError) [childNodes removeAllObjects];
-    else                       syncSongNodesToPlaylists(childNodes);
-    return childNodes;
+    return NBCWrapList(kids);
 }
 
-// Pushes the freshly fetched server-side rating / favorite of these nodes onto
-// any matching playlist entry, so a value changed elsewhere (the Navidrome web
-// UI, another client) catches up as soon as the user looks at the album here.
-// Costs no extra request — the values arrived with the browse response.
+// Marshal the view-models to shared nodes and hand off — the Song filter and
+// the rating push-back itself live in navidrome::syncBrowserNodesToPlaylists
+// (NavidromeBrowserModel.h), shared with Windows.
 static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
-    std::vector<navidrome::RatingUpdate> updates;
-    for (NavidromeNode *n in nodes) {
-        if (n.type != NavidromeNodeTypeSong || n.nodeId.length == 0) continue;
-        navidrome::RatingUpdate u;
-        u.songId  = [n.nodeId UTF8String];
-        u.rating  = (int)n.rating;
-        u.starred = n.starred ? true : false;
-        updates.push_back(std::move(u));
-    }
-    navidrome::syncRatingsToPlaylists(std::move(updates));
+    std::vector<navidrome::BrowserNodePtr> core;
+    core.reserve(nodes.count);
+    for (NavidromeNode *n in nodes)
+        core.push_back(std::make_shared<navidrome::BrowserNode>([n coreNode]));
+    navidrome::syncBrowserNodesToPlaylists(core);
 }
 
 - (void)loadChildrenOfNode:(NavidromeNode *)node inOutlineView:(NSOutlineView *)ov {
@@ -848,114 +754,25 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
 - (void)enqueueNodes:(NSArray<NavidromeNode *> *)songNodes
                 play:(BOOL)play
           clearFirst:(BOOL)clearFirst {
-    if (songNodes.count == 0) {
-        _statusLabel.stringValue = @"No songs selected";
-        return;
-    }
-    // Build metadb handle list. Each item is identified by a navidrome://
-    // URI — our input handler resolves it to the current HTTP stream at
-    // decode time, so playlists survive credential / server URL changes.
-    metadb_handle_list tracks;
-    auto hintList = metadb_io_v2::get()->create_hint_list();
+    // The metadb / hint / playlist_manager / playback block is shared with
+    // Windows — see navidrome::enqueueBrowserNodes in main.cpp. Only the radio
+    // stream-URL lookup is platform-local. Main thread only (callers already
+    // are). __unsafe_unretained self: the lambda is invoked synchronously here.
+    __unsafe_unretained NavidromeBrowserController *weakSelf = self;
+    std::vector<navidrome::BrowserNodePtr> nodes;
+    nodes.reserve(songNodes.count);
+    for (NavidromeNode *n in songNodes)
+        nodes.push_back(std::make_shared<navidrome::BrowserNode>([n coreNode]));
 
-    for (NavidromeNode *node in songNodes) {
-        metadb_handle_ptr handle;
-        playable_location_impl loc;
-
-        if (node.type == NavidromeNodeTypeRadioStation) {
-            // Raw stream URL, not a navidrome:// URI — foobar's stock HTTP
-            // input plays a live radio stream natively (incl. Shoutcast/
-            // Icecast metadata); there's no server-side transcoding or
-            // credential resolution to redirect through for radio.
-            NSString *streamUrl = [self radioStationForId:node.nodeId].streamUrl;
-            if (streamUrl.length == 0) continue;
-            loc.set_path([streamUrl UTF8String]);
-            loc.set_subsong(0);
-            metadb::get()->handle_create(handle, loc);
-            tracks += handle;
-
-            file_info_impl info;
-            if (node.displayName.length)
-                info.meta_set("title", [node.displayName UTF8String]);
-            hintList->add_hint(handle, info, filestats_invalid, true);
-            continue;
-        }
-
-        NSString *uri = NavidromeMakeTrackURIWithFields(node.nodeId,
-                                                        node.displayName,
-                                                        node.subtitle,
-                                                        node.albumName,
-                                                        node.trackNumber,
-                                                        node.year,
-                                                        node.duration,
-                                                        node.coverArtId ?: @"",
-                                                        node.suffix ?: @"",
-                                                        node.rating,
-                                                        node.starred,
-                                                        node.albumId ?: @"");
-        if (!uri) continue;
-
-        loc.set_path([uri UTF8String]);
-        loc.set_subsong(0);
-        metadb::get()->handle_create(handle, loc);
-        tracks += handle;
-
-        // Provide metadata hints so foobar displays correct info immediately
-        file_info_impl info;
-        if (node.displayName.length)
-            info.meta_set("title", [node.displayName UTF8String]);
-        if (node.subtitle.length)
-            info.meta_set("artist", [node.subtitle UTF8String]);
-        if (node.albumName.length)
-            info.meta_set("album", [node.albumName UTF8String]);
-        if (node.trackNumber > 0)
-            info.meta_set("tracknumber", pfc::format_int(node.trackNumber));
-        if (node.year > 0)
-            info.meta_set("date", pfc::format_int(node.year));
-        if (node.duration > 0)
-            info.set_length(node.duration);
-        // The hint pre-populates metadb, so get_info() is not called for a
-        // freshly enqueued track — the rating has to be set here too or the
-        // column stays empty until an info reload.
-        if (node.rating > 0)
-            info.meta_set(navidrome::kRatingTag, pfc::format_int(node.rating));
-        if (node.starred)
-            info.meta_set(navidrome::kStarredTag, "1");
-
-        hintList->add_hint(handle, info, filestats_invalid, true);
-    }
-
-    hintList->on_done();
-
-    auto tracksCopy = std::make_shared<metadb_handle_list>(tracks);
-    bool doPlay = play;
-    bool doClearFirst = clearFirst;
-
-    fb2k::inMainThread([tracksCopy, doPlay, doClearFirst] {
-        auto pm = playlist_manager::get();
-        t_size activePlaylist = pm->get_active_playlist();
-        if (activePlaylist == pfc_infinite) {
-            pm->create_playlist("Navidrome", ~0, pfc_infinite);
-            activePlaylist = pm->get_active_playlist();
-        }
-        if (doClearFirst) pm->playlist_clear(activePlaylist);
-        t_size insertPos = pm->playlist_get_item_count(activePlaylist);
-        pm->playlist_add_items(activePlaylist, *tracksCopy, pfc::bit_array_false());
-
-        if (doPlay && tracksCopy->get_count() > 0) {
-            // Start playback honoring the user's Playback > Order setting
-            // (Shuffle, Random, Default, …). track_command_play asks the active
-            // playback order for the starting track; the focus biases in-order
-            // modes to the first newly-added track. (playlist_execute_default_action
-            // would instead pin that exact track and ignore the order.)
-            pm->set_active_playlist(activePlaylist);
-            pm->set_playing_playlist(activePlaylist);
-            pm->playlist_set_focus_item(activePlaylist, insertPos);
-            playback_control::get()->start(playback_control::track_command_play);
-        }
-    });
-
-    _statusLabel.stringValue = [NSString stringWithFormat:@"Added %lu tracks", (unsigned long)songNodes.count];
+    std::string status;
+    navidrome::enqueueBrowserNodes(
+        nodes, play, clearFirst,
+        [weakSelf](const std::string &radioId) -> std::string {
+            NSString *url = [weakSelf radioStationForId:@(radioId.c_str())].streamUrl;
+            return url ? std::string(url.UTF8String) : std::string();
+        },
+        status);
+    _statusLabel.stringValue = @(status.c_str());
 }
 
 // ---------------------------------------------------------------------------
@@ -1894,25 +1711,26 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
 
     cell.textColor = [NSColor labelColor];
 
+    // Row-text pieces (track-number prefix, ★ marker, rating stars, ⏱ bookmark,
+    // M:SS duration) come from the shared formatter — Windows joins them into
+    // its single tree column, this splits them across name / sub / dur.
+    navidrome::NodeDisplay d = navidrome::nodeDisplay([node coreNode]);
+
     if ([tableColumn.identifier isEqualToString:@"name"]) {
-        NSString *name = node.displayName ?: @"";
-        if (node.type == NavidromeNodeTypeSong && node.trackNumber > 0)
-            name = [NSString stringWithFormat:@"%ld. %@", (long)node.trackNumber, name];
-        // Favorites are marked inline; category rows carry their own icon.
-        if (node.starred && node.type != NavidromeNodeTypeCategory)
-            name = [@"★ " stringByAppendingString:name];
-        cell.stringValue = name;
+        cell.stringValue = @(d.name.c_str());
     } else if ([tableColumn.identifier isEqualToString:@"sub"]) {
-        NSString *sub = node.subtitle ?: @"";
-        if (node.rating > 0) {
-            NSString *stars = [@"" stringByPaddingToLength:(NSUInteger)node.rating
-                                                withString:@"★" startingAtIndex:0];
+        NSString *sub = @(d.subtitle.c_str());
+        NSString *stars = @(d.ratingStars.c_str());
+        if (stars.length)
             sub = sub.length ? [NSString stringWithFormat:@"%@  %@", sub, stars] : stars;
+        if (!d.bookmarkText.empty()) {
+            NSString *bm = @(d.bookmarkText.c_str());
+            sub = sub.length ? [NSString stringWithFormat:@"%@  %@", sub, bm] : bm;
         }
         cell.stringValue = sub;
         cell.textColor = [NSColor secondaryLabelColor];
     } else if ([tableColumn.identifier isEqualToString:@"dur"]) {
-        cell.stringValue = node.duration > 0 ? formatDuration(node.duration) : @"";
+        cell.stringValue = @(d.durationText.c_str());
         cell.textColor = [NSColor secondaryLabelColor];
         cell.alignment = NSTextAlignmentRight;
     }
