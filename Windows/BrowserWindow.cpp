@@ -1,7 +1,6 @@
 #include "stdafx.h"
 #include "BrowserWindow.h"
 #include "SubsonicClientWin.h"
-#include "NavidromeInputWin.h"
 #include "../NavidromePlaylistSync.h"
 #include "../NavidromeBrowserEnqueue.h"
 #include <SDK/playlist.h>

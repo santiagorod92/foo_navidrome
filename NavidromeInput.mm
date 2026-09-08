@@ -1,5 +1,4 @@
 #import "stdafx.h"
-#import "NavidromeInput.h"
 #import "SubsonicClient.h"
 #import "SubsonicTypes.h"
 #import "NavidromeDebugLog.h"
@@ -15,9 +14,6 @@ namespace navidrome {
     extern cfg_string cfg_custom_headers;
     extern cfg_string cfg_stream_format;
 }
-
-NSString *const NavidromeURIScheme = @"navidrome";
-NSString *const NavidromeURIPrefix = @"navidrome://track/";
 
 namespace {
 
@@ -213,59 +209,3 @@ static input_singletrack_factory_t<navidrome_input, input_entry::flag_redirect>
 
 } // namespace
 
-// ---------------------------------------------------------------------------
-// Public URI builder
-// ---------------------------------------------------------------------------
-
-static std::string cppStr(NSString *s) {
-    const char *u = [s UTF8String];
-    return u ? std::string(u) : std::string();
-}
-
-NSString *NavidromeMakeTrackURIWithFields(NSString *songId,
-                                          NSString *title,
-                                          NSString *artist,
-                                          NSString *album,
-                                          NSInteger track,
-                                          NSInteger year,
-                                          NSTimeInterval duration,
-                                          NSString *coverArtId,
-                                          NSString *suffix,
-                                          NSInteger rating,
-                                          BOOL starred,
-                                          NSString *albumId) {
-    if (!songId || songId.length == 0) return nil;
-
-    navidrome::TrackURI t;
-    t.id         = cppStr(songId);
-    t.title      = cppStr(title);
-    t.artist     = cppStr(artist);
-    t.album      = cppStr(album);
-    t.coverArtId = cppStr(coverArtId);
-    t.suffix     = cppStr(suffix);
-    t.albumId    = cppStr(albumId);
-    t.track      = (int)track;
-    t.year       = (int)year;
-    t.rating     = (int)rating;
-    t.duration   = duration;
-    t.starred    = starred ? true : false;
-
-    std::string uri = navidrome::buildTrackURI(t);
-    if (uri.empty()) return nil;
-    return [NSString stringWithUTF8String:uri.c_str()];
-}
-
-NSString *NavidromeMakeTrackURI(SubsonicSong *song) {
-    return NavidromeMakeTrackURIWithFields(song.songId,
-                                           song.title,
-                                           song.artist,
-                                           song.album,
-                                           song.track,
-                                           song.year,
-                                           song.duration,
-                                           song.coverArtId,
-                                           song.suffix,
-                                           song.rating,
-                                           song.starred,
-                                           song.albumId);
-}

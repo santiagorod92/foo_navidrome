@@ -40,7 +40,6 @@
 		FE0BAD0C0000000000000001 /* NSView+embed.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "NSView+embed.m"; sourceTree = "<group>"; };
 		FE0BAD0D0000000000000001 /* foobar2000-mac-class-suffix.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "foobar2000-mac-class-suffix.h"; sourceTree = "<group>"; };
 		FE0BAD0E0000000000000001 /* NavidromeArtExtractor.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = NavidromeArtExtractor.mm; sourceTree = "<group>"; };
-		FE0BAD0F0000000000000001 /* NavidromeInput.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = NavidromeInput.h; sourceTree = "<group>"; };
 		FE0BAD160000000000000001 /* NavidromeInput.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = NavidromeInput.mm; sourceTree = "<group>"; };
 		FE0BAD900000000000000001 /* NavidromeBrowserModel.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = NavidromeBrowserModel.cpp; sourceTree = "<group>"; };
 		FE0BAD950000000000000001 /* NavidromeBrowserModel.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = NavidromeBrowserModel.h; sourceTree = "<group>"; };
@@ -107,7 +106,6 @@
 				FE0BAD050000000000000001 /* SubsonicClient.mm */,
 				FE0BAD060000000000000001 /* NavidromePlugin.mm */,
 				FE0BAD0E0000000000000001 /* NavidromeArtExtractor.mm */,
-				FE0BAD0F0000000000000001 /* NavidromeInput.h */,
 				FE0BAD160000000000000001 /* NavidromeInput.mm */,
 				FE0BAD950000000000000001 /* NavidromeBrowserModel.h */,
 				FE0BAD900000000000000001 /* NavidromeBrowserModel.cpp */,

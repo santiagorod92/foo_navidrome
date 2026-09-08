@@ -1,5 +1,4 @@
 #include "stdafx.h"
-#include "NavidromeInputWin.h"
 #include "SubsonicClientWin.h"
 #include "MediaEnrichmentLogic.h"
 #include "../NavidromeDebugLog.h"
@@ -168,34 +167,3 @@ static input_singletrack_factory_t<navidrome_input_win, input_entry::flag_redire
     g_navidrome_input_win_factory;
 
 } // namespace
-
-// ---------------------------------------------------------------------------
-// URI builder (public)
-// ---------------------------------------------------------------------------
-std::string navidrome::makeTrackURI(const std::string& id,
-                                    const std::string& title,
-                                    const std::string& artist,
-                                    const std::string& album,
-                                    int track,
-                                    int year,
-                                    double duration,
-                                    const std::string& coverArtId,
-                                    const std::string& suffix,
-                                    int rating,
-                                    bool starred,
-                                    const std::string& albumId) {
-    navidrome::TrackURI t;
-    t.id         = id;
-    t.title      = title;
-    t.artist     = artist;
-    t.album      = album;
-    t.coverArtId = coverArtId;
-    t.suffix     = suffix;
-    t.albumId    = albumId;
-    t.track      = track;
-    t.year       = year;
-    t.rating     = rating;
-    t.duration   = duration;
-    t.starred    = starred;
-    return navidrome::buildTrackURI(t);
-}

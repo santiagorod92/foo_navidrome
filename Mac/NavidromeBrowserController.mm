@@ -1,6 +1,5 @@
 #import "NavidromeBrowserController.h"
 #import "MacSubsonicBrowserClient.h"
-#import "../NavidromeInput.h"
 #include "../SubsonicTypes.h"
 #include "../NavidromePlaylistSync.h"
 #include "../NavidromeBrowserModel.h"
@@ -28,29 +27,6 @@ static std::string NBCStr(NSString *x) {
 
 @implementation NavidromeNode
 
-+ (instancetype)artistNode:(SubsonicArtist *)a {
-    NavidromeNode *n = [NavidromeNode new];
-    n.type        = NavidromeNodeTypeArtist;
-    n.nodeId      = a.artistId;
-    n.displayName = a.name;
-    n.coverArtId  = a.coverArtId;
-    n.starred     = a.starred;
-    n.children    = [NSMutableArray array];
-    return n;
-}
-
-+ (instancetype)albumNode:(SubsonicAlbum *)a {
-    NavidromeNode *n = [NavidromeNode new];
-    n.type        = NavidromeNodeTypeAlbum;
-    n.nodeId      = a.albumId;
-    n.displayName = a.name;
-    n.subtitle    = a.artist;
-    n.coverArtId  = a.coverArtId;
-    n.starred     = a.starred;
-    n.children    = [NSMutableArray array];
-    return n;
-}
-
 + (instancetype)songNode:(SubsonicSong *)s {
     NavidromeNode *n = [NavidromeNode new];
     n.type         = NavidromeNodeTypeSong;
@@ -68,57 +44,6 @@ static std::string NBCStr(NSString *x) {
     n.rating       = s.rating;
     n.children     = [NSMutableArray array];
     n.childrenLoaded = YES;  // Songs are always leaves
-    return n;
-}
-
-+ (instancetype)playlistNode:(SubsonicPlaylist *)p {
-    NavidromeNode *n = [NavidromeNode new];
-    n.type        = NavidromeNodeTypePlaylist;
-    n.nodeId      = p.playlistId;
-    n.displayName = p.name;
-    n.subtitle    = p.songCount == 1 ? @"1 track"
-                  : [NSString stringWithFormat:@"%ld tracks", (long)p.songCount];
-    n.children    = [NSMutableArray array];
-    return n;
-}
-
-+ (instancetype)genreNode:(SubsonicGenre *)g {
-    NavidromeNode *n = [NavidromeNode new];
-    n.type        = NavidromeNodeTypeGenre;
-    n.nodeId      = g.name;   // getSongsByGenre keys off the name, not an id
-    n.displayName = g.name;
-    n.subtitle    = g.songCount == 1 ? @"1 track"
-                  : [NSString stringWithFormat:@"%ld tracks", (long)g.songCount];
-    n.children    = [NSMutableArray array];
-    return n;
-}
-
-+ (instancetype)radioStationNode:(SubsonicRadioStation *)station {
-    NavidromeNode *n = [NavidromeNode new];
-    n.type         = NavidromeNodeTypeRadioStation;
-    n.nodeId       = station.stationId;
-    n.displayName  = station.name;
-    n.subtitle     = station.homePageUrl;
-    n.children     = [NSMutableArray array];
-    n.childrenLoaded = YES;  // Radio stations are always leaves
-    return n;
-}
-
-+ (instancetype)categoryNode:(NavidromeCategoryKind)kind title:(NSString *)title {
-    NavidromeNode *n = [NavidromeNode new];
-    n.type         = NavidromeNodeTypeCategory;
-    n.categoryKind = kind;
-    n.displayName  = title;
-    n.children     = [NSMutableArray array];
-    return n;
-}
-
-+ (instancetype)libraryNodeWithId:(NSString *)libraryId name:(NSString *)name {
-    NavidromeNode *n = [NavidromeNode new];
-    n.type        = NavidromeNodeTypeLibrary;
-    n.nodeId      = libraryId;
-    n.displayName = name;
-    n.children    = [NSMutableArray array];
     return n;
 }
 

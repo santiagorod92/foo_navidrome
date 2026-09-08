@@ -63,24 +63,17 @@ typedef NS_ENUM(NSInteger, NavidromeCategoryKind) {
 // Child nodes (albums for artist nodes, songs for album nodes)
 @property (nonatomic, strong) NSMutableArray<NavidromeNode *> *children;
 
-// Convenience constructors
-+ (instancetype)artistNode:(SubsonicArtist *)artist;
-+ (instancetype)albumNode:(SubsonicAlbum *)album;
-+ (instancetype)songNode:(SubsonicSong *)song;
-+ (instancetype)bookmarkNode:(SubsonicBookmark *)bookmark;
-+ (instancetype)playlistNode:(SubsonicPlaylist *)playlist;
-+ (instancetype)genreNode:(SubsonicGenre *)genre;
-+ (instancetype)radioStationNode:(SubsonicRadioStation *)station;
-+ (instancetype)categoryNode:(NavidromeCategoryKind)kind title:(NSString *)title;
-+ (instancetype)libraryNodeWithId:(NSString *)libraryId name:(NSString *)name;
-+ (instancetype)loadingNode;
-+ (instancetype)errorNodeWithMessage:(NSString *)msg;
-
 // Bridge to the shared C++ tree model (NavidromeBrowserModel.h). The ObjC
-// class remains the NSOutlineView view-model; browse/fetch/enqueue/label logic
-// runs on navidrome::BrowserNode.
+// class is the NSOutlineView view-model; browse/fetch/enqueue/label logic runs
+// on navidrome::BrowserNode. +wrapCoreNode: builds a view-model from a fetched
+// shared node; the model->node mappers all live in NavidromeBrowserModel.h now.
 + (instancetype)wrapCoreNode:(const navidrome::BrowserNode &)core;
 - (navidrome::BrowserNode)coreNode;
+
+// The three view-only node kinds the controller still builds directly.
++ (instancetype)songNode:(SubsonicSong *)song;
++ (instancetype)loadingNode;
++ (instancetype)errorNodeWithMessage:(NSString *)msg;
 
 - (BOOL)isLeaf;  // Songs are leaves; artists & albums can expand
 

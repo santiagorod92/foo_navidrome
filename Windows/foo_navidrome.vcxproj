@@ -170,7 +170,6 @@
     <ClInclude Include="..\NavidromeBrowserEnqueue.h" />
     <ClInclude Include="..\NavidromeDebugLog.h" />
     <ClInclude Include="SubsonicClientWin.h" />
-    <ClInclude Include="NavidromeInputWin.h" />
     <ClInclude Include="BrowserWindow.h" />
     <ClInclude Include="MediaEnrichmentLogic.h" />
     <ClInclude Include="EsLyricBridge.h" />
