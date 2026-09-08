@@ -32,6 +32,7 @@
   <ItemGroup>
     <ClCompile Include="MediaEnrichmentLogicTests.cpp" />
     <ClCompile Include="..\Windows\MediaEnrichmentLogic.cpp" />
+    <ClCompile Include="..\NavidromeBrowserModel.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>
