@@ -1,10 +1,9 @@
 #import "SubsonicClient.h"
 #import "SubsonicTypes.h"
+#import "SubsonicCore.h"
 #import "NavidromeDebugLog.h"
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-#import <CommonCrypto/CommonDigest.h>
-#pragma clang diagnostic pop
+
+#import <memory>
 
 // Forward declaration of config vars (defined in NavidromePlugin.mm)
 namespace navidrome {
@@ -18,6 +17,16 @@ namespace navidrome {
     extern cfg_var_modern::cfg_bool cfg_library_filter;
     extern cfg_string cfg_library_ids;
 }
+
+// ---------------------------------------------------------------------------
+// This file is now the macOS adapter over the shared navidrome::SubsonicCore
+// (SubsonicCore.h) — the core owns every request body (URL assembly, retry
+// loop, status-wrapper check, json walk, multi-library fan-out). Here we
+// supply an NSURLSession-backed IHttpTransport + a cfg_*-backed
+// ISettingsProvider, keep the bare cover-art / download paths that never went
+// through JSON, and marshal the core's std::vector<navidrome::X> back into the
+// ObjC Subsonic* view-model the Mac UI consumes.
+// ---------------------------------------------------------------------------
 
 // Apply the user-configured custom headers (one "Name: Value" per line) to a
 // mutable request — shared by API calls and cover-art fetches so every request
@@ -38,8 +47,8 @@ static void NavidromeApplyCustomHeaders(NSMutableURLRequest *req) {
     }
 }
 
-// Map an NSURLErrorDomain code to the shared ErrorKind so the retry loop can
-// tell a transient socket failure from a dead-certain one.
+// Map an NSURLErrorDomain code to the shared ErrorKind so the core's retry loop
+// can tell a transient socket failure from a dead-certain one.
 static navidrome::ErrorKind NavidromeClassifyURLError(NSInteger code) {
     switch (code) {
         case NSURLErrorTimedOut:
@@ -75,6 +84,10 @@ static void NavidromeWarnAuthOnce() {
         console::print("Navidrome: the server rejected the configured credentials — "
                        "check Preferences › Tools › Navidrome");
     });
+}
+
+static NSString *nsstr(const std::string &s) {
+    return [NSString stringWithUTF8String:s.c_str()] ?: @"";
 }
 
 // ---------------------------------------------------------------------------
@@ -130,43 +143,10 @@ static void NavidromeWarnAuthOnce() {
 @end
 
 // ---------------------------------------------------------------------------
-// Helpers
+// navidrome::X struct -> ObjC Subsonic* view-model. A straight field copy: the
+// json parsing, field names and Subsonic quirks all live in SubsonicTypes.h,
+// byte-for-byte shared with the Windows client.
 // ---------------------------------------------------------------------------
-
-static NSString *md5HexString(NSString *input) {
-    const char *cStr = [input UTF8String];
-    unsigned char digest[CC_MD5_DIGEST_LENGTH];
-    CC_MD5(cStr, (CC_LONG)strlen(cStr), digest);
-    NSMutableString *hex = [NSMutableString stringWithCapacity:CC_MD5_DIGEST_LENGTH * 2];
-    for (int i = 0; i < CC_MD5_DIGEST_LENGTH; i++) {
-        [hex appendFormat:@"%02x", digest[i]];
-    }
-    return hex;
-}
-
-static NSString *urlEncode(NSString *s) {
-    return [s stringByAddingPercentEncodingWithAllowedCharacters:
-            [NSCharacterSet URLQueryAllowedCharacterSet]];
-}
-
-static NSString *nsstr(const std::string &s) {
-    return [NSString stringWithUTF8String:s.c_str()] ?: @"";
-}
-
-// ObjC wrapper over navidrome::appendMusicFolderParam (SubsonicTypes.h) — the
-// `&musicFolderId=<id>` append, shared with the Windows client. A nil/empty
-// folderId leaves params untouched.
-static NSString *appendMusicFolder(NSString *params, NSString *folderId) {
-    std::string out = navidrome::appendMusicFolderParam(
-        std::string(params.UTF8String ?: ""), std::string(folderId.UTF8String ?: ""));
-    return nsstr(out);
-}
-
-// JSON is parsed by navidrome::json (SubsonicTypes.h) and every Subsonic object
-// is mapped to a pure-C++ struct there — byte-for-byte shared with the Windows
-// client. The ObjC model classes stay as the view-model the Mac UI consumes;
-// these shims are the only per-platform code, a straight field copy from the
-// shared struct. -fetchInner: returns the inner "subsonic-response" object.
 static SubsonicSong *SongFromCore(const navidrome::Song &s) {
     SubsonicSong *song = [[SubsonicSong alloc] init];
     song.songId     = nsstr(s.id);
@@ -250,25 +230,135 @@ static SubsonicBookmark *BookmarkFromCore(const navidrome::Bookmark &b) {
     return bm;
 }
 
+static NSArray<SubsonicSong *> *SongsFromCore(const std::vector<navidrome::Song> &v) {
+    NSMutableArray<SubsonicSong *> *a = [NSMutableArray arrayWithCapacity:v.size()];
+    for (const auto &s : v) [a addObject:SongFromCore(s)];
+    return a;
+}
+static NSArray<SubsonicAlbum *> *AlbumsFromCore(const std::vector<navidrome::Album> &v) {
+    NSMutableArray<SubsonicAlbum *> *a = [NSMutableArray arrayWithCapacity:v.size()];
+    for (const auto &x : v) [a addObject:AlbumFromCore(x)];
+    return a;
+}
+static NSArray<SubsonicArtist *> *ArtistsFromCore(const std::vector<navidrome::Artist> &v) {
+    NSMutableArray<SubsonicArtist *> *a = [NSMutableArray arrayWithCapacity:v.size()];
+    for (const auto &x : v) [a addObject:ArtistFromCore(x)];
+    return a;
+}
+static NSArray<SubsonicMusicFolder *> *MusicFoldersFromCore(const std::vector<navidrome::MusicFolder> &v) {
+    NSMutableArray<SubsonicMusicFolder *> *a = [NSMutableArray arrayWithCapacity:v.size()];
+    for (const auto &x : v) {
+        SubsonicMusicFolder *mf = MusicFolderFromCore(x);
+        if (mf.folderId.length > 0) [a addObject:mf];
+    }
+    return a;
+}
+static NSArray<NSString *> *StringsToNSArray(const std::vector<std::string> &v) {
+    NSMutableArray<NSString *> *a = [NSMutableArray arrayWithCapacity:v.size()];
+    for (const auto &s : v) [a addObject:nsstr(s)];
+    return a;
+}
+
+// A core method reports failure through a non-empty outError (its "isNull"
+// equivalent); turn that into the NSError the ObjC callers expect.
+static NSError *NavidromeMakeError(const std::string &msg, NSInteger code) {
+    return [NSError errorWithDomain:@"SubsonicClient" code:code userInfo:@{
+        NSLocalizedDescriptionKey: (msg.empty() ? @"request failed" : nsstr(msg)) }];
+}
+
+static std::vector<std::string> ToStdStrings(NSArray<NSString *> *arr) {
+    std::vector<std::string> out;
+    out.reserve(arr.count);
+    for (NSString *s in arr) out.push_back(s.UTF8String ?: "");
+    return out;
+}
+
+// ---------------------------------------------------------------------------
+// The IHttpTransport + ISettingsProvider SubsonicCore runs on.
+// ---------------------------------------------------------------------------
+namespace {
+
+// One synchronous NSURLSession GET — no retry (the core drives that), no status
+// wrapper parsing. Custom headers applied from the live cfg globals.
+struct MacHttpTransport : navidrome::IHttpTransport {
+    NSURLSession *session = nil;
+
+    navidrome::HttpResult getOnce(const std::string &url) override {
+        navidrome::HttpResult out;
+        NSURL *nsurl = [NSURL URLWithString:nsstr(url)];
+        if (!nsurl) {
+            out.error = { navidrome::ErrorKind::Parse, 0, 0, "invalid URL" };
+            return out;
+        }
+        NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:nsurl];
+        NavidromeApplyCustomHeaders(request);
+
+        __block NSData *data = nil;
+        __block NSError *taskError = nil;
+        __block NSHTTPURLResponse *httpResponse = nil;
+        dispatch_semaphore_t sema = dispatch_semaphore_create(0);
+        [[session dataTaskWithRequest:request
+                    completionHandler:^(NSData *d, NSURLResponse *response, NSError *error) {
+            data = d;
+            taskError = error;
+            httpResponse = (NSHTTPURLResponse *)response;
+            dispatch_semaphore_signal(sema);
+        }] resume];
+        dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+
+        if (taskError) {
+            navidrome::ErrorKind kind = NavidromeClassifyURLError(taskError.code);
+            out.error = { kind, 0, 0, std::string(navidrome::errorKindName(kind)) + ": " +
+                          (taskError.localizedDescription.UTF8String ?: "?") };
+            return out;
+        }
+        int status = (int)httpResponse.statusCode;
+        navidrome::ErrorKind kind = navidrome::httpStatusToErrorKind(status);
+        if (kind != navidrome::ErrorKind::None) {
+            out.error = { kind, status, 0, "HTTP " + std::to_string(status) };
+            return out;
+        }
+        if (!data) {
+            out.error = { navidrome::ErrorKind::Parse, status, 0, "empty response body" };
+            return out;
+        }
+        out.body.assign(static_cast<const char *>(data.bytes), data.length);
+        out.error = { navidrome::ErrorKind::None, status, 0, {} };
+        return out;
+    }
+
+    void onAuthRejected() override { NavidromeWarnAuthOnce(); }
+};
+
+struct MacSettingsProvider : navidrome::ISettingsProvider {
+    navidrome::SubsonicSettings load() const override {
+        navidrome::SubsonicSettings s;
+        s.serverUrl     = navidrome::cfg_server_url.get().c_str();
+        s.username      = navidrome::cfg_username.get().c_str();
+        s.password      = navidrome::cfg_password.get().c_str();
+        pfc::string8 salt = navidrome::cfg_salt.get();
+        s.salt          = salt.length() > 0 ? salt.c_str() : "fb2k_navidrome";
+        s.streamFormat  = navidrome::cfg_stream_format.get().c_str();
+        s.maxBitrate    = static_cast<int>(navidrome::cfg_max_bitrate.get());
+        s.libraryFilter = navidrome::cfg_library_filter.get();
+        s.libraryIdsCsv = navidrome::cfg_library_ids.get().c_str();
+        return s;
+    }
+};
+
+}  // namespace
+
 // ---------------------------------------------------------------------------
 // SubsonicClient
 // ---------------------------------------------------------------------------
 
 @interface SubsonicClient () {
-    navidrome::Error _lastError;
-    NSArray<SubsonicMusicFolder *> *_musicFoldersCache;  // nil until first good fetch
-    BOOL _musicFoldersFetched;
+    // Order matters: the transport + settings provider must outlive the core.
+    std::unique_ptr<navidrome::IHttpTransport>    _transport;
+    std::unique_ptr<navidrome::ISettingsProvider> _settingsProvider;
+    std::unique_ptr<navidrome::SubsonicCore>      _core;
 }
 @property (nonatomic, strong) NSURLSession *session;
-// Synchronous GET → the inner "subsonic-response" object (a Null json::Value on
-// any failure; check .isNull()). Retries transient failures, classifies the
-// outcome into _lastError.
-- (navidrome::json::Value)fetchInner:(NSURL *)url error:(NSError **)error;
-// startScan.view / getScanStatus.view share this response shape.
-- (BOOL)fetchScanStatusForEndpoint:(NSString *)endpoint
-                           scanning:(BOOL *)scanning
-                              count:(NSInteger *)count
-                              error:(NSError **)error;
 @end
 
 @implementation SubsonicClient
@@ -289,154 +379,34 @@ static SubsonicBookmark *BookmarkFromCore(const navidrome::Bookmark &b) {
         config.timeoutIntervalForRequest = 15.0;
         config.timeoutIntervalForResource = 30.0;
         _session = [NSURLSession sessionWithConfiguration:config];
+
+        auto transport = std::make_unique<MacHttpTransport>();
+        transport->session = _session;
+        _transport = std::move(transport);
+        _settingsProvider = std::make_unique<MacSettingsProvider>();
+        _core = std::make_unique<navidrome::SubsonicCore>(*_transport, *_settingsProvider);
     }
     return self;
 }
 
 - (BOOL)isConfigured {
-    pfc::string8 url  = navidrome::cfg_server_url.get();
-    pfc::string8 user = navidrome::cfg_username.get();
-    pfc::string8 pass = navidrome::cfg_password.get();
-    return (url.length() > 0 && user.length() > 0 && pass.length() > 0);
-}
-
-// Build the common auth query string
-- (NSString *)authParams {
-    NSString *username = [NSString stringWithUTF8String:navidrome::cfg_username.get().c_str()];
-    NSString *password = [NSString stringWithUTF8String:navidrome::cfg_password.get().c_str()];
-    pfc::string8 saltPfc = navidrome::cfg_salt.get();
-    NSString *salt = saltPfc.length() > 0
-        ? [NSString stringWithUTF8String:saltPfc.c_str()]
-        : @"navidrome";
-    NSString *token    = md5HexString([password stringByAppendingString:salt]);
-    return [NSString stringWithFormat:@"u=%@&t=%@&s=%@&v=1.16.1&c=foo_navidrome&f=json",
-            urlEncode(username), token, salt];
-}
-
-// Build a full API URL for the given endpoint + extra params
-- (NSURL *)urlForEndpoint:(NSString *)endpoint params:(NSString *)params {
-    NSString *base = [NSString stringWithUTF8String:navidrome::cfg_server_url.get().c_str()];
-    // Strip trailing slash
-    while ([base hasSuffix:@"/"]) {
-        base = [base substringToIndex:base.length - 1];
-    }
-    NSString *auth = [self authParams];
-    NSString *full;
-    if (params.length > 0) {
-        full = [NSString stringWithFormat:@"%@/rest/%@?%@&%@", base, endpoint, auth, params];
-    } else {
-        full = [NSString stringWithFormat:@"%@/rest/%@?%@", base, endpoint, auth];
-    }
-    return [NSURL URLWithString:full];
+    return _core->isConfigured();
 }
 
 - (navidrome::Error)lastError {
-    return _lastError;
-}
-
-// Synchronous HTTP GET → the inner "subsonic-response" object, or a Null
-// json::Value on failure. Retries transient failures (timeout / 5xx /
-// connection reset) up to 3x with backoff; deterministic failures (auth, 404,
-// bad JSON) return immediately. Classified outcome is stashed in _lastError.
-- (navidrome::json::Value)fetchInner:(NSURL *)url error:(NSError **)outError {
-    const std::string safeUrl =
-        navidrome::dbg::scrubAuth(std::string(url.absoluteString.UTF8String ?: ""));
-    NAVIDROME_TIMER("HTTP", "GET " + safeUrl);
-    NAVIDROME_LOG("HTTP", "GET " + safeUrl);
-    _lastError = navidrome::Error{};
-
-    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
-    NavidromeApplyCustomHeaders(request);
-
-    NSData *responseData = nil;
-
-    for (int attempt = 1; attempt <= navidrome::retry::kMaxAttempts; ++attempt) {
-        __block NSData *data = nil;
-        __block NSError *taskError = nil;
-        __block NSHTTPURLResponse *httpResponse = nil;
-
-        dispatch_semaphore_t sema = dispatch_semaphore_create(0);
-        [[_session dataTaskWithRequest:request completionHandler:^(NSData *d, NSURLResponse *response, NSError *error) {
-            data = d;
-            taskError = error;
-            httpResponse = (NSHTTPURLResponse *)response;
-            dispatch_semaphore_signal(sema);
-        }] resume];
-        dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
-
-        navidrome::Error err;
-        if (taskError) {
-            err.kind    = NavidromeClassifyURLError(taskError.code);
-            err.message = std::string(navidrome::errorKindName(err.kind)) + ": " +
-                          (taskError.localizedDescription.UTF8String ?: "?");
-        } else {
-            int status = (int)httpResponse.statusCode;
-            err.http = status;
-            err.kind = navidrome::httpStatusToErrorKind(status);
-            if (!err.ok())
-                err.message = "HTTP " + std::to_string(status);
-            else if (!data)
-                err = { navidrome::ErrorKind::Parse, status, 0, "empty response body" };
-        }
-
-        if (err.ok()) {
-            responseData = data;
-            break;
-        }
-
-        _lastError = err;
-        if (!navidrome::retry::again(err, attempt)) {
-            NAVIDROME_ERR("HTTP", std::string(err.kindName()) + ": " + err.message +
-                          "  (" + safeUrl + ")");
-            if (err.kind == navidrome::ErrorKind::Auth) NavidromeWarnAuthOnce();
-            if (outError) {
-                *outError = taskError ?: [NSError errorWithDomain:@"SubsonicClient"
-                    code:err.http
-                    userInfo:@{NSLocalizedDescriptionKey:
-                               [NSString stringWithUTF8String:err.message.c_str()]}];
-            }
-            return navidrome::json::Value{};
-        }
-
-        double backoff = navidrome::retry::backoffMs(attempt, arc4random_uniform(200)) / 1000.0;
-        NAVIDROME_WARN("HTTP", err.message + " — retry " + std::to_string(attempt + 1) +
-                       "/" + std::to_string(navidrome::retry::kMaxAttempts) + " in " +
-                       std::to_string(backoff) + "s  (" + safeUrl + ")");
-        [NSThread sleepForTimeInterval:backoff];
-    }
-
-    if (!responseData) return navidrome::json::Value{};   // unreachable: loop returns on final failure
-    std::string body(static_cast<const char *>(responseData.bytes), responseData.length);
-    navidrome::SubsonicResponse resp = navidrome::parseSubsonicResponse(body);
-    if (!resp.ok) {
-        _lastError = resp.error;
-        if (resp.error.code != 0) {
-            NAVIDROME_ERR("API", "Subsonic status != ok (code " +
-                          std::to_string(resp.error.code) + ", " +
-                          _lastError.kindName() + "): " + _lastError.message);
-        } else {
-            NAVIDROME_ERR("HTTP", std::string(_lastError.kindName()) + ": " + _lastError.message);
-        }
-        if (resp.error.kind == navidrome::ErrorKind::Auth) NavidromeWarnAuthOnce();
-        if (outError) {
-            *outError = [NSError errorWithDomain:@"SubsonicClient"
-                code:(resp.error.code ? resp.error.code : -2)
-                userInfo:@{NSLocalizedDescriptionKey: nsstr(_lastError.message)}];
-        }
-        return navidrome::json::Value{};
-    }
-
-    NAVIDROME_LOG("HTTP", "200 OK  " + std::to_string((unsigned long)responseData.length) + " bytes");
-    return resp.inner();
+    return _core->lastError();
 }
 
 // ---------------------------------------------------------------------------
-// API Methods
+// API Methods — every call forwards to the shared core, then marshals the
+// result back into the ObjC view-model.
 // ---------------------------------------------------------------------------
 
 - (BOOL)pingWithError:(NSError **)error {
-    NSURL *url = [self urlForEndpoint:@"ping.view" params:@""];
-    return ![self fetchInner:url error:error].isNull();
+    std::string err;
+    BOOL ok = _core->ping(err);
+    if (!ok && error) *error = NavidromeMakeError(err, -2);
+    return ok;
 }
 
 // ---------------------------------------------------------------------------
@@ -444,132 +414,45 @@ static SubsonicBookmark *BookmarkFromCore(const navidrome::Bookmark &b) {
 // ---------------------------------------------------------------------------
 
 - (NSArray<SubsonicMusicFolder *> *)getMusicFoldersWithError:(NSError **)error {
-    NSURL *url = [self urlForEndpoint:@"getMusicFolders.view" params:@""];
-    navidrome::json::Value root = [self fetchInner:url error:error];
-    if (root.isNull()) return nil;
-
-    NSMutableArray<SubsonicMusicFolder *> *result = [NSMutableArray array];
-    for (auto *f : root["musicFolders"]["musicFolder"].items()) {
-        SubsonicMusicFolder *mf = MusicFolderFromCore(navidrome::parseMusicFolder(*f));
-        if (mf.folderId.length > 0) [result addObject:mf];
-    }
-    return result;
+    std::string err;
+    auto folders = _core->getMusicFolders(err);
+    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
+    return MusicFoldersFromCore(folders);
 }
 
 - (void)refreshMusicFolders {
-    _musicFoldersCache = nil;
-    _musicFoldersFetched = NO;
+    _core->refreshMusicFolders();
 }
 
 - (NSArray<SubsonicMusicFolder *> *)cachedMusicFolders {
-    if (!_musicFoldersFetched) {
-        NSArray<SubsonicMusicFolder *> *fetched = [self getMusicFoldersWithError:nil];
-        if (fetched.count > 0) {          // latch only on a good answer; retry after a failure
-            _musicFoldersCache = fetched;
-            _musicFoldersFetched = YES;
-        }
-    }
-    return _musicFoldersCache ?: @[];
+    return MusicFoldersFromCore(_core->cachedMusicFolders());
 }
 
-// The musicFolderId values a browse/search request should fan out over, per the
-// cfg_library_filter toggle + cfg_library_ids selection + the cached server
-// folder list. Empty array => one request, no musicFolderId (unchanged path).
 - (NSArray<NSString *> *)activeMusicFolderIds {
-    if (!navidrome::cfg_library_filter.get()) return @[];
-
-    std::vector<navidrome::MusicFolder> folders;
-    for (SubsonicMusicFolder *f in [self cachedMusicFolders]) {
-        navidrome::MusicFolder mf;
-        mf.id   = f.folderId.UTF8String ?: "";
-        mf.name = f.name.UTF8String ?: "";
-        folders.push_back(std::move(mf));
-    }
-    auto ids = navidrome::effectiveMusicFolderIds(
-        true, navidrome::cfg_library_ids.get().c_str(), folders);
-
-    NSMutableArray<NSString *> *out = [NSMutableArray arrayWithCapacity:ids.size()];
-    for (const auto &s : ids)
-        [out addObject:[NSString stringWithUTF8String:s.c_str()]];
-    return out;
+    return StringsToNSArray(_core->activeMusicFolderIds());
 }
 
-// Library ids the browser shows as top-level "group by library" nodes. A 2+
-// library server ALWAYS groups (independent of the "Only include selected
-// libraries" checkbox); the checkbox only narrows which libraries appear, and
-// only when 2+ are ticked. Returns @[] for a single-library server, or when the
-// filter is on with exactly one library ticked (single-library scope, shown
-// flat via -activeMusicFolderIds). Browser groups when this has 2+ entries.
 - (NSArray<NSString *> *)libraryGroupingIds {
-    NSArray<SubsonicMusicFolder *> *folders = [self cachedMusicFolders];
-    if (folders.count < 2) return @[];
-
-    NSMutableArray<NSString *> *allIds = [NSMutableArray array];
-    for (SubsonicMusicFolder *f in folders)
-        if (f.folderId) [allIds addObject:f.folderId];
-
-    if (navidrome::cfg_library_filter.get()) {
-        auto sel = navidrome::parseMusicFolderIds(navidrome::cfg_library_ids.get().c_str());
-        NSMutableArray<NSString *> *picked = [NSMutableArray array];
-        for (NSString *lid in allIds) {
-            std::string fid = lid.UTF8String ?: "";
-            if (std::find(sel.begin(), sel.end(), fid) != sel.end())
-                [picked addObject:lid];
-        }
-        if (picked.count >= 2) return picked;
-        if (picked.count == 1) return @[];   // scoped to one library → flat
-        // 0 ticked → fall through to "all libraries"
-    }
-    return allIds;
+    return StringsToNSArray(_core->libraryGroupingIds());
 }
 
-// Run `fetch` once per folder id (or once with nil when the list is empty),
-// concatenating results and dropping duplicates by -valueForKey:idKey.
-- (NSArray *)fanOutOverFolders:(NSArray<NSString *> *)folderIds
-                         idKey:(NSString *)idKey
-                         fetch:(NSArray *(^)(NSString *folderId))fetch {
-    if (folderIds.count == 0) return fetch(nil);
-
-    NSMutableArray *merged = [NSMutableArray array];
-    NSMutableSet<NSString *> *seen = [NSMutableSet set];
-    for (NSString *fid in folderIds) {
-        for (id item in (fetch(fid) ?: @[])) {
-            NSString *iid = [item valueForKey:idKey];
-            if (iid.length > 0 && [seen containsObject:iid]) continue;
-            if (iid.length > 0) [seen addObject:iid];
-            [merged addObject:item];
-        }
-    }
-    return merged;
-}
-
-// Parse one getArtists.view response, optionally restricted to a single
-// library. folderId nil/empty => no musicFolderId param.
-- (NSArray<SubsonicArtist *> *)fetchArtistsForFolder:(NSString *)folderId
-                                               error:(NSError **)error {
-    NSURL *url = [self urlForEndpoint:@"getArtists.view"
-                               params:appendMusicFolder(@"", folderId)];
-    navidrome::json::Value root = [self fetchInner:url error:error];
-    if (root.isNull()) return nil;
-
-    NSMutableArray<SubsonicArtist *> *result = [NSMutableArray array];
-    for (auto *index : root["artists"]["index"].items())
-        for (auto *a : (*index)["artist"].items())
-            [result addObject:ArtistFromCore(navidrome::parseArtist(*a))];
-    return result;
-}
+// ---------------------------------------------------------------------------
+// Browse
+// ---------------------------------------------------------------------------
 
 - (NSArray<SubsonicArtist *> *)getArtistsWithError:(NSError **)error {
-    return [self fanOutOverFolders:[self activeMusicFolderIds]
-                             idKey:@"artistId"
-                             fetch:^NSArray *(NSString *folderId) {
-        return [self fetchArtistsForFolder:folderId error:error];
-    }];
+    std::string err;
+    auto v = _core->getArtists(err);
+    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
+    return ArtistsFromCore(v);
 }
 
 - (NSArray<SubsonicArtist *> *)getArtistsForLibrary:(NSString *)libraryId
                                               error:(NSError **)error {
-    return [self fetchArtistsForFolder:libraryId error:error] ?: @[];
+    std::string err;
+    auto v = _core->getArtistsForLibrary(libraryId.UTF8String ?: "", err);
+    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return @[]; }
+    return ArtistsFromCore(v);
 }
 
 - (NSArray<SubsonicAlbum *> *)getAlbumsForArtist:(NSString *)artistId error:(NSError **)error {
@@ -579,120 +462,30 @@ static SubsonicBookmark *BookmarkFromCore(const navidrome::Bookmark &b) {
 - (NSArray<SubsonicAlbum *> *)getAlbumsForArtist:(NSString *)artistId
                                             error:(NSError **)error
                                    scopeLibrary:(NSString *)scopeLibraryId {
-    NSString *params = [NSString stringWithFormat:@"id=%@", urlEncode(artistId)];
-    NSURL *url = [self urlForEndpoint:@"getArtist.view" params:params];
-    navidrome::json::Value root = [self fetchInner:url error:error];
-    if (root.isNull()) return nil;
-
-    const navidrome::json::Value &artistObj = root["artist"];
-    NSString *artistName = nsstr(navidrome::jStr(artistObj, "name"));
-    const std::string artistIdStr = artistId.UTF8String ?: "";
-
-    std::vector<navidrome::Album> albums;
-    for (auto *a : artistObj["album"].items()) {
-        navidrome::Album al = navidrome::parseAlbum(*a);
-        if (al.artistId.empty()) al.artistId = artistIdStr;
-        albums.push_back(std::move(al));
-    }
-
-    // getArtist.view ignores musicFolderId server-side and AlbumID3 carries no
-    // library id, so a scoped album list can't come from it directly. search3.view
-    // *does* honor musicFolderId: fan it out over the scoped libraries, then
-    // navidrome::filterAlbumsByArtistSearch keeps the getArtist list to the ids
-    // search confirmed (order preserved). scopeLibraryId pins to one library.
-    NSArray<NSString *> *folderIds = scopeLibraryId.length
-        ? @[ scopeLibraryId ] : [self activeMusicFolderIds];
-    if (folderIds.count > 0 && !albums.empty() && artistName.length > 0) {
-        NSString *base = [NSString stringWithFormat:
-                          @"query=%@&artistCount=0&albumCount=500&songCount=0",
-                          urlEncode(artistName)];
-        std::vector<navidrome::Album> searchAlbums;
-        for (NSString *fid in folderIds) {
-            NSURL *sUrl = [self urlForEndpoint:@"search3.view"
-                                        params:appendMusicFolder(base, fid)];
-            NSError *ignored = nil;
-            navidrome::json::Value sRoot = [self fetchInner:sUrl error:&ignored];
-            if (sRoot.isNull()) continue;
-            for (auto *a : sRoot["searchResult3"]["album"].items())
-                searchAlbums.push_back(navidrome::parseAlbum(*a));
-        }
-        bool unconfirmed = false;
-        albums = navidrome::filterAlbumsByArtistSearch(albums, artistIdStr,
-                                                       searchAlbums, unconfirmed);
-        if (unconfirmed) {
-            NAVIDROME_WARN("HTTP", "library filter: could not confirm album membership "
-                           "for artist " + artistIdStr + " — showing all albums");
-        }
-    }
-
-    NSMutableArray<SubsonicAlbum *> *result =
-        [NSMutableArray arrayWithCapacity:albums.size()];
-    for (const auto &al : albums) [result addObject:AlbumFromCore(al)];
-    return result;
+    std::string err;
+    auto v = _core->getAlbumsForArtist(artistId.UTF8String ?: "", err,
+                                       scopeLibraryId.UTF8String ?: "");
+    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
+    return AlbumsFromCore(v);
 }
 
 - (NSArray<SubsonicSong *> *)getSongsForAlbum:(NSString *)albumId error:(NSError **)error {
-    NSString *params = [NSString stringWithFormat:@"id=%@", urlEncode(albumId)];
-    NSURL *url = [self urlForEndpoint:@"getAlbum.view" params:params];
-    navidrome::json::Value root = [self fetchInner:url error:error];
-    if (root.isNull()) return nil;
-
-    NSMutableArray<SubsonicSong *> *result = [NSMutableArray array];
-    for (auto *s : root["album"]["song"].items()) {
-        SubsonicSong *song = SongFromCore(navidrome::parseSong(*s));
-        if (song.albumId.length == 0) song.albumId = albumId;
-        [result addObject:song];
-    }
-
-    return result;
+    std::string err;
+    auto v = _core->getSongsForAlbum(albumId.UTF8String ?: "", err);
+    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
+    return SongsFromCore(v);
 }
 
 - (NSDictionary *)search:(NSString *)query error:(NSError **)error {
-    NSString *base = [NSString stringWithFormat:@"query=%@&artistCount=20&albumCount=20&songCount=50",
-                      urlEncode(query)];
-
-    NSArray<NSString *> *folderIds = [self activeMusicFolderIds];
-    NSArray<NSString *> *passes = folderIds.count ? folderIds : @[ [NSNull null] ];
-
-    NSMutableArray<SubsonicArtist *> *artists = [NSMutableArray array];
-    NSMutableArray<SubsonicAlbum *>  *albums  = [NSMutableArray array];
-    NSMutableArray<SubsonicSong *>   *songs   = [NSMutableArray array];
-    NSMutableSet<NSString *> *seenArtists = [NSMutableSet set];
-    NSMutableSet<NSString *> *seenAlbums  = [NSMutableSet set];
-    NSMutableSet<NSString *> *seenSongs   = [NSMutableSet set];
-
-    for (id pass in passes) {
-        NSString *folderId = [pass isKindOfClass:[NSString class]] ? pass : nil;
-        NSURL *url = [self urlForEndpoint:@"search3.view"
-                                   params:appendMusicFolder(base, folderId)];
-        navidrome::json::Value root = [self fetchInner:url error:error];
-        if (root.isNull()) {
-            if (artists.count || albums.count || songs.count) break;  // keep partials
-            return nil;
-        }
-        const navidrome::json::Value &searchResult = root["searchResult3"];
-
-        for (auto *a : searchResult["artist"].items()) {
-            SubsonicArtist *artist = ArtistFromCore(navidrome::parseArtist(*a));
-            if (artist.artistId.length && [seenArtists containsObject:artist.artistId]) continue;
-            if (artist.artistId.length) [seenArtists addObject:artist.artistId];
-            [artists addObject:artist];
-        }
-        for (auto *a : searchResult["album"].items()) {
-            SubsonicAlbum *album = AlbumFromCore(navidrome::parseAlbum(*a));
-            if (album.albumId.length && [seenAlbums containsObject:album.albumId]) continue;
-            if (album.albumId.length) [seenAlbums addObject:album.albumId];
-            [albums addObject:album];
-        }
-        for (auto *s : searchResult["song"].items()) {
-            SubsonicSong *song = SongFromCore(navidrome::parseSong(*s));
-            if (song.songId.length && [seenSongs containsObject:song.songId]) continue;
-            if (song.songId.length) [seenSongs addObject:song.songId];
-            [songs addObject:song];
-        }
+    std::string err;
+    navidrome::SearchResults r = _core->search(query.UTF8String ?: "", err);
+    if (!err.empty() && r.artists.empty() && r.albums.empty() && r.songs.empty()) {
+        if (error) *error = NavidromeMakeError(err, -2);
+        return nil;
     }
-
-    return @{ @"artists": artists, @"albums": albums, @"songs": songs };
+    return @{ @"artists": ArtistsFromCore(r.artists),
+              @"albums":  AlbumsFromCore(r.albums),
+              @"songs":   SongsFromCore(r.songs) };
 }
 
 // ---------------------------------------------------------------------------
@@ -702,54 +495,32 @@ static SubsonicBookmark *BookmarkFromCore(const navidrome::Bookmark &b) {
 - (NSArray<SubsonicAlbum *> *)getAlbumListOfType:(NSString *)type
                                             size:(NSInteger)size
                                            error:(NSError **)error {
-    NSString *base = [NSString stringWithFormat:@"type=%@&size=%ld",
-                      urlEncode(type), (long)size];
-    return [self fanOutOverFolders:[self activeMusicFolderIds]
-                             idKey:@"albumId"
-                             fetch:^NSArray *(NSString *folderId) {
-        NSURL *url = [self urlForEndpoint:@"getAlbumList2.view"
-                                   params:appendMusicFolder(base, folderId)];
-        navidrome::json::Value root = [self fetchInner:url error:error];
-        if (root.isNull()) return nil;
+    navidrome::AlbumListType t = navidrome::AlbumListType::Newest;
+    NSString *lc = type.lowercaseString;
+    if ([lc isEqualToString:@"frequent"]) t = navidrome::AlbumListType::Frequent;
+    else if ([lc isEqualToString:@"recent"])  t = navidrome::AlbumListType::Recent;
+    else if ([lc isEqualToString:@"random"])  t = navidrome::AlbumListType::Random;
+    else if ([lc isEqualToString:@"starred"]) t = navidrome::AlbumListType::Starred;
 
-        NSMutableArray<SubsonicAlbum *> *result = [NSMutableArray array];
-        for (auto *a : root["albumList2"]["album"].items())
-            [result addObject:AlbumFromCore(navidrome::parseAlbum(*a))];
-        return result;
-    }];
+    std::string err;
+    auto v = _core->getAlbumList(t, (int)size, err);
+    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
+    return AlbumsFromCore(v);
 }
 
 - (NSArray<SubsonicSong *> *)getStarredSongsWithError:(NSError **)error {
-    return [self fanOutOverFolders:[self activeMusicFolderIds]
-                             idKey:@"songId"
-                             fetch:^NSArray *(NSString *folderId) {
-        NSURL *url = [self urlForEndpoint:@"getStarred2.view"
-                                   params:appendMusicFolder(@"", folderId)];
-        navidrome::json::Value root = [self fetchInner:url error:error];
-        if (root.isNull()) return nil;
-
-        NSMutableArray<SubsonicSong *> *result = [NSMutableArray array];
-        for (auto *s : root["starred2"]["song"].items()) {
-            SubsonicSong *song = SongFromCore(navidrome::parseSong(*s));
-            song.starred = YES;   // getStarred2 omits the "starred" field per item
-            [result addObject:song];
-        }
-        return result;
-    }];
+    std::string err;
+    auto v = _core->getStarredSongs(err);
+    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
+    return SongsFromCore(v);
 }
 
 - (NSArray<SubsonicGenre *> *)getGenresWithError:(NSError **)error {
-    NSURL *url = [self urlForEndpoint:@"getGenres.view" params:@""];
-    navidrome::json::Value root = [self fetchInner:url error:error];
-    if (root.isNull()) return nil;
-
-    NSMutableArray<SubsonicGenre *> *result = [NSMutableArray array];
-    for (auto *g : root["genres"]["genre"].items()) {
-        SubsonicGenre *genre = GenreFromCore(navidrome::parseGenre(*g));
-        // Skip the empty "no genre" bucket some servers report.
-        if (genre.name.length == 0) continue;
-        [result addObject:genre];
-    }
+    std::string err;
+    auto v = _core->getGenres(err);
+    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
+    NSMutableArray<SubsonicGenre *> *result = [NSMutableArray arrayWithCapacity:v.size()];
+    for (const auto &g : v) [result addObject:GenreFromCore(g)];
     return result;
 }
 
@@ -757,258 +528,132 @@ static SubsonicBookmark *BookmarkFromCore(const navidrome::Bookmark &b) {
                                         count:(NSInteger)count
                                         error:(NSError **)error {
     if (genre.length == 0) return @[];
-    NSString *base = [NSString stringWithFormat:@"genre=%@&count=%ld",
-                      urlEncode(genre), (long)count];
-    return [self fanOutOverFolders:[self activeMusicFolderIds]
-                             idKey:@"songId"
-                             fetch:^NSArray *(NSString *folderId) {
-        NSURL *url = [self urlForEndpoint:@"getSongsByGenre.view"
-                                   params:appendMusicFolder(base, folderId)];
-        navidrome::json::Value root = [self fetchInner:url error:error];
-        if (root.isNull()) return nil;
-
-        NSMutableArray<SubsonicSong *> *result = [NSMutableArray array];
-        for (auto *s : root["songsByGenre"]["song"].items())
-            [result addObject:SongFromCore(navidrome::parseSong(*s))];
-        return result;
-    }];
+    std::string err;
+    auto v = _core->getSongsForGenre(genre.UTF8String ?: "", (int)count, err);
+    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
+    return SongsFromCore(v);
 }
 
 - (NSArray<SubsonicSong *> *)getSimilarSongsForId:(NSString *)itemId
                                              count:(NSInteger)count
                                              error:(NSError **)error {
     if (itemId.length == 0) return @[];
-    NSString *params = [NSString stringWithFormat:@"id=%@&count=%ld",
-                        urlEncode(itemId), (long)count];
-    NSURL *url = [self urlForEndpoint:@"getSimilarSongs2.view" params:params];
-    navidrome::json::Value root = [self fetchInner:url error:error];
-    if (root.isNull()) return nil;
-
-    NSMutableArray<SubsonicSong *> *result = [NSMutableArray array];
-    for (auto *s : root["similarSongs2"]["song"].items())
-        [result addObject:SongFromCore(navidrome::parseSong(*s))];
-    return result;
+    std::string err;
+    auto v = _core->getSimilarSongs(itemId.UTF8String ?: "", (int)count, err);
+    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
+    return SongsFromCore(v);
 }
 
 - (NSArray<SubsonicSong *> *)getRandomSongsWithCount:(NSInteger)count
                                                 error:(NSError **)error {
-    NSArray<NSString *> *folderIds = [self activeMusicFolderIds];
-    // Split the requested size across the fanned-out libraries so the merged
-    // result stays near `count` rather than count-per-library.
-    NSInteger perFolder = folderIds.count
-        ? MAX(1, count / (NSInteger)folderIds.count + 1)
-        : count;
-
-    NSArray *merged = [self fanOutOverFolders:folderIds
-                                       idKey:@"songId"
-                                       fetch:^NSArray *(NSString *folderId) {
-        NSString *params = appendMusicFolder(
-            [NSString stringWithFormat:@"size=%ld", (long)perFolder], folderId);
-        NSURL *url = [self urlForEndpoint:@"getRandomSongs.view" params:params];
-        navidrome::json::Value root = [self fetchInner:url error:error];
-        if (root.isNull()) return nil;
-
-        NSMutableArray<SubsonicSong *> *result = [NSMutableArray array];
-        for (auto *s : root["randomSongs"]["song"].items())
-            [result addObject:SongFromCore(navidrome::parseSong(*s))];
-        return result;
-    }];
-
-    if (folderIds.count && (NSInteger)merged.count > count)
-        merged = [merged subarrayWithRange:NSMakeRange(0, count)];
-    return merged;
+    std::string err;
+    auto v = _core->getRandomSongs((int)count, err);
+    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
+    return SongsFromCore(v);
 }
 
 - (BOOL)setStarred:(BOOL)starred
              forId:(NSString *)itemId
               kind:(SubsonicStarKind)kind
              error:(NSError **)error {
-    if (itemId.length == 0) return NO;
-    // Subsonic names the parameter after the item kind.
-    NSString *param = @"id";
-    if (kind == SubsonicStarKindAlbum)  param = @"albumId";
-    if (kind == SubsonicStarKindArtist) param = @"artistId";
+    navidrome::StarKind k = navidrome::StarKind::Song;
+    if (kind == SubsonicStarKindAlbum)  k = navidrome::StarKind::Album;
+    if (kind == SubsonicStarKindArtist) k = navidrome::StarKind::Artist;
 
-    NSString *params = [NSString stringWithFormat:@"%@=%@", param, urlEncode(itemId)];
-    NSURL *url = [self urlForEndpoint:(starred ? @"star.view" : @"unstar.view")
-                               params:params];
-    return ![self fetchInner:url error:error].isNull();
+    std::string err;
+    BOOL ok = _core->setStarred(starred, itemId.UTF8String ?: "", k, err);
+    if (!ok && error) *error = NavidromeMakeError(err, -2);
+    return ok;
 }
 
 - (SubsonicSong *)getSongWithId:(NSString *)songId error:(NSError **)error {
     if (songId.length == 0) return nil;
-    NSString *params = [NSString stringWithFormat:@"id=%@", urlEncode(songId)];
-    NSURL *url = [self urlForEndpoint:@"getSong.view" params:params];
-    navidrome::json::Value root = [self fetchInner:url error:error];
-    if (root.isNull()) return nil;
-    auto songs = root["song"].items();
-    return songs.empty() ? nil : SongFromCore(navidrome::parseSong(*songs.front()));
+    std::string err;
+    navidrome::Song s;
+    if (!_core->getSong(songId.UTF8String ?: "", s, err)) {
+        if (error) *error = NavidromeMakeError(err, -2);
+        return nil;
+    }
+    return SongFromCore(s);
 }
 
 - (BOOL)setRating:(NSInteger)rating forSongId:(NSString *)songId error:(NSError **)error {
-    if (songId.length == 0) return NO;
-    NSString *params = [NSString stringWithFormat:@"id=%@&rating=%ld",
-                        urlEncode(songId), (long)MAX(0, MIN(5, rating))];
-    NSURL *url = [self urlForEndpoint:@"setRating.view" params:params];
-    return ![self fetchInner:url error:error].isNull();
+    std::string err;
+    BOOL ok = _core->setRating((int)rating, songId.UTF8String ?: "", err);
+    if (!ok && error) *error = NavidromeMakeError(err, -2);
+    return ok;
 }
 
 - (NSArray<SubsonicPlaylist *> *)getPlaylistsWithError:(NSError **)error {
-    NSURL *url = [self urlForEndpoint:@"getPlaylists.view" params:@""];
-    navidrome::json::Value root = [self fetchInner:url error:error];
-    if (root.isNull()) return nil;
-
-    NSMutableArray<SubsonicPlaylist *> *result = [NSMutableArray array];
-    for (auto *p : root["playlists"]["playlist"].items())
-        [result addObject:PlaylistFromCore(navidrome::parsePlaylist(*p))];
+    std::string err;
+    auto v = _core->getPlaylists(err);
+    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
+    NSMutableArray<SubsonicPlaylist *> *result = [NSMutableArray arrayWithCapacity:v.size()];
+    for (const auto &p : v) [result addObject:PlaylistFromCore(p)];
     return result;
 }
 
 - (NSArray<SubsonicSong *> *)getPlaylistSongs:(NSString *)playlistId error:(NSError **)error {
-    NSString *params = [NSString stringWithFormat:@"id=%@", urlEncode(playlistId)];
-    NSURL *url = [self urlForEndpoint:@"getPlaylist.view" params:params];
-    navidrome::json::Value root = [self fetchInner:url error:error];
-    if (root.isNull()) return nil;
-
-    NSMutableArray<SubsonicSong *> *result = [NSMutableArray array];
-    for (auto *s : root["playlist"]["entry"].items())
-        [result addObject:SongFromCore(navidrome::parseSong(*s))];
-    return result;
+    std::string err;
+    auto v = _core->getPlaylistSongs(playlistId.UTF8String ?: "", err);
+    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
+    return SongsFromCore(v);
 }
 
-// Subsonic passes track ids on the query string, so a long playlist would blow
-// past typical server URL limits — create with the first chunk, then grow it
-// with updatePlaylist.view calls. Returns the new playlist's id.
 - (NSString *)createPlaylistNamed:(NSString *)name
                           songIds:(NSArray<NSString *> *)songIds
                             error:(NSError **)error {
     if (name.length == 0) return nil;
-    const NSUInteger kChunk = navidrome::kPlaylistChunkSize;
-
-    NSUInteger first = MIN(kChunk, songIds.count);
-    NSMutableString *params = [NSMutableString stringWithFormat:@"name=%@", urlEncode(name)];
-    for (NSUInteger i = 0; i < first; i++)
-        [params appendFormat:@"&songId=%@", urlEncode(songIds[i])];
-
-    navidrome::json::Value root = [self fetchInner:[self urlForEndpoint:@"createPlaylist.view"
-                                                       params:params]
-                                   error:error];
-    if (root.isNull()) return nil;
-
-    // Navidrome echoes the created playlist back; without its id the remaining
-    // tracks can't be appended (and the caller can't act on the new playlist).
-    auto created = root["playlist"].items();
-    NSString *playlistId = created.empty() ? @"" : nsstr(navidrome::jId(*created[0], "id"));
-    if (playlistId.length == 0) {
-        if (songIds.count <= kChunk) {
-            // Everything made it in; we just don't have an id to hand back.
-            // Report success with an empty id rather than a phantom failure.
-            return @"";
-        }
-        if (error) {
-            *error = [NSError errorWithDomain:@"SubsonicClient" code:-3 userInfo:@{
-                NSLocalizedDescriptionKey: [NSString stringWithFormat:
-                    @"Playlist created, but the server returned no id — only the "
-                     "first %lu tracks were added", (unsigned long)kChunk]}];
-        }
-        return nil;
-    }
-
-    if (songIds.count <= kChunk) return playlistId;
-
-    NSArray<NSString *> *rest = [songIds subarrayWithRange:
-        NSMakeRange(kChunk, songIds.count - kChunk)];
-    if (![self addSongs:rest toPlaylist:playlistId error:error]) return nil;
-    return playlistId;
+    std::string err;
+    std::string pid = _core->createPlaylist(name.UTF8String ?: "", ToStdStrings(songIds), err);
+    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -3); return nil; }
+    // "" means "created, server echoed no id" — a success, per the header contract.
+    return nsstr(pid);
 }
 
 - (BOOL)addSongs:(NSArray<NSString *> *)songIds
       toPlaylist:(NSString *)playlistId
            error:(NSError **)error {
-    if (playlistId.length == 0 || songIds.count == 0) return NO;
-    const NSUInteger kChunk = navidrome::kPlaylistChunkSize;
-    const NSUInteger chunks = (songIds.count + kChunk - 1) / kChunk;
-    NAVIDROME_LOG("Playlist", "add " + std::to_string((unsigned long)songIds.count) +
-                  " ids to " + (playlistId.UTF8String ?: "?") + " in " +
-                  std::to_string((unsigned long)chunks) + " chunk(s)");
-
-    for (NSUInteger i = 0, c = 1; i < songIds.count; i += kChunk, c++) {
-        NSMutableString *upd = [NSMutableString stringWithFormat:@"playlistId=%@",
-                                urlEncode(playlistId)];
-        for (NSUInteger j = i; j < MIN(i + kChunk, songIds.count); j++)
-            [upd appendFormat:@"&songIdToAdd=%@", urlEncode(songIds[j])];
-        if ([self fetchInner:[self urlForEndpoint:@"updatePlaylist.view" params:upd]
-                        error:error].isNull()) {
-            NAVIDROME_ERR("Playlist", "add: chunk " + std::to_string((unsigned long)c) + "/" +
-                          std::to_string((unsigned long)chunks) + " failed after " +
-                          std::to_string((unsigned long)i) + "/" +
-                          std::to_string((unsigned long)songIds.count) + " ids: " +
-                          _lastError.kindName());
-            return NO;
-        }
-    }
-    return YES;
+    std::string err;
+    BOOL ok = _core->addToPlaylist(playlistId.UTF8String ?: "", ToStdStrings(songIds), err);
+    if (!ok && error) *error = NavidromeMakeError(err, -2);
+    return ok;
 }
 
-// songIndexToRemove refers to a track's position in the playlist as it stands
-// when the request is served, so removals are sent highest-index-first: dropping
-// a later entry never shifts an earlier one.
 - (BOOL)removeIndexes:(NSArray<NSNumber *> *)indexes
          fromPlaylist:(NSString *)playlistId
                 error:(NSError **)error {
-    if (playlistId.length == 0 || indexes.count == 0) return NO;
-    const NSUInteger kChunk = navidrome::kPlaylistChunkSize;
-
-    NSArray<NSNumber *> *sorted = [indexes sortedArrayUsingComparator:
-        ^NSComparisonResult(NSNumber *a, NSNumber *b) { return [b compare:a]; }];
-    const NSUInteger chunks = (sorted.count + kChunk - 1) / kChunk;
-    NAVIDROME_LOG("Playlist", "remove " + std::to_string((unsigned long)sorted.count) +
-                  " index(es) from " + (playlistId.UTF8String ?: "?") +
-                  " (highest-first) in " + std::to_string((unsigned long)chunks) + " chunk(s)");
-
-    for (NSUInteger i = 0, c = 1; i < sorted.count; i += kChunk, c++) {
-        NSMutableString *upd = [NSMutableString stringWithFormat:@"playlistId=%@",
-                                urlEncode(playlistId)];
-        for (NSUInteger j = i; j < MIN(i + kChunk, sorted.count); j++)
-            [upd appendFormat:@"&songIndexToRemove=%ld", (long)sorted[j].integerValue];
-        if ([self fetchInner:[self urlForEndpoint:@"updatePlaylist.view" params:upd]
-                        error:error].isNull()) {
-            NAVIDROME_ERR("Playlist", "remove: chunk " + std::to_string((unsigned long)c) + "/" +
-                          std::to_string((unsigned long)chunks) + " failed after " +
-                          std::to_string((unsigned long)i) + "/" +
-                          std::to_string((unsigned long)sorted.count) + " indexes: " +
-                          _lastError.kindName());
-            return NO;
-        }
-    }
-    return YES;
+    std::vector<int> idx;
+    idx.reserve(indexes.count);
+    for (NSNumber *n in indexes) idx.push_back(n.intValue);
+    std::string err;
+    BOOL ok = _core->removeFromPlaylist(playlistId.UTF8String ?: "", idx, err);
+    if (!ok && error) *error = NavidromeMakeError(err, -2);
+    return ok;
 }
 
 - (BOOL)renamePlaylist:(NSString *)playlistId
                 toName:(NSString *)name
                  error:(NSError **)error {
-    if (playlistId.length == 0 || name.length == 0) return NO;
-    NSString *params = [NSString stringWithFormat:@"playlistId=%@&name=%@",
-                        urlEncode(playlistId), urlEncode(name)];
-    return ![self fetchInner:[self urlForEndpoint:@"updatePlaylist.view" params:params]
-                      error:error].isNull();
+    std::string err;
+    BOOL ok = _core->renamePlaylist(playlistId.UTF8String ?: "", name.UTF8String ?: "", err);
+    if (!ok && error) *error = NavidromeMakeError(err, -2);
+    return ok;
 }
 
 - (BOOL)deletePlaylist:(NSString *)playlistId error:(NSError **)error {
-    if (playlistId.length == 0) return NO;
-    NSString *params = [NSString stringWithFormat:@"id=%@", urlEncode(playlistId)];
-    return ![self fetchInner:[self urlForEndpoint:@"deletePlaylist.view" params:params]
-                      error:error].isNull();
+    std::string err;
+    BOOL ok = _core->deletePlaylist(playlistId.UTF8String ?: "", err);
+    if (!ok && error) *error = NavidromeMakeError(err, -2);
+    return ok;
 }
 
 - (NSArray<SubsonicRadioStation *> *)getRadioStationsWithError:(NSError **)error {
-    NSURL *url = [self urlForEndpoint:@"getInternetRadioStations.view" params:@""];
-    navidrome::json::Value root = [self fetchInner:url error:error];
-    if (root.isNull()) return nil;
-
-    NSMutableArray<SubsonicRadioStation *> *result = [NSMutableArray array];
-    for (auto *s : root["internetRadioStations"]["internetRadioStation"].items())
-        [result addObject:RadioStationFromCore(navidrome::parseRadioStation(*s))];
+    std::string err;
+    auto v = _core->getRadioStations(err);
+    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
+    NSMutableArray<SubsonicRadioStation *> *result = [NSMutableArray arrayWithCapacity:v.size()];
+    for (const auto &r : v) [result addObject:RadioStationFromCore(r)];
     return result;
 }
 
@@ -1017,18 +662,11 @@ static SubsonicBookmark *BookmarkFromCore(const navidrome::Bookmark &b) {
                                    homePageUrl:(NSString *)homePageUrl
                                          error:(NSError **)error {
     if (streamUrl.length == 0 || name.length == 0) return nil;
-    NSMutableString *params = [NSMutableString stringWithFormat:@"streamUrl=%@&name=%@",
-                               urlEncode(streamUrl), urlEncode(name)];
-    if (homePageUrl.length > 0)
-        [params appendFormat:@"&homePageUrl=%@", urlEncode(homePageUrl)];
-
-    navidrome::json::Value root = [self fetchInner:[self urlForEndpoint:@"createInternetRadioStation.view"
-                                                       params:params]
-                                   error:error];
-    if (root.isNull()) return nil;
-    // Unlike createPlaylist.view, Subsonic's create-station endpoint doesn't
-    // echo the new station's id back. Report success with an empty id rather
-    // than a phantom failure — callers must check *error, not this string.
+    std::string err;
+    _core->createRadioStation(streamUrl.UTF8String ?: "", name.UTF8String ?: "",
+                              homePageUrl.UTF8String ?: "", err);
+    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
+    // Subsonic's create-station endpoint echoes no id back — success is @"".
     return @"";
 }
 
@@ -1037,33 +675,26 @@ static SubsonicBookmark *BookmarkFromCore(const navidrome::Bookmark &b) {
                        name:(NSString *)name
                 homePageUrl:(NSString *)homePageUrl
                       error:(NSError **)error {
-    if (stationId.length == 0 || streamUrl.length == 0 || name.length == 0) return NO;
-    NSMutableString *params = [NSMutableString stringWithFormat:@"id=%@&streamUrl=%@&name=%@",
-                               urlEncode(stationId), urlEncode(streamUrl), urlEncode(name)];
-    if (homePageUrl.length > 0)
-        [params appendFormat:@"&homePageUrl=%@", urlEncode(homePageUrl)];
-    return ![self fetchInner:[self urlForEndpoint:@"updateInternetRadioStation.view" params:params]
-                      error:error].isNull();
+    std::string err;
+    BOOL ok = _core->updateRadioStation(stationId.UTF8String ?: "", streamUrl.UTF8String ?: "",
+                                        name.UTF8String ?: "", homePageUrl.UTF8String ?: "", err);
+    if (!ok && error) *error = NavidromeMakeError(err, -2);
+    return ok;
 }
 
 - (BOOL)deleteRadioStation:(NSString *)stationId error:(NSError **)error {
-    if (stationId.length == 0) return NO;
-    NSString *params = [NSString stringWithFormat:@"id=%@", urlEncode(stationId)];
-    return ![self fetchInner:[self urlForEndpoint:@"deleteInternetRadioStation.view" params:params]
-                      error:error].isNull();
+    std::string err;
+    BOOL ok = _core->deleteRadioStation(stationId.UTF8String ?: "", err);
+    if (!ok && error) *error = NavidromeMakeError(err, -2);
+    return ok;
 }
 
 - (NSArray<SubsonicBookmark *> *)getBookmarksWithError:(NSError **)error {
-    NSURL *url = [self urlForEndpoint:@"getBookmarks.view" params:@""];
-    navidrome::json::Value root = [self fetchInner:url error:error];
-    if (root.isNull()) return nil;
-
-    NSMutableArray<SubsonicBookmark *> *result = [NSMutableArray array];
-    for (auto *b : root["bookmarks"]["bookmark"].items()) {
-        navidrome::Bookmark bm;
-        if (navidrome::parseBookmark(*b, bm))
-            [result addObject:BookmarkFromCore(bm)];
-    }
+    std::string err;
+    auto v = _core->getBookmarks(err);
+    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
+    NSMutableArray<SubsonicBookmark *> *result = [NSMutableArray arrayWithCapacity:v.size()];
+    for (const auto &b : v) [result addObject:BookmarkFromCore(b)];
     return result;
 }
 
@@ -1071,54 +702,49 @@ static SubsonicBookmark *BookmarkFromCore(const navidrome::Bookmark &b) {
                       positionMs:(NSTimeInterval)positionMs
                          comment:(NSString *)comment
                            error:(NSError **)error {
-    if (songId.length == 0) return NO;
-    NSMutableString *params = [NSMutableString stringWithFormat:@"id=%@&position=%lld",
-                               urlEncode(songId), (long long)positionMs];
-    if (comment.length > 0) [params appendFormat:@"&comment=%@", urlEncode(comment)];
-    return ![self fetchInner:[self urlForEndpoint:@"createBookmark.view" params:params]
-                      error:error].isNull();
+    std::string err;
+    BOOL ok = _core->createBookmark(songId.UTF8String ?: "", positionMs,
+                                    comment.UTF8String ?: "", err);
+    if (!ok && error) *error = NavidromeMakeError(err, -2);
+    return ok;
 }
 
 - (BOOL)deleteBookmarkForSongId:(NSString *)songId error:(NSError **)error {
-    if (songId.length == 0) return NO;
-    NSString *params = [NSString stringWithFormat:@"id=%@", urlEncode(songId)];
-    return ![self fetchInner:[self urlForEndpoint:@"deleteBookmark.view" params:params]
-                      error:error].isNull();
+    std::string err;
+    BOOL ok = _core->deleteBookmark(songId.UTF8String ?: "", err);
+    if (!ok && error) *error = NavidromeMakeError(err, -2);
+    return ok;
 }
 
-- (BOOL)fetchScanStatusForEndpoint:(NSString *)endpoint
-                           scanning:(BOOL *)scanning
-                              count:(NSInteger *)count
-                              error:(NSError **)error {
+- (BOOL)startScanWithScanning:(BOOL *)scanning count:(NSInteger *)count error:(NSError **)error {
     if (scanning) *scanning = NO;
     if (count)    *count    = 0;
-    NSURL *url = [self urlForEndpoint:endpoint params:@""];
-    navidrome::json::Value root = [self fetchInner:url error:error];
-    if (root.isNull()) return NO;
-    navidrome::ScanStatus st = navidrome::parseScanStatus(root);
+    std::string err;
+    navidrome::ScanStatus st = _core->startScan(err);
+    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return NO; }
     if (scanning) *scanning = st.scanning;
     if (count)    *count    = static_cast<NSInteger>(st.count);
     return YES;
 }
 
-- (BOOL)startScanWithScanning:(BOOL *)scanning count:(NSInteger *)count error:(NSError **)error {
-    return [self fetchScanStatusForEndpoint:@"startScan.view"
-                                    scanning:scanning count:count error:error];
-}
-
 - (BOOL)getScanStatusWithScanning:(BOOL *)scanning count:(NSInteger *)count error:(NSError **)error {
-    return [self fetchScanStatusForEndpoint:@"getScanStatus.view"
-                                    scanning:scanning count:count error:error];
+    if (scanning) *scanning = NO;
+    if (count)    *count    = 0;
+    std::string err;
+    navidrome::ScanStatus st = _core->getScanStatus(err);
+    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return NO; }
+    if (scanning) *scanning = st.scanning;
+    if (count)    *count    = static_cast<NSInteger>(st.count);
+    return YES;
 }
 
 - (BOOL)scrobbleSongId:(NSString *)songId
             submission:(BOOL)submission
                  error:(NSError **)error {
-    if (songId.length == 0) return NO;
-    NSString *params = [NSString stringWithFormat:@"id=%@&submission=%@",
-                        urlEncode(songId), submission ? @"true" : @"false"];
-    NSURL *url = [self urlForEndpoint:@"scrobble.view" params:params];
-    return ![self fetchInner:url error:error].isNull();
+    std::string err;
+    BOOL ok = _core->scrobble(songId.UTF8String ?: "", submission, err);
+    if (!ok && error) *error = NavidromeMakeError(err, -2);
+    return ok;
 }
 
 // ---------------------------------------------------------------------------
@@ -1126,35 +752,21 @@ static SubsonicBookmark *BookmarkFromCore(const navidrome::Bookmark &b) {
 // ---------------------------------------------------------------------------
 
 - (NSString *)streamURLForSongId:(NSString *)songId coverArtId:(NSString *)coverArtId {
-    NSString *base = [NSString stringWithUTF8String:navidrome::cfg_server_url.get().c_str()];
-    while ([base hasSuffix:@"/"]) base = [base substringToIndex:base.length - 1];
-    NSString *auth = [self authParams];
-    NSString *artParam = (coverArtId.length > 0)
-        ? [NSString stringWithFormat:@"&coverArt=%@", urlEncode(coverArtId)]
-        : @"";
-    // Transcoding preferences — the server falls back to its own defaults when
-    // neither is set.
-    std::string transcode = navidrome::streamTranscodeParams(
-        navidrome::cfg_stream_format.get().c_str(),
-        static_cast<int>(navidrome::cfg_max_bitrate.get()));
-    return [NSString stringWithFormat:@"%@/rest/stream.view?id=%@%@&%@%s",
-            base, urlEncode(songId), artParam, auth, transcode.c_str()];
+    return nsstr(_core->streamURL(songId.UTF8String ?: "", coverArtId.UTF8String ?: ""));
 }
 
 - (NSURL *)downloadURLForSongId:(NSString *)songId {
-    NSString *params = [NSString stringWithFormat:@"id=%@", urlEncode(songId)];
-    return [self urlForEndpoint:@"download.view" params:params];
+    return [NSURL URLWithString:nsstr(_core->downloadURL(songId.UTF8String ?: ""))];
 }
 
 - (NSURL *)coverArtURLForId:(NSString *)coverArtId size:(NSInteger)size {
-    NSString *base = [NSString stringWithUTF8String:navidrome::cfg_server_url.get().c_str()];
-    while ([base hasSuffix:@"/"]) base = [base substringToIndex:base.length - 1];
-    NSString *auth = [self authParams];
-    NSString *sizeParam = size > 0 ? [NSString stringWithFormat:@"&size=%ld", (long)size] : @"";
-    NSString *full = [NSString stringWithFormat:@"%@/rest/getCoverArt.view?id=%@&%@%@",
-                      base, urlEncode(coverArtId), auth, sizeParam];
-    return [NSURL URLWithString:full];
+    return [NSURL URLWithString:nsstr(_core->coverArtURL(coverArtId.UTF8String ?: "", (int)size))];
 }
+
+// ---------------------------------------------------------------------------
+// Bare byte fetch + streaming download — never went through the JSON path, so
+// they stay here rather than in the core.
+// ---------------------------------------------------------------------------
 
 - (NSData *)dataForURL:(NSURL *)url error:(NSError **)outError {
     const std::string safeUrl =

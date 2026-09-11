@@ -16,6 +16,7 @@
 		FE0BAD260000000000000001 /* NavidromeArtExtractor.mm in Sources */ = {isa = PBXBuildFile; fileRef = FE0BAD0E0000000000000001 /* NavidromeArtExtractor.mm */; };
 		FE0BAD270000000000000001 /* NavidromeInput.mm in Sources */ = {isa = PBXBuildFile; fileRef = FE0BAD160000000000000001 /* NavidromeInput.mm */; };
 		FE0BAD910000000000000001 /* NavidromeBrowserModel.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BAD900000000000000001 /* NavidromeBrowserModel.cpp */; };
+		FE0BADA10000000000000001 /* SubsonicCore.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADA00000000000000001 /* SubsonicCore.cpp */; };
 		FE0BAD930000000000000001 /* MacSubsonicBrowserClient.mm in Sources */ = {isa = PBXBuildFile; fileRef = FE0BAD920000000000000001 /* MacSubsonicBrowserClient.mm */; };
 		FE0BAD300000000000000001 /* libfoobar2000_component_client.a in Frameworks */ = {isa = PBXBuildFile; fileRef = FE0BAD140000000000000001 /* libfoobar2000_component_client.a */; };
 		FE0BAD310000000000000001 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FE0BAD150000000000000001 /* Cocoa.framework */; };
@@ -44,6 +45,8 @@
 		FE0BAD900000000000000001 /* NavidromeBrowserModel.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = NavidromeBrowserModel.cpp; sourceTree = "<group>"; };
 		FE0BAD950000000000000001 /* NavidromeBrowserModel.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = NavidromeBrowserModel.h; sourceTree = "<group>"; };
 		FE0BAD960000000000000001 /* NavidromeBrowserEnqueue.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = NavidromeBrowserEnqueue.h; sourceTree = "<group>"; };
+		FE0BADA00000000000000001 /* SubsonicCore.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = SubsonicCore.cpp; sourceTree = "<group>"; };
+		FE0BADA20000000000000001 /* SubsonicCore.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SubsonicCore.h; sourceTree = "<group>"; };
 		FE0BAD920000000000000001 /* MacSubsonicBrowserClient.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = MacSubsonicBrowserClient.mm; sourceTree = "<group>"; };
 		FE0BAD940000000000000001 /* MacSubsonicBrowserClient.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = MacSubsonicBrowserClient.h; sourceTree = "<group>"; };
 		FE0BAD100000000000000001 /* libfoobar2000_SDK.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; path = libfoobar2000_SDK.a; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -110,6 +113,8 @@
 				FE0BAD950000000000000001 /* NavidromeBrowserModel.h */,
 				FE0BAD900000000000000001 /* NavidromeBrowserModel.cpp */,
 				FE0BAD960000000000000001 /* NavidromeBrowserEnqueue.h */,
+				FE0BADA20000000000000001 /* SubsonicCore.h */,
+				FE0BADA00000000000000001 /* SubsonicCore.cpp */,
 				FE0BAD430000000000000001 /* Mac */,
 				FE0BAD440000000000000001 /* helpers-mac */,
 				FE0BAD410000000000000001 /* Products */,
@@ -238,6 +243,7 @@
 				FE0BAD260000000000000001 /* NavidromeArtExtractor.mm in Sources */,
 				FE0BAD270000000000000001 /* NavidromeInput.mm in Sources */,
 				FE0BAD910000000000000001 /* NavidromeBrowserModel.cpp in Sources */,
+				FE0BADA10000000000000001 /* SubsonicCore.cpp in Sources */,
 				FE0BAD930000000000000001 /* MacSubsonicBrowserClient.mm in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

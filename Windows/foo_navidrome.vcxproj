@@ -155,6 +155,9 @@
     <ClCompile Include="..\NavidromeBrowserModel.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="..\SubsonicCore.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="MediaEnrichmentLogic.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
@@ -168,6 +171,7 @@
     <ClInclude Include="..\SubsonicTypes.h" />
     <ClInclude Include="..\NavidromeBrowserModel.h" />
     <ClInclude Include="..\NavidromeBrowserEnqueue.h" />
+    <ClInclude Include="..\SubsonicCore.h" />
     <ClInclude Include="..\NavidromeDebugLog.h" />
     <ClInclude Include="SubsonicClientWin.h" />
     <ClInclude Include="BrowserWindow.h" />
