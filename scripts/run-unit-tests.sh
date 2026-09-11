@@ -23,7 +23,8 @@ MODE="${1:-auto}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC=("$ROOT/tests/MediaEnrichmentLogicTests.cpp" \
      "$ROOT/Windows/MediaEnrichmentLogic.cpp" \
-     "$ROOT/NavidromeBrowserModel.cpp")
+     "$ROOT/NavidromeBrowserModel.cpp" \
+     "$ROOT/SubsonicCore.cpp")
 
 if [ "$MODE" = "auto" ]; then
   case "$(uname -s)" in

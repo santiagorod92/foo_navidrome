@@ -1,7 +1,9 @@
 #pragma once
 #include "../SubsonicTypes.h"
+#include "../SubsonicCore.h"
 #include "MediaEnrichmentLogic.h"
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -19,7 +21,10 @@ struct SubsonicRequestContext {
     std::string customHeaders;
 };
 
-// Windows Subsonic API client (WinHTTP-based).
+// Windows Subsonic API client. A thin facade over the shared navidrome::
+// SubsonicCore (which owns every request body): this class supplies a
+// WinHTTP-backed IHttpTransport + a cfg_*-backed ISettingsProvider, keeps the
+// Windows-only binary/cover-art/download paths, and forwards the API surface.
 // Mirrors the ObjC SubsonicClient used on macOS.
 class SubsonicClientWin {
 public:
@@ -32,7 +37,7 @@ public:
     // Classified outcome of the most recent request (transport + Subsonic
     // status). Lets a caller tell "credentials rejected" (surface to the user)
     // from "connection reset" (transient) without string-matching outError.
-    const Error& lastError() const { return m_lastError; }
+    const Error& lastError() const { return m_core->lastError(); }
 
     // Music folders / "libraries" (getMusicFolders.view). A single-library
     // server reports exactly one. Result is cached for the session after the
@@ -193,26 +198,14 @@ public:
                             std::string& outError) const;
 
 private:
-    SubsonicClientWin() = default;
+    SubsonicClientWin();
+    ~SubsonicClientWin();
 
-    std::string authParams() const;
-    std::string buildURL(const std::string& endpoint, const std::string& extra = "") const;
-    // Synchronous HTTP GET; returns body or "" on error (sets outError). Retries
-    // transient failures (timeout / 5xx / connection reset) up to 3x with
-    // backoff; deterministic failures (auth, 404) return immediately.
-    std::string httpGet(const std::string& url, std::string& outError) const;
-    // Parses the body, validates the Subsonic status wrapper, and returns the
-    // inner "subsonic-response" object as a json::Value — or a Null Value on any
-    // failure (sets outError + m_lastError with the classified error code).
-    json::Value checkResponse(const std::string& body, std::string& outError) const;
-
-    // Parse one getArtists.view response; folderId empty => no musicFolderId.
-    std::vector<Artist> fetchArtistsForFolder(const std::string& folderId,
-                                              std::string& outError);
-
-    mutable Error m_lastError;
-    std::vector<MusicFolder> m_musicFoldersCache;
-    bool m_musicFoldersFetched = false;
+    // Order matters: the transport + settings provider must outlive the core,
+    // which holds references to them.
+    std::unique_ptr<IHttpTransport>    m_transport;
+    std::unique_ptr<ISettingsProvider> m_settingsProvider;
+    std::unique_ptr<SubsonicCore>      m_core;
 };
 
 } // namespace navidrome
