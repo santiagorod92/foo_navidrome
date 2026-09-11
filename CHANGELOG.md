@@ -1,3 +1,10 @@
+## [1.13.4](https://github.com/santiagorod92/foo_navidrome/compare/v1.13.3...v1.13.4) (2026-09-11)
+
+
+### Code Refactoring
+
+* share the Subsonic client core across Windows and macOS ([#13](https://github.com/santiagorod92/foo_navidrome/issues/13)) ([4b72bbc](https://github.com/santiagorod92/foo_navidrome/commit/4b72bbcbf6eb24a000a37650467ad7372ee05dfe))
+
 ## [1.13.3](https://github.com/santiagorod92/foo_navidrome/compare/v1.13.2...v1.13.3) (2026-09-08)
 
 
