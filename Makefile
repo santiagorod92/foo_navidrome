@@ -3,6 +3,7 @@
 	mac-build mac-build-patch mac-build-minor mac-build-major mac-build-no-install mac-install mac-release mac-ci-build mac-logs \
 	win-vm-setup win-vm-fetch win-vm-install win-vm-test \
 	mac-vm mac-vm-reinstall mac-vm-setup mac-vm-install mac-vm-install-vnc mac-vm-run mac-vm-run-vnc mac-vm-test mac-vm-ssh \
+	mac-vm-provision-xcode mac-vm-build mac-vm-build-test \
 	mac-vm-vnc mac-vm-snapshot mac-vm-snapshot-export mac-vm-snapshot-import \
 	mac-vm-stop mac-vm-rm mac-vm-logs mac-vm-migrate-vnc mac-vm-reinstall-vnc clean
 
@@ -71,6 +72,9 @@ help:
 	@echo "  mac-vm-stop / -rm     stop / delete the guest container (rm loses the macOS disk)"
 	@echo "  mac-vm-logs           follow the guest's QEMU/boot log"
 	@echo "  mac-vm-test           resolve a .fb2k-component, deploy over SSH, re-sign, relaunch [ARGS='--release --launch']"
+	@echo "  mac-vm-provision-xcode  one-time: install Xcode in the guest from Xcode_15.x.xip in the repo root [XIP=/path]"
+	@echo "  mac-vm-build          build the macOS component INSIDE the guest (xcodebuild), pull the .fb2k-component here [ARGS=--clean]"
+	@echo "  mac-vm-build-test     mac-vm-build, then deploy + launch it in the guest"
 	@echo "  mac-vm-ssh            shell into the macOS guest"
 	@echo ""
 	@echo "  clean                 remove local build-win/ artifacts"
@@ -230,6 +234,20 @@ mac-vm-logs:
 
 mac-vm-test:
 	./scripts/mac-vm/mac-vm-test.sh $(ARGS)
+
+# One-time: install Xcode in the guest so it can build. Needs an Apple
+# Xcode_15.x.xip in the repo root (or XIP=/path). Snapshot after, or it is lost.
+mac-vm-provision-xcode:
+	./scripts/mac-vm/mac-vm.sh provision-xcode $(XIP)
+
+# Build the macOS component in the guest (xcodebuild) and pull the packaged
+# .fb2k-component back to the repo root. No version bump. Needs provision-xcode
+# done once. ARGS=--clean wipes the guest build tree first.
+mac-vm-build:
+	./scripts/mac-vm/mac-vm-build.sh $(ARGS)
+
+mac-vm-build-test:
+	./scripts/mac-vm/mac-vm-build.sh --test $(ARGS)
 
 mac-vm-ssh:
 	./scripts/mac-vm/mac-vm.sh ssh

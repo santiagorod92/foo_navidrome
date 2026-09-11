@@ -3,9 +3,11 @@
 # with /dev/kvm, to runtime-test the foo_navidrome macOS component without owning
 # a Mac. The macOS mirror of scripts/win-vm/.
 #
-# It does NOT build the component (no Xcode in the container). It loads a
-# .fb2k-component built by CI (the macos-14 runner) or on a real Mac, then
-# launches foobar2000 so you can drive the Navidrome browser UI.
+# By default it does NOT build the component — it loads a .fb2k-component built
+# by CI (the macos-14 runner) or on a real Mac, then launches foobar2000 so you
+# can drive the Navidrome browser UI. To ALSO build in the guest, install Xcode
+# once with 'provision-xcode' (a manual Xcode_15.x.xip drop) and then use
+# scripts/mac-vm/mac-vm-build.sh — see 'make mac-vm-build'.
 #
 #   Guest    : x86_64 macOS — QEMU emulates an Intel Mac, there is no Apple
 #              Silicon guest, so the bundle must carry an x86_64 slice. The CI
@@ -34,6 +36,11 @@
 #                           #   no X11. Used by mac-vm-up.sh so `make mac-vm`
 #                           #   needs no terminal babysitting. Honors IMAGE=.
 #   ./mac-vm.sh run         # boot the installed VM detached (SSH + GUI)
+#   ./mac-vm.sh provision-xcode [Xcode_15.x.xip]
+#                           # one-time: scp an Apple Xcode .xip into the running
+#                           #   guest, expand it to /Applications/Xcode.app,
+#                           #   xcode-select + runFirstLaunch. Slow under
+#                           #   emulation (~20-40 min). Snapshot afterwards.
 #   ./mac-vm.sh ssh [cmd]   # ssh into the guest (user / alpine)
 #   ./mac-vm.sh logs        # follow the container's QEMU/boot log
 #   ./mac-vm.sh vnc         # print the VNC address (MAC_VM_VNC=1 mode)
@@ -69,9 +76,15 @@ NOPICKER="${NOPICKER:-false}"
 NETWORKING="${NETWORKING:-vmxnet3}"
 SSH_HOST="localhost"
 SSH_USER="user"          # docker-osx default; password 'alpine'
+HERE="$(cd "$(dirname "$0")" && pwd)"
+REPO="$(cd "$HERE/../.." && pwd)"
 
 ssh_opts=(-p "$SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
           -o ConnectTimeout=5 -o PreferredAuthentications=password -o PubkeyAuthentication=no)
+scp_opts=(-P "$SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+          -o PreferredAuthentications=password -o PubkeyAuthentication=no)
+sshg() { sshpass -p alpine ssh "${ssh_opts[@]}" "${SSH_USER}@${SSH_HOST}" "$@"; }
+scpg() { sshpass -p alpine scp "${scp_opts[@]}" "$@"; }
 
 preflight() {
   command -v docker >/dev/null || { echo "missing: docker"; exit 1; }
@@ -196,6 +209,52 @@ case "${1:-}" in
     echo "==> booting. Follow it with: ./mac-vm.sh logs"
     echo "    At the OpenCore picker choose 'macOS' — first real boot rebuilds"
     echo "    kext caches (10-20 min, progress bar barely moves)."
+    ;;
+
+  provision-xcode)
+    preflight
+    command -v sshpass >/dev/null || { echo "need sshpass"; exit 1; }
+    running || { echo "guest not running — ./mac-vm.sh run  first"; exit 1; }
+    XIP="${2:-$(ls -t "$REPO"/Xcode*.xip 2>/dev/null | head -1 || true)}"
+    [ -n "$XIP" ] && [ -f "$XIP" ] || {
+      echo "no Xcode .xip found."
+      echo "Download Xcode_15.4.xip (matches the macos-14 CI toolchain) from"
+      echo "  https://developer.apple.com/download/all/   (Apple ID required)"
+      echo "drop it in the repo root, or pass a path:  $0 provision-xcode /path/Xcode_15.4.xip"
+      exit 1
+    }
+    echo "==> guest SSH check ..."
+    for i in $(seq 1 60); do sshg true 2>/dev/null && break; sleep 5
+      [ "$i" = 60 ] && { echo "guest SSH not reachable — is macOS installed + Remote Login on?"; exit 1; }
+    done
+    if sshg 'xcodebuild -version' >/dev/null 2>&1; then
+      echo "==> guest already has xcodebuild: $(sshg 'xcodebuild -version | tr "\n" " "')"
+      echo "    re-provisioning anyway (Ctrl-C to abort) ..."
+    fi
+    FREE_G="$(sshg "df -g / | awk 'NR==2{print \$4}'" 2>/dev/null || echo '?')"
+    echo "==> guest free space on / : ${FREE_G} GB  (Xcode needs ~40 GB expanded + more for a snapshot)"
+    case "$FREE_G" in ''|'?'|*[!0-9]*) : ;; *) [ "$FREE_G" -lt 45 ] && echo "    WARNING: low on space — the expand or the snapshot may fail"; esac
+    B="$(basename "$XIP")"
+    echo "==> copying $B into the guest (~10 GB, slow over ssh) ..."
+    sshg 'rm -rf ~/xcode-install && mkdir -p ~/xcode-install'
+    scpg "$XIP" "${SSH_USER}@${SSH_HOST}:xcode-install/$B"
+    echo "==> expanding + installing in the guest (xip --expand is slow under emulation, ~20-40 min) ..."
+    sshg "XIP_NAME='$B' bash -s" <<'REMOTE'
+set -e
+S() { echo alpine | sudo -S -p '' "$@"; }
+cd ~/xcode-install
+xip --expand "$XIP_NAME"
+APP="$(ls -d Xcode*.app | head -1)"
+S rm -rf /Applications/Xcode.app
+S mv "$APP" /Applications/Xcode.app
+S xcode-select -s /Applications/Xcode.app/Contents/Developer
+S xcodebuild -runFirstLaunch
+rm -f ~/xcode-install/"$XIP_NAME"
+xcodebuild -version
+REMOTE
+    echo "==> Xcode provisioned. Bake it into the snapshot so this is never redone:"
+    echo "      make mac-vm-snapshot && make mac-vm-snapshot-export"
+    echo "    Then build with:  make mac-vm-build   (or  make mac-vm-build-test)"
     ;;
 
   ssh)

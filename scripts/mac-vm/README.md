@@ -14,11 +14,17 @@ terminal, no CI round-trip, no Apple hardware. The macOS mirror of
 - **Does**: boot x86_64 macOS in Docker, drop a prebuilt `.fb2k-component` into
   the guest over SSH, ad-hoc re-sign it, relaunch foobar2000. Same deploy loop as
   `win-vm-test.sh`.
-- **Doesn't build.** There is no Xcode in the container. The component comes from
-  the `macos-14` CI runner (`gh release download`, or a build artifact) or from a
-  real Mac (`scripts/mac-ci-build.sh`). The CI build is a universal binary, so it
-  carries the **x86_64** slice the emulated Intel guest needs — a local arm64-only
-  build will not load. `mac-vm-test.sh` runs `lipo -archs` and warns.
+- **Can also build, on demand** (`mac-vm-build.sh`), once Xcode is installed in
+  the guest with `mac-vm.sh provision-xcode`. That is a one-time manual
+  `Xcode_15.x.xip` drop (Apple ID required to download it) — bake it into the
+  snapshot afterwards and it is never redone. See **Building in the guest**
+  below. The default flow still doesn't need Xcode: the component comes from the
+  `macos-14` CI runner (`gh release download`, or a build artifact) or a real Mac
+  (`scripts/mac-ci-build.sh`).
+- **x86_64 slice required.** The guest is an emulated Intel Mac. A CI build is a
+  universal binary and satisfies this; a guest build here is x86_64-only, which
+  the guest also runs; a local arm64-only Mac build will not load.
+  `mac-vm-test.sh` runs `lipo -archs` and warns.
 - **Not "test anywhere".** Needs a Linux host with `/dev/kvm` + nested virt. Does
   not run on Docker Desktop (macOS/Windows) or GitHub Actions.
 
@@ -104,6 +110,48 @@ scripts/mac-vm/mac-vm.sh install      # GUI macOS install — manual, ~30-45 min
 The macOS disk lives in the container's writable layer. `mac-vm.sh snapshot`
 `docker commit`s it so you can roll back; `mac-vm.sh rm` throws it away.
 
+## Building in the guest (no Mac)
+
+One-time, install Xcode into the guest:
+
+```bash
+# 1. Download Xcode_15.4.xip from https://developer.apple.com/download/all/
+#    (Apple ID required; 15.4 matches the macos-14 CI toolchain) -> repo root
+scripts/mac-vm/mac-vm.sh run                 # guest must be booted, Remote Login on
+make mac-vm-provision-xcode                  # scp the .xip in, expand, xcode-select
+                                            #   (slow under emulation: ~20-40 min)
+make mac-vm-snapshot && make mac-vm-snapshot-export   # so it is never redone
+```
+
+Then, every build:
+
+```bash
+make mac-vm-build          # push SDK siblings + working tree -> guest,
+                           #   run unit tests, xcodebuild Release, package,
+                           #   pull foo_navidrome_<v>.fb2k-component to repo root
+make mac-vm-build-test     # ... then deploy + launch it in the same guest
+make mac-vm-build ARGS=--clean   # wipe the guest ~/build tree first
+```
+
+Notes:
+
+- **No version bump.** `mac-vm-build.sh` runs `mac-ci-build.sh "$(cat
+  version.txt)"`, so `version.txt` is rewritten to its current value.
+- **DerivedData is kept** in the guest at
+  `~/build/foobar2000/foo_navidrome/build/` between runs; `--clean` drops it.
+- **SDK siblings** (`../foobar2000/{SDK,helpers,shared,foobar2000_component_client,helpers-mac}`,
+  `../pfc`, `../libPPUI`) are pushed from the host each run — the same ~5 MB tree
+  a local Mac build uses.
+- **Slow.** xcodebuild under the KVM-accelerated-but-emulated x86 guest is
+  ~15-40 min vs the CI runner's ~3 min. Fine on demand, not a tight loop — for
+  that, use `make win-build` (Windows) or a real Mac.
+- **Disk.** Xcode expanded is ~40 GB in the guest; the snapshot / `.tar.zst`
+  grows accordingly (plan for ~70-90 GB). Make sure the host has the room before
+  `provision-xcode` and `snapshot`.
+- **EULA.** Apple's macOS EULA permits virtualization only on Apple hardware;
+  this is a local dev-testing aid, not shipped or wired into CI (unchanged from
+  the run/test-only harness).
+
 ## The test loop
 
 ```bash
@@ -127,9 +175,10 @@ shell; `mac-vm.sh logs` follows the boot log; `mac-vm.sh stop` powers it off.
 
 | file | role |
 |------|------|
-| `setup-host.sh`  | host packages (docker, sshpass), kvm/docker preflight, image pull |
-| `mac-vm.sh`      | pull / install / run / ssh / snapshot / rm the Docker-OSX container |
-| `mac-vm-test.sh` | resolve a `.fb2k-component` → deploy over SSH → re-sign → relaunch |
+| `setup-host.sh`   | host packages (docker, sshpass), kvm/docker preflight, image pull |
+| `mac-vm.sh`       | pull / install / run / ssh / **provision-xcode** / snapshot / rm the Docker-OSX container |
+| `mac-vm-test.sh`  | resolve a `.fb2k-component` → deploy over SSH → re-sign → relaunch |
+| `mac-vm-build.sh` | push SDK + working tree → guest, xcodebuild Release, package, pull the `.fb2k-component` back (needs `provision-xcode` once) |
 
 ## Notes / gotchas
 
