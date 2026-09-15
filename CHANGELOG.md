@@ -1,3 +1,10 @@
+## [1.13.5](https://github.com/santiagorod92/foo_navidrome/compare/v1.13.4...v1.13.5) (2026-09-15)
+
+
+### Code Refactoring
+
+* consolidate remaining cross-platform browser/client duplication ([7fe58e8](https://github.com/santiagorod92/foo_navidrome/commit/7fe58e8620ab0a41a62f2b5a4db732bd61d1461c))
+
 ## [1.13.4](https://github.com/santiagorod92/foo_navidrome/compare/v1.13.3...v1.13.4) (2026-09-11)
 
 
