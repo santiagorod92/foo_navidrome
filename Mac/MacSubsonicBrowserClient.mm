@@ -195,6 +195,21 @@ struct MacBrowserClient final : navidrome::IBrowserClient {
         e = errString(err);
         return v;
     }
+    std::vector<navidrome::Song> getSimilarSongs(const std::string& id, int count,
+                                                 std::string& e) override {
+        NSError *err = nil;
+        auto v = mapArr<SubsonicSong>([client getSimilarSongsForId:@(id.c_str())
+                                                               count:count
+                                                               error:&err]);
+        e = errString(err);
+        return v;
+    }
+    std::vector<navidrome::Song> getRandomSongs(int count, std::string& e) override {
+        NSError *err = nil;
+        auto v = mapArr<SubsonicSong>([client getRandomSongsWithCount:count error:&err]);
+        e = errString(err);
+        return v;
+    }
     std::vector<std::string> groupingLibraryIds() override {
         std::vector<std::string> out;
         for (NSString *x in [client libraryGroupingIds]) out.push_back(str(x));
@@ -202,6 +217,24 @@ struct MacBrowserClient final : navidrome::IBrowserClient {
     }
     std::vector<navidrome::MusicFolder> musicFolders() override {
         return mapArr<SubsonicMusicFolder>([client cachedMusicFolders]);
+    }
+    bool setStarred(bool starred, const std::string& id, navidrome::StarKind kind,
+                    std::string& e) override {
+        NSError *err = nil;
+        // SubsonicStarKind and navidrome::StarKind declare Song/Album/Artist in
+        // the same order — plain cast, same convention as NavidromeNodeType.
+        BOOL ok = [client setStarred:starred
+                                forId:@(id.c_str())
+                                 kind:static_cast<SubsonicStarKind>(kind)
+                                error:&err];
+        e = errString(err);
+        return ok;
+    }
+    bool setRating(int stars, const std::string& id, std::string& e) override {
+        NSError *err = nil;
+        BOOL ok = [client setRating:stars forSongId:@(id.c_str()) error:&err];
+        e = errString(err);
+        return ok;
     }
 };
 

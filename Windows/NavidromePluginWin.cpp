@@ -727,9 +727,7 @@ private:
 class NavidromeArtExtractor : public album_art_extractor {
 public:
     bool is_our_path(const char* p, const char*) override {
-        if (!p) return false;
-        // Match navidrome:// OR legacy /rest/stream.view
-        return strncmp(p, "navidrome://", 12) == 0 || strstr(p, "/rest/stream.view") != nullptr;
+        return navidrome::isNavidromeArtPath(p);
     }
 
     album_art_extractor_instance_ptr open(file_ptr, const char* path,

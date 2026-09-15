@@ -117,10 +117,6 @@ typedef NS_ENUM(NSInteger, SubsonicStarKind) {
 - (NSArray<SubsonicMusicFolder *> *)getMusicFoldersWithError:(NSError **)error;
 - (NSArray<SubsonicMusicFolder *> *)cachedMusicFolders;
 - (void)refreshMusicFolders;
-// The musicFolderId values a browse/search request fans out over, per the
-// cfg_library_filter toggle + selection + cached folder list. Empty => one
-// request, no musicFolderId (unchanged behaviour).
-- (NSArray<NSString *> *)activeMusicFolderIds;
 // Library ids the browser shows as top-level "group by library" nodes. A 2+
 // library server ALWAYS groups (independent of the "Only include selected
 // libraries" checkbox); the checkbox only narrows which libraries appear, and

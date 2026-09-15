@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 #include <utility>
 #include <vector>
@@ -527,6 +528,16 @@ inline std::string resolveArtId(const std::string& path) {
     return std::string();
 }
 
+// True for any path our album_art extractor should claim: navidrome:// URIs
+// (current scheme) or legacy raw /rest/stream.view HTTP URLs (pre-URI-scheme
+// playlists). Shared so both platforms' is_our_path() stay in lockstep when
+// the URI scheme changes.
+inline bool isNavidromeArtPath(const char* path) {
+    if (!path) return false;
+    if (std::strncmp(path, "navidrome://", 12) == 0) return true;
+    return std::strstr(path, "/rest/stream.view") != nullptr;
+}
+
 // Subsonic "submission" (scrobble-complete) fires once the listener has heard
 // enough of the track: half its length, capped at 4 minutes. A track of unknown
 // length (a live stream, length <= 0) uses the 4-minute cap alone. Shared so
@@ -656,9 +667,8 @@ inline std::string appendMusicFolderParam(std::string params,
 // Run `fetch` once per folder id (or once with an empty id when the list is
 // empty — the unchanged single-request path), concatenating results and
 // dropping later duplicates by `idOf` (order preserved; an empty id is never a
-// duplicate). Shared by every fanned-out list endpoint on the Windows client;
-// the macOS client keeps its own NSArray/KVC twin (`-fanOutOverFolders:`) since
-// it merges ObjC objects, not `navidrome::` structs. Unit-tested (testFanOutMerge).
+// duplicate). Shared by every fanned-out list endpoint in SubsonicCore.cpp, used
+// by both platforms. Unit-tested (testFanOutMerge).
 template <class T, class Fetch, class IdOf>
 inline std::vector<T> mergeFanOut(const std::vector<std::string>& folderIds,
                                   Fetch fetch, IdOf idOf) {

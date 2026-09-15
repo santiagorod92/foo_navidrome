@@ -48,16 +48,12 @@ public:
     // methods to decide the multi-library fan-out, and by the prefs UI.
     std::vector<MusicFolder> cachedMusicFolders();
     void refreshMusicFolders();
-    // The musicFolderId values a browse/search request fans out over, per the
-    // cfg_library_filter toggle + selection + cached folder list. Empty => one
-    // request, no musicFolderId (unchanged behaviour).
-    std::vector<std::string> activeMusicFolderIds();
     // Library ids the browser should show as top-level "group by library" nodes.
     // A 2+ library server ALWAYS groups (independent of the "Only include
     // selected libraries" checkbox); the checkbox only narrows which libraries
     // appear, and only when 2+ are ticked. Returns {} for a single-library
     // server, or when the filter is on with exactly one library ticked (that's a
-    // single-library scope, shown flat via activeMusicFolderIds()). Browser
+    // single-library scope, shown flat via the internal fan-out). Browser
     // groups when this has 2+ entries.
     std::vector<std::string> libraryGroupingIds();
 
@@ -174,9 +170,6 @@ public:
     // Same headers joined as a single CRLF-delimited wide string for
     // WinHttpAddRequestHeaders (empty if none configured).
     static std::wstring customHeadersWide();
-
-    // Generate Subsonic token from password + salt (md5(password + salt))
-    static std::string generateToken(const std::string& password, const std::string& salt);
 
     // Binary fetch for cover art: reads the whole body only on HTTP 200 and a
     // recognized image payload, capped at maxBytes, honoring abort_callback.

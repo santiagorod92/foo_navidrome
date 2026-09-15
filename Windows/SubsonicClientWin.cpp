@@ -116,24 +116,6 @@ static std::string toUtf8(const std::wstring& w) {
     return s;
 }
 
-static std::string md5hex(const std::string& input) {
-    HCRYPTPROV hProv = 0;
-    HCRYPTHASH hHash = 0;
-    if (!CryptAcquireContextW(&hProv, nullptr, nullptr, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT))
-        return "";
-    CryptCreateHash(hProv, CALG_MD5, 0, 0, &hHash);
-    CryptHashData(hHash, reinterpret_cast<const BYTE*>(input.c_str()),
-                  static_cast<DWORD>(input.size()), 0);
-    DWORD len = 16;
-    BYTE  digest[16] = {};
-    CryptGetHashParam(hHash, HP_HASHVAL, digest, &len, 0);
-    CryptDestroyHash(hHash);
-    CryptReleaseContext(hProv, 0);
-    char hex[33];
-    for (int i = 0; i < 16; i++) sprintf_s(hex + i * 2, 3, "%02x", digest[i]);
-    return std::string(hex, 32);
-}
-
 // ---------------------------------------------------------------------------
 // The IHttpTransport + ISettingsProvider SubsonicCore runs on.
 // ---------------------------------------------------------------------------
@@ -262,11 +244,6 @@ navidrome::SubsonicRequestContext navidrome::SubsonicClientWin::snapshot() const
     return context;
 }
 
-std::string navidrome::SubsonicClientWin::generateToken(const std::string& password,
-                                                         const std::string& salt) {
-    return md5hex(password + salt);
-}
-
 std::vector<std::string> navidrome::SubsonicClientWin::customHeaderLines() {
     return navidrome::parseHeaderLines(cfg_custom_headers.get().c_str());
 }
@@ -293,9 +270,6 @@ std::vector<navidrome::MusicFolder> navidrome::SubsonicClientWin::cachedMusicFol
     return m_core->cachedMusicFolders();
 }
 void navidrome::SubsonicClientWin::refreshMusicFolders() { m_core->refreshMusicFolders(); }
-std::vector<std::string> navidrome::SubsonicClientWin::activeMusicFolderIds() {
-    return m_core->activeMusicFolderIds();
-}
 std::vector<std::string> navidrome::SubsonicClientWin::libraryGroupingIds() {
     return m_core->libraryGroupingIds();
 }

@@ -29,6 +29,7 @@ void syncRatingsToPlaylists(std::vector<RatingUpdate> u) { g_lastRatingSync = st
 
 #include <cstdint>
 #include <iostream>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -183,6 +184,15 @@ void testIdentifiers() {
     check(resolveArtId("https://server/rest/stream.view?id=old%2Fid&u=user") ==
         "old/id", "legacy stream id is supported");
     check(resolveArtId("https://server/music.mp3").empty(), "unowned path has no id");
+
+    using navidrome::isNavidromeArtPath;
+    check(isNavidromeArtPath("navidrome://track/song?id=1"),
+        "isNavidromeArtPath matches the navidrome:// scheme");
+    check(isNavidromeArtPath("https://server/rest/stream.view?id=1"),
+        "isNavidromeArtPath matches legacy stream.view URLs");
+    check(!isNavidromeArtPath("https://server/music.mp3"),
+        "isNavidromeArtPath rejects an unrelated URL");
+    check(!isNavidromeArtPath(nullptr), "isNavidromeArtPath rejects a null path");
 }
 
 void testCoverUrl() {
@@ -1263,6 +1273,19 @@ struct FakeBrowserClient : navidrome::IBrowserClient {
         navidrome::Bookmark b; b.song.id = "s5"; b.song.title = "Resume"; b.positionMs = 5000;
         return one("getBookmarks", e, b);
     }
+    std::vector<navidrome::Song> getSimilarSongs(const std::string& id, int count,
+                                                 std::string& e) override {
+        calls.push_back("getSimilarSongs:" + id + ":" + std::to_string(count));
+        e = error;
+        if (!error.empty()) return {};
+        navidrome::Song s; s.id = "s6"; s.title = "Similar"; return { s };
+    }
+    std::vector<navidrome::Song> getRandomSongs(int count, std::string& e) override {
+        calls.push_back("getRandomSongs:" + std::to_string(count));
+        e = error;
+        if (!error.empty()) return {};
+        navidrome::Song s; s.id = "s7"; s.title = "Random"; return { s };
+    }
     std::vector<std::string> groupingLibraryIds() override {
         calls.push_back("groupingLibraryIds");
         return groupIds;
@@ -1270,6 +1293,24 @@ struct FakeBrowserClient : navidrome::IBrowserClient {
     std::vector<navidrome::MusicFolder> musicFolders() override {
         calls.push_back("musicFolders");
         return { {"1", "Music"}, {"2", "Podcasts"} };
+    }
+
+    // set of ids that fail setStarred/setRating, to exercise the partial-failure path
+    std::set<std::string> failIds;
+
+    bool setStarred(bool starred, const std::string& id, navidrome::StarKind kind,
+                    std::string& e) override {
+        calls.push_back("setStarred:" + id + ":" + std::to_string((int)kind) + ":" +
+                        (starred ? "1" : "0"));
+        if (failIds.count(id)) { e = "failed to star " + id; return false; }
+        e.clear();
+        return true;
+    }
+    bool setRating(int stars, const std::string& id, std::string& e) override {
+        calls.push_back("setRating:" + id + ":" + std::to_string(stars));
+        if (failIds.count(id)) { e = "failed to rate " + id; return false; }
+        e.clear();
+        return true;
     }
 };
 
@@ -1420,6 +1461,100 @@ void testBrowserFetchDispatch() {
               navidrome::g_lastRatingSync[0].rating == 4 &&
               navidrome::g_lastRatingSync[0].starred,
               "syncBrowserNodesToPlaylists forwards only id-bearing Song nodes");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// applyStarredToNodes / applyRatingToNodes / Play Similar / Random Mix — the
+// shared logic behind the Windows + macOS star/rate menu items and the
+// "Play Similar" / "Random Mix" context-menu actions.
+// ---------------------------------------------------------------------------
+void testStarRatingSimilarRandom() {
+    using navidrome::BrowserNode;
+    using navidrome::BrowserNodePtr;
+
+    // --- applyStarredToNodes: kind dispatch + in-place mutation ---
+    {
+        FakeBrowserClient fc;
+        navidrome::Song s; s.id = "song1";
+        navidrome::Album a; a.id = "album1";
+        navidrome::Artist ar; ar.id = "artist1";
+        std::vector<BrowserNodePtr> targets = {
+            navidrome::makeSongNode(s),
+            navidrome::makeAlbumNode(a),
+            navidrome::makeArtistNode(ar),
+        };
+        auto result = navidrome::applyStarredToNodes(fc, targets, true);
+        check(result.done == 3 && result.error.empty(),
+              "applyStarredToNodes stars every eligible node");
+        check(targets[0]->starred && targets[1]->starred && targets[2]->starred,
+              "applyStarredToNodes mutates starred in place on success");
+        check(fc.calls[0] == "setStarred:song1:0:1" &&
+              fc.calls[1] == "setStarred:album1:1:1" &&
+              fc.calls[2] == "setStarred:artist1:2:1",
+              "applyStarredToNodes maps node type to the right StarKind");
+    }
+
+    // --- applyStarredToNodes: partial failure keeps going, reports first error ---
+    {
+        FakeBrowserClient fc;
+        fc.failIds = { "bad" };
+        navidrome::Song s1; s1.id = "bad";
+        navidrome::Song s2; s2.id = "good";
+        std::vector<BrowserNodePtr> targets = {
+            navidrome::makeSongNode(s1), navidrome::makeSongNode(s2),
+        };
+        auto result = navidrome::applyStarredToNodes(fc, targets, true);
+        check(result.done == 1 && result.error == "failed to star bad",
+              "applyStarredToNodes keeps going after a failure and reports the first error");
+        check(!targets[0]->starred && targets[1]->starred,
+              "a failed node's starred flag is left unchanged");
+    }
+
+    // --- applyRatingToNodes ---
+    {
+        FakeBrowserClient fc;
+        navidrome::Song s; s.id = "song1";
+        std::vector<BrowserNodePtr> targets = { navidrome::makeSongNode(s) };
+        auto result = navidrome::applyRatingToNodes(fc, targets, 4);
+        check(result.done == 1 && result.error.empty() && targets[0]->rating == 4,
+              "applyRatingToNodes rates a song and mutates rating in place");
+        check(fc.calls.back() == "setRating:song1:4", "applyRatingToNodes forwards stars + id");
+    }
+
+    // --- isSimilarEligible ---
+    {
+        BrowserNode song; song.type = BrowserNode::Song; song.id = "x";
+        BrowserNode noId; noId.type = BrowserNode::Song;
+        BrowserNode genre; genre.type = BrowserNode::Genre; genre.id = "x";
+        check(navidrome::isSimilarEligible(song), "Song with an id is Play-Similar eligible");
+        check(!navidrome::isSimilarEligible(noId), "a node with no id is never eligible");
+        check(!navidrome::isSimilarEligible(genre), "Genre is not Play-Similar eligible");
+    }
+
+    // --- fetchSimilarSongs / fetchRandomMix: fetch + map to song nodes ---
+    {
+        FakeBrowserClient fc;
+        std::string err;
+        auto similar = navidrome::fetchSimilarSongs(fc, "artist1", 50, err);
+        check(err.empty() && similar.size() == 1 && similar[0]->id == "s6" &&
+              similar[0]->type == BrowserNode::Song,
+              "fetchSimilarSongs maps the fetched songs to song nodes");
+        check(fc.calls.back() == "getSimilarSongs:artist1:50",
+              "fetchSimilarSongs forwards the item id and count");
+
+        auto random = navidrome::fetchRandomMix(fc, 100, err);
+        check(err.empty() && random.size() == 1 && random[0]->id == "s7",
+              "fetchRandomMix maps the fetched songs to song nodes");
+        check(fc.calls.back() == "getRandomSongs:100", "fetchRandomMix forwards the count");
+    }
+    {
+        FakeBrowserClient fc;
+        fc.error = "boom";
+        std::string err;
+        auto similar = navidrome::fetchSimilarSongs(fc, "x", 50, err);
+        check(err == "boom" && similar.empty(),
+              "fetchSimilarSongs propagates the client's error with no nodes");
     }
 }
 
@@ -1611,6 +1746,7 @@ int main() {
     testTrackURICodec();
     testBrowserModel();
     testBrowserFetchDispatch();
+    testStarRatingSimilarRandom();
     testMd5KnownAnswers();
     testCrossParserParity();
     testErrorModel();

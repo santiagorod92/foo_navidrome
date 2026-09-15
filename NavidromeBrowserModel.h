@@ -321,12 +321,25 @@ struct IBrowserClient {
                                                   std::string& outError) = 0;
     virtual std::vector<RadioStation> getRadioStations(std::string& outError) = 0;
     virtual std::vector<Bookmark>     getBookmarks(std::string& outError) = 0;
+    // "Play Similar" (last.fm-derived) and "Random Mix" — both back a
+    // context-menu action, not a browsable node (see CLAUDE.md gotcha on why
+    // Random Mix isn't a category).
+    virtual std::vector<Song>         getSimilarSongs(const std::string& itemId, int count,
+                                                      std::string& outError) = 0;
+    virtual std::vector<Song>         getRandomSongs(int count, std::string& outError) = 0;
 
     // Multi-library grouping. groupingLibraryIds() returns 2+ ids only when the
     // tree should show a Library level (see the Decisions note in CLAUDE.md);
     // musicFolders() names them.
     virtual std::vector<std::string>  groupingLibraryIds() = 0;
     virtual std::vector<MusicFolder>  musicFolders() = 0;
+
+    // Favorites and ratings. `outError` is empty (and the call returns true) on
+    // success, matching the read methods above.
+    virtual bool setStarred(bool starred, const std::string& itemId, StarKind kind,
+                            std::string& outError) = 0;
+    virtual bool setRating(int stars, const std::string& songId,
+                           std::string& outError) = 0;
 };
 
 // The tree's root list: category nodes always, then either one Library node per
@@ -360,5 +373,53 @@ std::vector<std::string> collectSongIdsDeep(IBrowserClient& client,
 // id-less nodes are skipped. fetchChildren() already calls this on its result;
 // the browser views call it directly for search results and rate/star actions.
 void syncBrowserNodesToPlaylists(const std::vector<BrowserNodePtr>& nodes);
+
+// ---------------------------------------------------------------------------
+// Favorites, ratings, Play Similar and Random Mix
+// ---------------------------------------------------------------------------
+// Star/rate a batch of nodes and report how many succeeded. `done` counts
+// individual successes even when `error` is set (the first failure's message
+// only — a mid-batch failure doesn't stop the remaining nodes, mirroring the
+// existing playlist-mutation convention of "best effort, report the first
+// error"). Nodes that fail are left with their pre-call starred/rating value.
+struct StarRatingResult {
+    std::size_t done = 0;
+    std::string error;
+};
+
+// Stars/unstars every Song, Album or Artist node in `targets`, pushing the
+// change back onto matching playlist entries via syncBrowserNodesToPlaylists.
+// Mutates each successful node's `starred` field in place. Callers filter
+// `targets` from the raw selection first (Song/Album/Artist only — Subsonic
+// has no favorite concept for other node types) and run this off the UI
+// thread; it makes one blocking HTTP call per target.
+StarRatingResult applyStarredToNodes(IBrowserClient& client,
+                                     const std::vector<BrowserNodePtr>& targets,
+                                     bool starred);
+
+// Rates every Song node in `targets` (1-5, or 0 to clear), the same way.
+// Ratings are a song-level Subsonic concept — callers filter to Song nodes
+// before calling this, same convention as applyStarredToNodes.
+StarRatingResult applyRatingToNodes(IBrowserClient& client,
+                                    const std::vector<BrowserNodePtr>& targets,
+                                    int stars);
+
+// True for the node types the "Play Similar" context-menu item accepts.
+inline bool isSimilarEligible(const BrowserNode& n) {
+    return !n.id.empty() &&
+           (n.type == BrowserNode::Artist || n.type == BrowserNode::Album ||
+            n.type == BrowserNode::Song);
+}
+
+// Fetches last.fm-derived similar tracks for one artist/album/song id and maps
+// them to song nodes, ready to enqueue. Background thread only.
+std::vector<BrowserNodePtr> fetchSimilarSongs(IBrowserClient& client,
+                                              const std::string& itemId, int count,
+                                              std::string& outError);
+
+// Fetches a fresh batch of random tracks and maps them to song nodes, ready to
+// enqueue. Background thread only.
+std::vector<BrowserNodePtr> fetchRandomMix(IBrowserClient& client, int count,
+                                           std::string& outError);
 
 } // namespace navidrome

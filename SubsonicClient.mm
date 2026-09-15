@@ -428,10 +428,6 @@ struct MacSettingsProvider : navidrome::ISettingsProvider {
     return MusicFoldersFromCore(_core->cachedMusicFolders());
 }
 
-- (NSArray<NSString *> *)activeMusicFolderIds {
-    return StringsToNSArray(_core->activeMusicFolderIds());
-}
-
 - (NSArray<NSString *> *)libraryGroupingIds {
     return StringsToNSArray(_core->libraryGroupingIds());
 }
@@ -776,8 +772,7 @@ struct MacSettingsProvider : navidrome::ISettingsProvider {
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
     NavidromeApplyCustomHeaders(request);
 
-    const int kMaxAttempts = 3;
-    for (int attempt = 1; attempt <= kMaxAttempts; ++attempt) {
+    for (int attempt = 1; attempt <= navidrome::retry::kMaxAttempts; ++attempt) {
         __block NSData *responseData = nil;
         __block NSError *taskError = nil;
         __block NSHTTPURLResponse *httpResponse = nil;
@@ -805,7 +800,7 @@ struct MacSettingsProvider : navidrome::ISettingsProvider {
             NAVIDROME_LOG("Art", "200 OK  " + std::to_string((unsigned long)responseData.length) + " bytes");
             return responseData;
         }
-        if (!err.retryable() || attempt == kMaxAttempts) {
+        if (!navidrome::retry::again(err, attempt)) {
             NAVIDROME_WARN("Art", std::string(err.kindName()) + ": " + err.message +
                            "  (" + safeUrl + ")");
             if (outError) {
@@ -815,7 +810,9 @@ struct MacSettingsProvider : navidrome::ISettingsProvider {
             }
             return nil;
         }
-        [NSThread sleepForTimeInterval:0.3 * attempt];
+        // Same backoff primitives SubsonicCore's own retry loop uses — jitter
+        // sourced from the transport this client already owns.
+        _transport->sleepMs(navidrome::retry::backoffMs(attempt, _transport->jitterMs()));
     }
     return nil;
 }

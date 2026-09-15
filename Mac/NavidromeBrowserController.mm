@@ -791,29 +791,24 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
 // or song and appends + plays them, mirroring "Play Now"'s enqueue semantics.
 - (IBAction)playSimilarSelection:(id)sender {
     NavidromeNode *node = [self selectedNodes].firstObject;
-    if (node.nodeId.length == 0 ||
-        (node.type != NavidromeNodeTypeArtist &&
-         node.type != NavidromeNodeTypeAlbum &&
-         node.type != NavidromeNodeTypeSong)) {
+    navidrome::BrowserNode core = node ? [node coreNode] : navidrome::BrowserNode{};
+    if (!node || !navidrome::isSimilarEligible(core)) {
         _statusLabel.stringValue = @"Play Similar needs an artist, album, or song";
         return;
     }
 
     [_spinner startAnimation:nil];
     _statusLabel.stringValue = @"Finding similar tracks…";
-    NSString *itemId = node.nodeId;
+    std::string itemId = core.id;
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        NSError *err = nil;
-        NSArray<SubsonicSong *> *similar = [SubsonicClient.sharedClient getSimilarSongsForId:itemId
-                                                                                        count:50
-                                                                                        error:&err];
-        NSMutableArray<NavidromeNode *> *songNodes = [NSMutableArray array];
-        for (SubsonicSong *s in similar) [songNodes addObject:[NavidromeNode songNode:s]];
-
+        std::string err;
+        auto nodes = navidrome::fetchSimilarSongs(browserClient(), itemId, 50, err);
+        NSMutableArray<NavidromeNode *> *songNodes = NBCWrapList(nodes);
+        std::string errCopy = err;
         dispatch_async(dispatch_get_main_queue(), ^{
             [_spinner stopAnimation:nil];
-            if (err) {
-                _statusLabel.stringValue = [NSString stringWithFormat:@"Error: %@", err.localizedDescription];
+            if (!errCopy.empty()) {
+                _statusLabel.stringValue = [NSString stringWithFormat:@"Error: %s", errCopy.c_str()];
                 return;
             }
             if (songNodes.count == 0) {
@@ -831,16 +826,14 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
     [_spinner startAnimation:nil];
     _statusLabel.stringValue = @"Fetching random mix…";
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        NSError *err = nil;
-        NSArray<SubsonicSong *> *songs = [SubsonicClient.sharedClient getRandomSongsWithCount:100
-                                                                                          error:&err];
-        NSMutableArray<NavidromeNode *> *songNodes = [NSMutableArray array];
-        for (SubsonicSong *s in songs) [songNodes addObject:[NavidromeNode songNode:s]];
-
+        std::string err;
+        auto nodes = navidrome::fetchRandomMix(browserClient(), 100, err);
+        NSMutableArray<NavidromeNode *> *songNodes = NBCWrapList(nodes);
+        std::string errCopy = err;
         dispatch_async(dispatch_get_main_queue(), ^{
             [_spinner stopAnimation:nil];
-            if (err) {
-                _statusLabel.stringValue = [NSString stringWithFormat:@"Error: %@", err.localizedDescription];
+            if (!errCopy.empty()) {
+                _statusLabel.stringValue = [NSString stringWithFormat:@"Error: %s", errCopy.c_str()];
                 return;
             }
             if (songNodes.count == 0) {
@@ -881,32 +874,26 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
         return;
     }
 
+    std::vector<navidrome::BrowserNodePtr> core;
+    core.reserve(targets.count);
+    for (NavidromeNode *n in targets)
+        core.push_back(std::make_shared<navidrome::BrowserNode>([n coreNode]));
+
     [_spinner startAnimation:nil];
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        NSError *err = nil;
-        NSUInteger done = 0;
-        for (NavidromeNode *n in targets) {
-            SubsonicStarKind kind = SubsonicStarKindSong;
-            if (n.type == NavidromeNodeTypeAlbum)  kind = SubsonicStarKindAlbum;
-            if (n.type == NavidromeNodeTypeArtist) kind = SubsonicStarKindArtist;
-            NSError *one = nil;
-            if ([SubsonicClient.sharedClient setStarred:starred forId:n.nodeId
-                                                   kind:kind error:&one]) {
-                n.starred = starred;
-                done++;
-            } else if (!err) {
-                err = one;
-            }
-        }
-        syncSongNodesToPlaylists(targets);
+        // The type dispatch, the API call and the rating push-back are shared
+        // with Windows — see navidrome::applyStarredToNodes.
+        auto result = navidrome::applyStarredToNodes(browserClient(), core, starred);
         dispatch_async(dispatch_get_main_queue(), ^{
             [_spinner stopAnimation:nil];
-            if (err) {
+            for (NSUInteger i = 0; i < targets.count; i++)
+                targets[i].starred = core[i]->starred;
+            if (!result.error.empty()) {
                 _statusLabel.stringValue =
-                    [NSString stringWithFormat:@"Error: %@", err.localizedDescription];
+                    [NSString stringWithFormat:@"Error: %s", result.error.c_str()];
             } else {
                 _statusLabel.stringValue = [NSString stringWithFormat:@"%@ %lu item(s)",
-                    starred ? @"Starred" : @"Unstarred", (unsigned long)done];
+                    starred ? @"Starred" : @"Unstarred", (unsigned long)result.done];
             }
             [_outlineView reloadData];
         });
@@ -925,21 +912,21 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
         return;
     }
 
+    std::vector<navidrome::BrowserNodePtr> core;
+    core.reserve(songs.count);
+    for (NavidromeNode *n in songs)
+        core.push_back(std::make_shared<navidrome::BrowserNode>([n coreNode]));
+
     [_spinner startAnimation:nil];
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        NSError *err = nil;
-        for (NavidromeNode *n in songs) {
-            NSError *one = nil;
-            if ([SubsonicClient.sharedClient setRating:rating forSongId:n.nodeId error:&one])
-                n.rating = rating;
-            else if (!err)
-                err = one;
-        }
-        syncSongNodesToPlaylists(songs);
+        // Shared with Windows — see navidrome::applyRatingToNodes.
+        auto result = navidrome::applyRatingToNodes(browserClient(), core, (int)rating);
         dispatch_async(dispatch_get_main_queue(), ^{
             [_spinner stopAnimation:nil];
-            _statusLabel.stringValue = err
-                ? [NSString stringWithFormat:@"Error: %@", err.localizedDescription]
+            for (NSUInteger i = 0; i < songs.count; i++)
+                songs[i].rating = core[i]->rating;
+            _statusLabel.stringValue = !result.error.empty()
+                ? [NSString stringWithFormat:@"Error: %s", result.error.c_str()]
                 : [NSString stringWithFormat:@"Rated %lu song(s)", (unsigned long)songs.count];
             [_outlineView reloadData];
         });

@@ -47,11 +47,7 @@ private:
 class navidrome_art_extractor : public album_art_extractor {
 public:
     bool is_our_path(const char* p_path, const char* /*p_ext*/) override {
-        if (!p_path) return false;
-        // New: navidrome:// URIs from the input handler.
-        if (strncmp(p_path, "navidrome://", 12) == 0) return true;
-        // Legacy: raw HTTP stream URLs (pre-URI-scheme playlists).
-        return strstr(p_path, "/rest/stream.view") != nullptr;
+        return navidrome::isNavidromeArtPath(p_path);
     }
 
     album_art_extractor_instance_ptr open(file_ptr /*p_file*/,

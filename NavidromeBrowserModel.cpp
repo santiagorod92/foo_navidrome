@@ -158,4 +158,62 @@ std::vector<std::string> collectSongIdsDeep(IBrowserClient& client,
     return ids;
 }
 
+StarRatingResult applyStarredToNodes(IBrowserClient& client,
+                                     const std::vector<BrowserNodePtr>& targets,
+                                     bool starred) {
+    StarRatingResult result;
+    for (const auto& n : targets) {
+        StarKind kind = StarKind::Song;
+        if (n->type == BrowserNode::Album)  kind = StarKind::Album;
+        if (n->type == BrowserNode::Artist) kind = StarKind::Artist;
+
+        std::string one;
+        if (client.setStarred(starred, n->id, kind, one)) {
+            n->starred = starred;
+            ++result.done;
+        } else if (result.error.empty()) {
+            result.error = one;
+        }
+    }
+    syncBrowserNodesToPlaylists(targets);
+    return result;
+}
+
+StarRatingResult applyRatingToNodes(IBrowserClient& client,
+                                    const std::vector<BrowserNodePtr>& targets,
+                                    int stars) {
+    StarRatingResult result;
+    for (const auto& n : targets) {
+        std::string one;
+        if (client.setRating(stars, n->id, one)) {
+            n->rating = stars;
+            ++result.done;
+        } else if (result.error.empty()) {
+            result.error = one;
+        }
+    }
+    syncBrowserNodesToPlaylists(targets);
+    return result;
+}
+
+namespace {
+std::vector<BrowserNodePtr> songsToNodes(const std::vector<Song>& songs) {
+    std::vector<BrowserNodePtr> nodes;
+    nodes.reserve(songs.size());
+    for (const auto& s : songs) nodes.push_back(makeSongNode(s));
+    return nodes;
+}
+} // namespace
+
+std::vector<BrowserNodePtr> fetchSimilarSongs(IBrowserClient& client,
+                                              const std::string& itemId, int count,
+                                              std::string& outError) {
+    return songsToNodes(client.getSimilarSongs(itemId, count, outError));
+}
+
+std::vector<BrowserNodePtr> fetchRandomMix(IBrowserClient& client, int count,
+                                           std::string& outError) {
+    return songsToNodes(client.getRandomSongs(count, outError));
+}
+
 } // namespace navidrome

@@ -976,10 +976,20 @@ struct WinBrowserClient final : navidrome::IBrowserClient {
         return c.getRadioStations(e); }
     std::vector<navidrome::Bookmark> getBookmarks(std::string& e) override {
         return c.getBookmarks(e); }
+    std::vector<navidrome::Song> getSimilarSongs(const std::string& id, int n,
+                                                 std::string& e) override {
+        return c.getSimilarSongs(id, n, e); }
+    std::vector<navidrome::Song> getRandomSongs(int n, std::string& e) override {
+        return c.getRandomSongs(n, e); }
     std::vector<std::string> groupingLibraryIds() override {
         return c.libraryGroupingIds(); }
     std::vector<navidrome::MusicFolder> musicFolders() override {
         return c.cachedMusicFolders(); }
+    bool setStarred(bool starred, const std::string& id, navidrome::StarKind kind,
+                    std::string& e) override {
+        return c.setStarred(starred, id, kind, e); }
+    bool setRating(int stars, const std::string& id, std::string& e) override {
+        return c.setRating(stars, id, e); }
 };
 
 navidrome::IBrowserClient& browserClient() {
@@ -1016,10 +1026,6 @@ void BrowserWindow::loadArtists() {
 // syncBrowserNodesToPlaylists (the search + rate/star rating push-back) is
 // shared with macOS — see NavidromeBrowserModel.h.
 using navidrome::syncBrowserNodesToPlaylists;
-
-// Song -> tree node (browse tree, "Play Similar", search results). Shared with
-// macOS — see navidrome::makeSongNode() in NavidromeBrowserModel.h.
-using navidrome::makeSongNode;
 
 // ---------------------------------------------------------------------------
 // Child fetch (synchronous \u2014 background thread only)
@@ -1337,10 +1343,7 @@ void BrowserWindow::OnPlaySimilar(UINT, int, HWND) {
     dbgLog("OnPlaySimilar fired");
     auto selected = selectedNodes();
     auto node = selected.empty() ? nullptr : selected.front();
-    if (!node || node->id.empty() ||
-        (node->type != NavidromeNode::Artist &&
-         node->type != NavidromeNode::Album &&
-         node->type != NavidromeNode::Song)) {
+    if (!node || !navidrome::isSimilarEligible(*node)) {
         setStatus("Play Similar needs an artist, album, or song");
         return;
     }
@@ -1349,10 +1352,7 @@ void BrowserWindow::OnPlaySimilar(UINT, int, HWND) {
     std::string itemId = node->id;
     std::thread([this, itemId]() {
         std::string err;
-        auto songs = navidrome::SubsonicClientWin::get().getSimilarSongs(itemId, 50, err);
-        std::vector<std::shared_ptr<NavidromeNode>> nodes;
-        for (auto& s : songs) nodes.push_back(makeSongNode(s));
-
+        auto nodes = navidrome::fetchSimilarSongs(browserClient(), itemId, 50, err);
         fb2k::inMainThread([this, nodes, err]() mutable {
             if (!IsWindow()) return;
             if (!err.empty()) { setStatus("Error: " + err); return; }
@@ -1369,10 +1369,7 @@ void BrowserWindow::OnRandomMix(UINT, int, HWND) {
     setStatus("Fetching random mix…");
     std::thread([this]() {
         std::string err;
-        auto songs = navidrome::SubsonicClientWin::get().getRandomSongs(100, err);
-        std::vector<std::shared_ptr<NavidromeNode>> nodes;
-        for (auto& s : songs) nodes.push_back(makeSongNode(s));
-
+        auto nodes = navidrome::fetchRandomMix(browserClient(), 100, err);
         fb2k::inMainThread([this, nodes, err]() mutable {
             if (!IsWindow()) return;
             if (!err.empty()) { setStatus("Error: " + err); return; }
@@ -1510,28 +1507,13 @@ void BrowserWindow::applyStarred(bool starred) {
     if (targets.empty()) { setStatus("Select a song, album or artist first"); return; }
 
     std::thread([this, targets, starred]() {
-        std::string err;
-        std::size_t done = 0;
-        for (auto& n : targets) {
-            navidrome::StarKind kind = navidrome::StarKind::Song;
-            if (n->type == NavidromeNode::Album)  kind = navidrome::StarKind::Album;
-            if (n->type == NavidromeNode::Artist) kind = navidrome::StarKind::Artist;
-
-            std::string one;
-            if (navidrome::SubsonicClientWin::get().setStarred(starred, n->id, kind, one)) {
-                n->starred = starred;
-                ++done;
-            } else if (err.empty()) {
-                err = one;
-            }
-        }
-        syncBrowserNodesToPlaylists(targets);
-        fb2k::inMainThread([this, targets, starred, done, err]() {
+        auto result = navidrome::applyStarredToNodes(browserClient(), targets, starred);
+        fb2k::inMainThread([this, targets, starred, result]() {
             if (!IsWindow()) return;
             for (auto& n : targets) refreshLabel(n);
-            setStatus(err.empty()
-                ? (starred ? "Starred " : "Unstarred ") + std::to_string(done) + " item(s)"
-                : "Error: " + err);
+            setStatus(result.error.empty()
+                ? (starred ? "Starred " : "Unstarred ") + std::to_string(result.done) + " item(s)"
+                : "Error: " + result.error);
         });
     }).detach();
 }
@@ -1580,24 +1562,13 @@ void BrowserWindow::OnRate(UINT, int id, HWND) {
     if (songs.empty()) { dbgLog("OnRate: no song-type nodes selected, aborting"); setStatus("Select one or more songs to rate"); return; }
 
     std::thread([this, songs, stars]() {
-        std::string err;
-        for (auto& n : songs) {
-            std::string one;
-            bool ok = navidrome::SubsonicClientWin::get().setRating(stars, n->id, one);
-            dbgLog("OnRate: setRating(stars=" + std::to_string(stars) + ", id=" + n->id +
-                   ") -> " + (ok ? "OK" : "FAIL: " + one));
-            if (ok)
-                n->rating = stars;
-            else if (err.empty())
-                err = one;
-        }
-        syncBrowserNodesToPlaylists(songs);
-        fb2k::inMainThread([this, songs, err]() {
+        auto result = navidrome::applyRatingToNodes(browserClient(), songs, stars);
+        fb2k::inMainThread([this, songs, result]() {
             if (!IsWindow()) return;
             for (auto& n : songs) refreshLabel(n);
-            setStatus(err.empty()
+            setStatus(result.error.empty()
                 ? "Rated " + std::to_string(songs.size()) + " song(s)"
-                : "Error: " + err);
+                : "Error: " + result.error);
         });
     }).detach();
 }
