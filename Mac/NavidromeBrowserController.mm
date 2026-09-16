@@ -94,6 +94,7 @@ static std::string NBCStr(NSString *x) {
     n.starred     = c.starred;
     n.rating      = c.rating;
     n.bookmarkPositionMs = c.bookmarkPositionMs;
+    n.infoText    = c.infoText.empty()   ? nil : @(c.infoText.c_str());
     n.childrenLoaded = c.childrenLoaded;
     n.children    = [NSMutableArray array];
     return n;
@@ -117,6 +118,7 @@ static std::string NBCStr(NSString *x) {
     c.starred    = self.starred ? true : false;
     c.rating     = (int)self.rating;
     c.bookmarkPositionMs = self.bookmarkPositionMs;
+    c.infoText   = NBCStr(self.infoText);
     c.childrenLoaded = self.childrenLoaded ? true : false;
     return c;
 }
@@ -336,6 +338,18 @@ NBCWrapList(const std::vector<navidrome::BrowserNodePtr> &nodes) {
                                                      action:@selector(deleteRadioStation:)
                                               keyEquivalent:@""];
     deleteRadioItem.target = self;
+
+    // Podcast channels. Like radio, "Subscribe" needs no selection. No update
+    // endpoint — Subsonic's podcast API is subscribe/unsubscribe only.
+    [rowMenu addItem:[NSMenuItem separatorItem]];
+    NSMenuItem *subscribePodcastItem = [rowMenu addItemWithTitle:@"Subscribe to Podcast…"
+                                                           action:@selector(subscribePodcast:)
+                                                    keyEquivalent:@""];
+    subscribePodcastItem.target = self;
+    NSMenuItem *unsubscribePodcastItem = [rowMenu addItemWithTitle:@"Unsubscribe from Podcast…"
+                                                             action:@selector(unsubscribePodcast:)
+                                                      keyEquivalent:@""];
+    unsubscribePodcastItem.target = self;
 
     [rowMenu addItem:[NSMenuItem separatorItem]];
     NSMenuItem *uploadItem = [rowMenu addItemWithTitle:@"Send Active Playlist to Navidrome"
@@ -1552,6 +1566,84 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
     });
 }
 
+// Exactly one podcast channel row selected, or nil.
+- (NavidromeNode *)singleSelectedPodcastChannel {
+    NSArray<NavidromeNode *> *sel = [self selectedNodes];
+    if (sel.count != 1) return nil;
+    return sel[0].type == NavidromeNodeTypePodcastChannel ? sel[0] : nil;
+}
+
+// Drop the whole Podcasts category — used when a channel is subscribed/unsubscribed.
+- (void)invalidatePodcastsCategory {
+    for (NavidromeNode *root in _rootNodes) {
+        if (root.type != NavidromeNodeTypeCategory ||
+            root.categoryKind != NavidromeCategoryPodcasts) continue;
+        [root.children removeAllObjects];
+        root.childrenLoaded = NO;
+        [_outlineView collapseItem:root];
+        [_outlineView reloadItem:root reloadChildren:YES];
+        return;
+    }
+}
+
+// Unlike editing a radio station, Subsonic's podcast API has no update
+// endpoint — only subscribe (create) and unsubscribe (delete).
+- (IBAction)subscribePodcast:(id)sender {
+    NSString *url = [self promptForText:@"Subscribe to Podcast"
+                                 message:@"Podcast RSS feed URL:"
+                            initialValue:@""];
+    if (url.length == 0) return;
+
+    _statusLabel.stringValue = @"Subscribing…";
+    [_spinner startAnimation:nil];
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSError *err = nil;
+        [SubsonicClient.sharedClient createPodcastChannelWithURL:url error:&err];
+        BOOL ok = err == nil;
+        if (!ok) NAVIDROME_WARN("UI", "subscribePodcast \"" + NBCStr(url) + "\" failed: " +
+                                 NBCStr(err.localizedDescription));
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self->_spinner stopAnimation:nil];
+            self->_statusLabel.stringValue = ok
+                ? @"Subscribed"
+                : [NSString stringWithFormat:@"Failed: %@",
+                   err.localizedDescription ?: @"unknown error"];
+            if (ok) [self invalidatePodcastsCategory];
+        });
+    });
+}
+
+- (IBAction)unsubscribePodcast:(id)sender {
+    NavidromeNode *node = [self singleSelectedPodcastChannel];
+    if (!node) { _statusLabel.stringValue = @"Select a single podcast"; return; }
+
+    NSAlert *confirm = [[NSAlert alloc] init];
+    confirm.messageText = [NSString stringWithFormat:@"Unsubscribe from “%@”?", node.displayName];
+    confirm.informativeText = @"Downloaded episodes are removed from the server.";
+    confirm.alertStyle = NSAlertStyleWarning;
+    [confirm addButtonWithTitle:@"Unsubscribe"];
+    [confirm addButtonWithTitle:@"Cancel"];
+    if ([confirm runModal] != NSAlertFirstButtonReturn) return;
+
+    NSString *channelId = node.nodeId;
+    NSString *channelName = node.displayName;
+    [_spinner startAnimation:nil];
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSError *err = nil;
+        BOOL ok = [SubsonicClient.sharedClient deletePodcastChannel:channelId error:&err];
+        if (!ok) NAVIDROME_WARN("UI", "unsubscribePodcast \"" + NBCStr(channelName) + "\" failed: " +
+                                 NBCStr(err.localizedDescription));
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self->_spinner stopAnimation:nil];
+            self->_statusLabel.stringValue = ok
+                ? [NSString stringWithFormat:@"Unsubscribed from “%@”", channelName]
+                : [NSString stringWithFormat:@"Failed: %@",
+                   err.localizedDescription ?: @"unknown error"];
+            if (ok) [self invalidatePodcastsCategory];
+        });
+    });
+}
+
 // Modal 3-field prompt (name / stream URL / home page URL). Returns NO if
 // cancelled, in which case the out params are left untouched.
 - (BOOL)promptForRadioStationWithTitle:(NSString *)title
@@ -1738,6 +1830,10 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
         if (!d.bookmarkText.empty()) {
             NSString *bm = @(d.bookmarkText.c_str());
             sub = sub.length ? [NSString stringWithFormat:@"%@  %@", sub, bm] : bm;
+        }
+        if (!d.infoText.empty()) {
+            NSString *info = @(d.infoText.c_str());
+            sub = sub.length ? [NSString stringWithFormat:@"%@  %@", sub, info] : info;
         }
         cell.stringValue = sub;
         cell.textColor = [NSColor secondaryLabelColor];

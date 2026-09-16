@@ -1093,15 +1093,16 @@ void testBrowserModel() {
 
     // --- category list: canonical order, titles, all Category type ---
     auto cats = navidrome::buildCategoryNodes();
-    check(cats.size() == 9, "buildCategoryNodes returns the 9 smart lists");
+    check(cats.size() == 11, "buildCategoryNodes returns the 11 smart lists");
     const BrowserNode::CategoryKind expectedOrder[] = {
         BrowserNode::CatStarred, BrowserNode::CatRecentlyAdded,
         BrowserNode::CatMostPlayed, BrowserNode::CatRecentlyPlayed,
         BrowserNode::CatRandom, BrowserNode::CatGenres,
         BrowserNode::CatPlaylists, BrowserNode::CatBookmarks,
-        BrowserNode::CatRadio,
+        BrowserNode::CatRadio, BrowserNode::CatPodcasts,
+        BrowserNode::CatNowPlaying,
     };
-    bool orderOk = cats.size() == 9;
+    bool orderOk = cats.size() == 11;
     for (size_t i = 0; i < cats.size() && orderOk; ++i)
         orderOk = cats[i]->type == BrowserNode::Category &&
                   cats[i]->category == expectedOrder[i] &&
@@ -1200,6 +1201,28 @@ void testBrowserModel() {
           "an unrated, unbookmarked, zero-length song shows just its title");
     check(navidrome::singleColumnLabel(*pn) == "Plain",
           "singleColumnLabel adds nothing when there are no markers");
+
+    // --- podcast episode / now-playing infoText ---
+    navidrome::PodcastEpisode pendingEp;
+    pendingEp.id = "ep1"; pendingEp.streamId = "s10"; pendingEp.title = "Pending";
+    pendingEp.status = "downloading";
+    auto pendingNode = navidrome::makePodcastEpisodeNode(pendingEp);
+    check(pendingNode->id.empty(),
+          "a not-yet-downloaded episode gets no id -> automatically unplayable");
+    check(navidrome::nodeDisplay(*pendingNode).infoText == "downloading",
+          "an undownloaded episode's status shows as infoText");
+
+    navidrome::PodcastEpisode doneEp;
+    doneEp.id = "ep2"; doneEp.streamId = "s11"; doneEp.title = "Done"; doneEp.status = "completed";
+    auto doneNode = navidrome::makePodcastEpisodeNode(doneEp);
+    check(doneNode->id == "s11" && navidrome::nodeDisplay(*doneNode).infoText.empty(),
+          "a completed episode's id is its streamId, with no status annotation");
+
+    navidrome::BrowserNode nowPlaying;
+    nowPlaying.type = BrowserNode::Song;
+    nowPlaying.infoText = "alice \xC2\xB7 3m ago";
+    check(navidrome::singleColumnLabel(nowPlaying) == "  alice \xC2\xB7 3m ago",
+          "singleColumnLabel appends infoText (Now Playing's user/time annotation)");
 }
 
 // A recording IBrowserClient: every call appends its name to `calls` and
@@ -1273,6 +1296,25 @@ struct FakeBrowserClient : navidrome::IBrowserClient {
         navidrome::Bookmark b; b.song.id = "s5"; b.song.title = "Resume"; b.positionMs = 5000;
         return one("getBookmarks", e, b);
     }
+    std::vector<navidrome::PodcastChannel> getPodcastChannels(std::string& e) override {
+        navidrome::PodcastChannel c; c.id = "ch1"; c.title = "Channel"; c.description = "A show";
+        return one("getPodcastChannels", e, c);
+    }
+    std::vector<navidrome::PodcastEpisode> getPodcastEpisodes(const std::string& channelId,
+                                                               std::string& e) override {
+        calls.push_back("getPodcastEpisodes:" + channelId);
+        e = error;
+        if (!error.empty()) return {};
+        navidrome::PodcastEpisode done, pending;
+        done.id = "ep1"; done.streamId = "s8"; done.title = "Done episode"; done.status = "completed";
+        pending.id = "ep2"; pending.title = "Pending episode"; pending.status = "downloading";
+        return { done, pending };
+    }
+    std::vector<navidrome::NowPlayingEntry> getNowPlaying(std::string& e) override {
+        navidrome::NowPlayingEntry np;
+        np.song.id = "s9"; np.song.title = "Live"; np.username = "alice"; np.minutesAgo = 3;
+        return one("getNowPlaying", e, np);
+    }
     std::vector<navidrome::Song> getSimilarSongs(const std::string& id, int count,
                                                  std::string& e) override {
         calls.push_back("getSimilarSongs:" + id + ":" + std::to_string(count));
@@ -1323,8 +1365,8 @@ void testBrowserFetchDispatch() {
         std::string err;
         auto roots = navidrome::buildRootNodes(fc, err);
         check(err.empty(), "flat root load reports no error");
-        check(roots.size() == 10 && roots.back()->type == BrowserNode::Artist,
-              "flat roots = 9 categories + the artist list");
+        check(roots.size() == 12 && roots.back()->type == BrowserNode::Artist,
+              "flat roots = 11 categories + the artist list");
         check(roots.front()->type == BrowserNode::Category,
               "categories come first in the root list");
     }
@@ -1332,9 +1374,9 @@ void testBrowserFetchDispatch() {
         FakeBrowserClient fc; fc.groupIds = {"1", "2"};
         std::string err;
         auto roots = navidrome::buildRootNodes(fc, err);
-        check(roots.size() == 11, "grouped roots = 9 categories + 2 library nodes");
-        check(roots[9]->type == BrowserNode::Library && roots[9]->id == "1" &&
-              roots[9]->displayName == "Music" && roots[10]->displayName == "Podcasts",
+        check(roots.size() == 13, "grouped roots = 11 categories + 2 library nodes");
+        check(roots[11]->type == BrowserNode::Library && roots[11]->id == "1" &&
+              roots[11]->displayName == "Music" && roots[12]->displayName == "Podcasts",
               "library nodes carry the folder id and resolved name");
         bool calledGetArtists = false;
         for (auto& c : fc.calls) if (c == "getArtists") calledGetArtists = true;
@@ -1396,6 +1438,32 @@ void testBrowserFetchDispatch() {
         check(fc.calls[0] == "getBookmarks" && out.size() == 1 &&
               out[0]->type == BrowserNode::Song && out[0]->bookmarkPositionMs == 5000,
               "the Bookmarks category yields song nodes carrying the resume position");
+    }
+    {
+        FakeBrowserClient fc; std::string err;
+        auto out = navidrome::fetchChildren(fc, cat(BrowserNode::CatPodcasts), err);
+        check(fc.calls[0] == "getPodcastChannels" && out.size() == 1 &&
+              out[0]->type == BrowserNode::PodcastChannel && out[0]->id == "ch1",
+              "the Podcasts category yields channel nodes (a cheap list call)");
+    }
+    {
+        FakeBrowserClient fc; std::string err;
+        BrowserNode ch; ch.type = BrowserNode::PodcastChannel; ch.id = "ch1";
+        auto out = navidrome::fetchChildren(fc, ch, err);
+        check(fc.calls[0] == "getPodcastEpisodes:ch1" && out.size() == 2,
+              "a channel node's own expand scopes getPodcastEpisodes to that channel");
+        check(out[0]->id == "s8" && out[0]->infoText.empty(),
+              "a completed episode is playable (id = streamId) with no status annotation");
+        check(out[1]->id.empty() && out[1]->infoText == "downloading",
+              "a still-downloading episode has no id (unplayable) and shows its status");
+    }
+    {
+        FakeBrowserClient fc; std::string err;
+        auto out = navidrome::fetchChildren(fc, cat(BrowserNode::CatNowPlaying), err);
+        check(fc.calls[0] == "getNowPlaying" && out.size() == 1 &&
+              out[0]->type == BrowserNode::Song && out[0]->id == "s9" &&
+              out[0]->infoText == "alice \xC2\xB7 3m ago",
+              "the Now Playing category yields song nodes annotated with user + minutesAgo");
     }
     {
         FakeBrowserClient fc; std::string err;

@@ -976,6 +976,13 @@ struct WinBrowserClient final : navidrome::IBrowserClient {
         return c.getRadioStations(e); }
     std::vector<navidrome::Bookmark> getBookmarks(std::string& e) override {
         return c.getBookmarks(e); }
+    std::vector<navidrome::PodcastChannel> getPodcastChannels(std::string& e) override {
+        return c.getPodcastChannels(e); }
+    std::vector<navidrome::PodcastEpisode> getPodcastEpisodes(const std::string& id,
+                                                               std::string& e) override {
+        return c.getPodcastEpisodes(id, e); }
+    std::vector<navidrome::NowPlayingEntry> getNowPlaying(std::string& e) override {
+        return c.getNowPlaying(e); }
     std::vector<navidrome::Song> getSimilarSongs(const std::string& id, int n,
                                                  std::string& e) override {
         return c.getSimilarSongs(id, n, e); }
@@ -1474,6 +1481,11 @@ void BrowserWindow::OnContextMenu(CWindow wnd, CPoint point) {
     menu.AppendMenu(MF_STRING, IDC_NEW_RADIO,    L"New Radio Station…");
     menu.AppendMenu(MF_STRING, IDC_EDIT_RADIO,   L"Edit Radio Station…");
     menu.AppendMenu(MF_STRING, IDC_DELETE_RADIO, L"Delete Radio Station…");
+
+    // Podcast channels. Like radio, "Subscribe" needs no selection.
+    menu.AppendMenu(MF_SEPARATOR);
+    menu.AppendMenu(MF_STRING, IDC_SUBSCRIBE_PODCAST,   L"Subscribe to Podcast…");
+    menu.AppendMenu(MF_STRING, IDC_UNSUBSCRIBE_PODCAST, L"Unsubscribe from Podcast…");
 
     menu.AppendMenu(MF_SEPARATOR);
     menu.AppendMenu(MF_STRING, IDC_SEND_PLAYLIST,
@@ -2027,6 +2039,74 @@ void BrowserWindow::OnDeleteRadioStation(UINT, int, HWND) {
             setStatus(ok ? "Deleted \"" + name + "\""
                          : "Failed: " + (err.empty() ? "unknown error" : err));
             if (ok) { invalidateRadioCategory(); refreshRadioStations(); }
+        });
+    }).detach();
+}
+
+// ---------------------------------------------------------------------------
+// Podcast channel management
+// ---------------------------------------------------------------------------
+std::shared_ptr<NavidromeNode> BrowserWindow::singleSelectedPodcastChannel() {
+    auto sel = selectedNodes();
+    if (sel.size() != 1 || sel[0]->type != NavidromeNode::PodcastChannel) return nullptr;
+    return sel[0];
+}
+
+void BrowserWindow::invalidatePodcastsCategory() {
+    for (auto& root : m_rootNodes) {
+        if (root->type == NavidromeNode::Category &&
+            root->category == NavidromeNode::CatPodcasts) {
+            reloadNodeChildren(root);
+            return;
+        }
+    }
+}
+
+// Unlike editing a radio station, Subsonic's podcast API has no update
+// endpoint — only subscribe (create) and unsubscribe (delete).
+void BrowserWindow::OnSubscribePodcast(UINT, int, HWND) {
+    std::wstring url;
+    if (!TextPromptWindow::run(*this, L"Subscribe to Podcast",
+                               L"Podcast RSS feed URL:", L"", url))
+        return;
+    std::string urlU8 = wToU8(url);
+    if (urlU8.empty()) { setStatus("A feed URL is required"); return; }
+
+    setStatus("Subscribing…");
+    std::thread([this, urlU8]() {
+        std::string err;
+        navidrome::SubsonicClientWin::get().createPodcastChannel(urlU8, err);
+        bool ok = err.empty();
+        if (!ok) NAVIDROME_WARN("UI", "OnSubscribePodcast \"" + urlU8 + "\" failed: " + err);
+        fb2k::inMainThread([this, ok, err]() {
+            if (!IsWindow()) return;
+            setStatus(ok ? "Subscribed" : "Failed: " + (err.empty() ? "unknown error" : err));
+            if (ok) invalidatePodcastsCategory();
+        });
+    }).detach();
+}
+
+void BrowserWindow::OnUnsubscribePodcast(UINT, int, HWND) {
+    auto node = singleSelectedPodcastChannel();
+    if (!node) { setStatus("Select a single podcast"); return; }
+
+    std::wstring prompt = L"Unsubscribe from \"" + u8ToWide(node->displayName) +
+                          L"\"?\r\n\r\nDownloaded episodes are removed from the server.";
+    if (MessageBoxW(prompt.c_str(), L"Unsubscribe from podcast",
+                    MB_ICONWARNING | MB_YESNO | MB_DEFBUTTON2) != IDYES)
+        return;
+
+    const std::string channelId = node->id;
+    const std::string name      = node->displayName;
+    std::thread([this, channelId, name]() {
+        std::string err;
+        bool ok = navidrome::SubsonicClientWin::get().deletePodcastChannel(channelId, err);
+        if (!ok) NAVIDROME_WARN("UI", "OnUnsubscribePodcast \"" + name + "\" failed: " + err);
+        fb2k::inMainThread([this, name, ok, err]() {
+            if (!IsWindow()) return;
+            setStatus(ok ? "Unsubscribed from \"" + name + "\""
+                         : "Failed: " + (err.empty() ? "unknown error" : err));
+            if (ok) invalidatePodcastsCategory();
         });
     }).detach();
 }

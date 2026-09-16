@@ -98,6 +98,37 @@ navidrome::MusicFolder conv(SubsonicMusicFolder *f) {
     return r;
 }
 
+navidrome::PodcastChannel conv(SubsonicPodcastChannel *c) {
+    navidrome::PodcastChannel r;
+    r.id           = str(c.channelId);
+    r.url          = str(c.url);
+    r.title        = str(c.title);
+    r.description  = str(c.channelDescription);
+    r.status       = str(c.status);
+    r.errorMessage = str(c.errorMessage);
+    return r;
+}
+
+navidrome::PodcastEpisode conv(SubsonicPodcastEpisode *e) {
+    navidrome::PodcastEpisode r;
+    r.id          = str(e.episodeId);
+    r.streamId    = str(e.streamId);
+    r.channelId   = str(e.channelId);
+    r.title       = str(e.title);
+    r.description = str(e.episodeDescription);
+    r.status      = str(e.status);
+    r.duration    = e.duration;
+    return r;
+}
+
+navidrome::NowPlayingEntry conv(SubsonicNowPlayingEntry *x) {
+    navidrome::NowPlayingEntry r;
+    r.song       = conv(x.song);
+    r.username   = str(x.username);
+    r.minutesAgo = (int)x.minutesAgo;
+    return r;
+}
+
 // Map an ObjC array to std::vector<navidrome::X> via the matching conv()
 // overload. The element type is given explicitly, so nothing is deduced from
 // the (generics-erased) NSArray type.
@@ -192,6 +223,26 @@ struct MacBrowserClient final : navidrome::IBrowserClient {
     std::vector<navidrome::Bookmark> getBookmarks(std::string& e) override {
         NSError *err = nil;
         auto v = mapArr<SubsonicBookmark>([client getBookmarksWithError:&err]);
+        e = errString(err);
+        return v;
+    }
+    std::vector<navidrome::PodcastChannel> getPodcastChannels(std::string& e) override {
+        NSError *err = nil;
+        auto v = mapArr<SubsonicPodcastChannel>([client getPodcastChannelsWithError:&err]);
+        e = errString(err);
+        return v;
+    }
+    std::vector<navidrome::PodcastEpisode> getPodcastEpisodes(const std::string& channelId,
+                                                               std::string& e) override {
+        NSError *err = nil;
+        auto v = mapArr<SubsonicPodcastEpisode>(
+            [client getPodcastEpisodesForChannel:@(channelId.c_str()) error:&err]);
+        e = errString(err);
+        return v;
+    }
+    std::vector<navidrome::NowPlayingEntry> getNowPlaying(std::string& e) override {
+        NSError *err = nil;
+        auto v = mapArr<SubsonicNowPlayingEntry>([client getNowPlayingWithError:&err]);
         e = errString(err);
         return v;
     }

@@ -734,6 +734,70 @@ bool SubsonicCore::deleteRadioStation(const std::string& id, std::string& outErr
 }
 
 // ---------------------------------------------------------------------------
+// Podcasts
+// ---------------------------------------------------------------------------
+std::vector<PodcastChannel> SubsonicCore::getPodcastChannels(std::string& outError) {
+    std::string body = httpGet(buildURL("getPodcasts.view"), outError);
+    if (body.empty()) return {};
+    auto root = checkResponse(body, outError);
+    if (root.isNull()) return {};
+
+    std::vector<PodcastChannel> result;
+    for (auto* c : root["podcasts"]["channel"].items())
+        result.push_back(parsePodcastChannel(*c));
+    return result;
+}
+
+std::vector<PodcastEpisode> SubsonicCore::getPodcastEpisodes(const std::string& channelId,
+                                                              std::string& outError) {
+    if (channelId.empty()) return {};
+    std::string params = "id=" + enc(channelId) + "&includeEpisodes=true";
+    std::string body = httpGet(buildURL("getPodcasts.view", params), outError);
+    if (body.empty()) return {};
+    auto root = checkResponse(body, outError);
+    if (root.isNull()) return {};
+
+    std::vector<PodcastEpisode> result;
+    for (auto* c : root["podcasts"]["channel"].items())
+        for (auto* e : (*c)["episode"].items())
+            result.push_back(parsePodcastEpisode(*e));
+    return result;
+}
+
+std::string SubsonicCore::createPodcastChannel(const std::string& url, std::string& outError) {
+    if (url.empty()) return "";
+    std::string body = httpGet(buildURL("createPodcastChannel.view", "url=" + enc(url)), outError);
+    if (body.empty()) return "";
+    if (checkResponse(body, outError).isNull()) return "";
+    // Like createInternetRadioStation.view, Subsonic doesn't echo the new
+    // channel's id back — report success with an empty id, callers must check
+    // outError, not this string.
+    return "";
+}
+
+bool SubsonicCore::deletePodcastChannel(const std::string& id, std::string& outError) {
+    if (id.empty()) return false;
+    std::string body = httpGet(buildURL("deletePodcastChannel.view", "id=" + enc(id)), outError);
+    if (body.empty()) return false;
+    return !checkResponse(body, outError).isNull();
+}
+
+// ---------------------------------------------------------------------------
+// Now playing
+// ---------------------------------------------------------------------------
+std::vector<NowPlayingEntry> SubsonicCore::getNowPlaying(std::string& outError) {
+    std::string body = httpGet(buildURL("getNowPlaying.view"), outError);
+    if (body.empty()) return {};
+    auto root = checkResponse(body, outError);
+    if (root.isNull()) return {};
+
+    std::vector<NowPlayingEntry> result;
+    for (auto* e : root["nowPlaying"]["entry"].items())
+        result.push_back(parseNowPlayingEntry(*e));
+    return result;
+}
+
+// ---------------------------------------------------------------------------
 // Bookmarks
 // ---------------------------------------------------------------------------
 std::vector<Bookmark> SubsonicCore::getBookmarks(std::string& outError) {

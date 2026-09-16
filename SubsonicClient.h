@@ -82,6 +82,37 @@
 @property (nonatomic, copy) NSString *comment;
 @end
 
+// A podcast episode (getPodcasts.view). Only playable once status is
+// "completed" — streamId is the underlying library track id in that case.
+@interface SubsonicPodcastEpisode : NSObject
+@property (nonatomic, copy) NSString *episodeId;
+@property (nonatomic, copy) NSString *streamId;
+@property (nonatomic, copy) NSString *channelId;
+@property (nonatomic, copy) NSString *title;
+@property (nonatomic, copy) NSString *episodeDescription;
+@property (nonatomic, copy) NSString *status;
+@property (nonatomic, assign) NSTimeInterval duration;
+@end
+
+// A subscribed podcast channel (getPodcasts.view). Episodes are fetched
+// separately, scoped to this channel's id.
+@interface SubsonicPodcastChannel : NSObject
+@property (nonatomic, copy) NSString *channelId;
+@property (nonatomic, copy) NSString *url;
+@property (nonatomic, copy) NSString *title;
+@property (nonatomic, copy) NSString *channelDescription;
+@property (nonatomic, copy) NSString *status;
+@property (nonatomic, copy) NSString *errorMessage;
+@end
+
+// One entry from getNowPlaying.view — a song another user is currently (or
+// was recently) streaming, server-wide.
+@interface SubsonicNowPlayingEntry : NSObject
+@property (nonatomic, strong) SubsonicSong *song;
+@property (nonatomic, copy) NSString *username;
+@property (nonatomic, assign) NSInteger minutesAgo;
+@end
+
 // Item kinds accepted by star.view / unstar.view — Subsonic names the query
 // parameter differently per kind (id / albumId / artistId).
 typedef NS_ENUM(NSInteger, SubsonicStarKind) {
@@ -222,6 +253,20 @@ typedef NS_ENUM(NSInteger, SubsonicStarKind) {
                 homePageUrl:(NSString *)homePageUrl
                       error:(NSError **)error;
 - (BOOL)deleteRadioStation:(NSString *)stationId error:(NSError **)error;
+
+// Podcasts (getPodcasts.view). getChannelsWithError is the cheap list call
+// (no episodes); getEpisodesForChannel scopes to one channel with
+// includeEpisodes=true. createPodcastChannel has the same empty-string-on-
+// success caveat as createRadioStation — Subsonic doesn't echo the new
+// channel's id back either. No update endpoint — subscribe/unsubscribe only.
+- (NSArray<SubsonicPodcastChannel *> *)getPodcastChannelsWithError:(NSError **)error;
+- (NSArray<SubsonicPodcastEpisode *> *)getPodcastEpisodesForChannel:(NSString *)channelId
+                                                                error:(NSError **)error;
+- (NSString *)createPodcastChannelWithURL:(NSString *)url error:(NSError **)error;
+- (BOOL)deletePodcastChannel:(NSString *)channelId error:(NSError **)error;
+
+// Who's currently listening, server-wide (getNowPlaying.view).
+- (NSArray<SubsonicNowPlayingEntry *> *)getNowPlayingWithError:(NSError **)error;
 
 // Saved resume positions (getBookmarks.view). createBookmark is an upsert —
 // Subsonic overwrites any existing bookmark for the same song.

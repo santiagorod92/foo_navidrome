@@ -90,6 +90,10 @@ std::vector<BrowserNodePtr> fetchChildren(IBrowserClient& client,
             // and keeps a single request per expansion.
             for (const auto& s : client.getSongsForGenre(node.id, 500, outError)) addSong(s);
             break;
+        case BrowserNode::PodcastChannel:
+            for (const auto& e : client.getPodcastEpisodes(node.id, outError))
+                out.push_back(makePodcastEpisodeNode(e));
+            break;
         case BrowserNode::Category:
             switch (node.category) {
                 case BrowserNode::CatStarred:
@@ -110,6 +114,17 @@ std::vector<BrowserNodePtr> fetchChildren(IBrowserClient& client,
                 case BrowserNode::CatRadio:
                     for (const auto& s : client.getRadioStations(outError))
                         out.push_back(makeRadioNode(s));
+                    break;
+                case BrowserNode::CatPodcasts:
+                    for (const auto& c : client.getPodcastChannels(outError))
+                        out.push_back(makePodcastChannelNode(c));
+                    break;
+                case BrowserNode::CatNowPlaying:
+                    for (const auto& e : client.getNowPlaying(outError)) {
+                        auto n = makeSongNode(e.song);
+                        n->infoText = e.username + " · " + std::to_string(e.minutesAgo) + "m ago";
+                        out.push_back(n);
+                    }
                     break;
                 default:   // the four getAlbumList2-backed smart lists
                     for (const auto& a : client.getAlbumList(

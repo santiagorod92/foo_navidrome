@@ -97,6 +97,8 @@ public:
         COMMAND_ID_HANDLER_EX(IDC_NEW_RADIO,    OnNewRadioStation)
         COMMAND_ID_HANDLER_EX(IDC_EDIT_RADIO,   OnEditRadioStation)
         COMMAND_ID_HANDLER_EX(IDC_DELETE_RADIO, OnDeleteRadioStation)
+        COMMAND_ID_HANDLER_EX(IDC_SUBSCRIBE_PODCAST,   OnSubscribePodcast)
+        COMMAND_ID_HANDLER_EX(IDC_UNSUBSCRIBE_PODCAST, OnUnsubscribePodcast)
         COMMAND_RANGE_HANDLER_EX(IDC_RATE_0, IDC_RATE_5, OnRate)
         // One id per server playlist in the "Add to Navidrome Playlist" submenu.
         COMMAND_RANGE_HANDLER_EX(IDC_PLAYLIST_FIRST, IDC_PLAYLIST_LAST,
@@ -129,6 +131,8 @@ private:
         IDC_NEW_RADIO       = 1022,
         IDC_EDIT_RADIO      = 1023,
         IDC_DELETE_RADIO    = 1024,
+        IDC_SUBSCRIBE_PODCAST   = 1027,
+        IDC_UNSUBSCRIBE_PODCAST = 1028,
         // One id per entry in the server-playlist submenu; the offset from
         // IDC_PLAYLIST_FIRST indexes m_serverPlaylists.
         IDC_PLAYLIST_FIRST = 1100,
@@ -175,6 +179,8 @@ private:
     void    OnNewRadioStation(UINT, int, HWND);
     void    OnEditRadioStation(UINT, int, HWND);
     void    OnDeleteRadioStation(UINT, int, HWND);
+    void    OnSubscribePodcast(UINT, int, HWND);
+    void    OnUnsubscribePodcast(UINT, int, HWND);
 
     void    loadArtists();
     void    populateRoot(LoadedPayload* payload);
@@ -227,6 +233,13 @@ private:
     std::string radioStationURL(const std::string& stationId);
     std::shared_ptr<NavidromeNode> singleSelectedRadioStation();
     void    invalidateRadioCategory();
+
+    // Podcast channel management. "Subscribe" needs no selection; "Unsubscribe"
+    // requires exactly one selected channel. No streamUrl-style cache is
+    // needed — episode playback resolves through the normal navidrome://
+    // track URI, same as any other song.
+    std::shared_ptr<NavidromeNode> singleSelectedPodcastChannel();
+    void    invalidatePodcastsCategory();
 
     // ui_config_callback: fires when the user changes Colours and Fonts
     // (or toggles dark mode) while the browser is open.

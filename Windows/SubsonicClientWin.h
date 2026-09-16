@@ -138,6 +138,18 @@ public:
                             std::string& outError);
     bool deleteRadioStation(const std::string& id, std::string& outError);
 
+    // Podcasts (getPodcasts.view + subscribe/unsubscribe). getPodcastChannels
+    // is the cheap list call; getPodcastEpisodes scopes to one channel. Same
+    // empty-id-on-success caveat as createRadioStation.
+    std::vector<PodcastChannel> getPodcastChannels(std::string& outError);
+    std::vector<PodcastEpisode> getPodcastEpisodes(const std::string& channelId,
+                                                    std::string& outError);
+    std::string createPodcastChannel(const std::string& url, std::string& outError);
+    bool        deletePodcastChannel(const std::string& id, std::string& outError);
+
+    // Who's currently listening, server-wide (getNowPlaying.view).
+    std::vector<NowPlayingEntry> getNowPlaying(std::string& outError);
+
     // Saved resume positions (getBookmarks.view). createBookmark is an upsert —
     // Subsonic overwrites any existing bookmark for the same song.
     std::vector<Bookmark> getBookmarks(std::string& outError);

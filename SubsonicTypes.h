@@ -93,6 +93,40 @@ struct Bookmark {
     std::string comment;
 };
 
+// A podcast episode (getPodcasts.view, nested "episode" array or fetched
+// scoped to one channel via id=+includeEpisodes=true). Only downloaded
+// episodes are playable: streamId is the underlying library track id and is
+// only meaningful once status == "completed" — callers leave the browser
+// node's own id empty otherwise so it can never be enqueued.
+struct PodcastEpisode {
+    std::string id;
+    std::string streamId;
+    std::string channelId;
+    std::string title;
+    std::string description;
+    std::string status;
+    double      duration = 0.0;
+};
+
+// A subscribed podcast channel (getPodcasts.view). Episodes are fetched
+// separately, scoped to this channel's id — see IBrowserClient::getPodcastEpisodes.
+struct PodcastChannel {
+    std::string id;
+    std::string url;
+    std::string title;
+    std::string description;
+    std::string status;
+    std::string errorMessage;
+};
+
+// One entry from getNowPlaying.view — a song another user is currently
+// (or was recently) streaming, server-wide.
+struct NowPlayingEntry {
+    Song        song;
+    std::string username;
+    int         minutesAgo = 0;
+};
+
 // Library scan progress (startScan.view / getScanStatus.view). count is the
 // number of items processed so far; only meaningful while scanning is true —
 // Subsonic doesn't report a total, so this can only show "N processed", not
@@ -1225,6 +1259,39 @@ inline bool parseBookmark(const json::Value& b, Bookmark& out) {
     out.positionMs = jDouble(b, "position");
     out.comment    = jStr(b, "comment");
     return true;
+}
+
+inline PodcastEpisode parsePodcastEpisode(const json::Value& e) {
+    PodcastEpisode ep;
+    ep.id          = jId(e, "id");
+    ep.streamId    = jId(e, "streamId");
+    ep.channelId   = jId(e, "channelId");
+    ep.title       = jStr(e, "title", "Untitled episode");
+    ep.description = jStr(e, "description");
+    ep.status      = jStr(e, "status");
+    ep.duration    = jDouble(e, "duration");
+    return ep;
+}
+
+// Channel-only — episodes are fetched separately (scoped id=+includeEpisodes=true)
+// so the "Podcasts" category node stays a single cheap list call.
+inline PodcastChannel parsePodcastChannel(const json::Value& c) {
+    PodcastChannel ch;
+    ch.id           = jId(c, "id");
+    ch.url          = jStr(c, "url");
+    ch.title        = jStr(c, "title", "Untitled podcast");
+    ch.description  = jStr(c, "description");
+    ch.status       = jStr(c, "status");
+    ch.errorMessage = jStr(c, "errorMessage");
+    return ch;
+}
+
+inline NowPlayingEntry parseNowPlayingEntry(const json::Value& e) {
+    NowPlayingEntry np;
+    np.song       = parseSong(e);
+    np.username   = jStr(e, "username");
+    np.minutesAgo = jInt(e, "minutesAgo");
+    return np;
 }
 
 // startScan.view / getScanStatus.view: the inner response object carries a

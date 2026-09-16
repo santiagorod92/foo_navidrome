@@ -51,6 +51,8 @@ GUIDs for cfg vars/prefs pages/menu commands are hardcoded constants in `Navidro
 | Download originals | `download.view` | Context menu, folder picker, never transcoded |
 | Bookmarks | `getBookmarks.view`, `createBookmark.view`, `deleteBookmark.view` | File-menu bookmark, "Bookmarks" category, resume on play |
 | Internet radio | `getInternetRadioStations.view` + CRUD | "Radio" category node + dedicated prefs sub-page |
+| Podcasts | `getPodcasts.view` (list + episodes), `createPodcastChannel.view`, `deletePodcastChannel.view` | "Podcasts" category node → channel nodes → episode nodes; Subscribe/Unsubscribe context menu (no update endpoint) |
+| Now Playing | `getNowPlaying.view` | "Now Playing" category node, songs annotated with `user · Nm ago` |
 | Library scan | `startScan.view`, `getScanStatus.view` | "Rescan Library Now" button, polls every `kScanPollIntervalMs` (1.5s) |
 | Play Similar | `getSimilarSongs2.view` | Context menu item, any row |
 | Random Mix | `getRandomSongs.view` | Context menu item (not a category node — see Gotchas) |
@@ -167,6 +169,10 @@ Single source of truth: `version.txt`. Xcode's "Generate Version Header" phase r
 - `createInternetRadioStation.view` never echoes the new id back — both clients always return `""` on success; callers must check the error output, not treat empty-return as failure.
 
 - **Random Mix is a context-menu action, not a category node** — a category node above the artist list never rendered under Wine (root cause never pinned down, emoji-in-title theory ruled out). If a future smart-list category node silently fails to render, don't assume the same cause.
+
+- **A category/tree node's children only render after a real `fetchChildren` round-trip** — both platforms' expand handlers (`OnTreeExpanding` on Windows, `outlineViewItemWillExpand` on Mac) skip entirely once `childrenLoaded` is already true, and the actual tree-item insertion only happens from that fetch's completion callback. Pre-populating `node.children` ahead of time (e.g. to save a request) renders nothing — this is why Podcasts is a genuine two-level lazy tree (`CatPodcasts` → channel list → each channel's own expand fetches its episodes) instead of one `getPodcasts.view?includeEpisodes=true` call.
+
+- **Podcast episode playability is gated by a bare id, not a separate flag** — `makePodcastEpisodeNode()` only sets the node's `id` to the episode's `streamId` once the server reports `status == "completed"`; otherwise `id` stays empty. `collectSongIdsDeep()` already drops id-less nodes (`NavidromeBrowserModel.cpp`), so an undownloaded episode is automatically un-enqueueable with no platform-side special-casing — `infoText` just shows the status so the user knows why.
 
 - **`make win-build`/`win-build-local.sh` doesn't restart Wine foobar2000** — a replaced DLL under a still-running process is silently ignored until restart. Use `make win-build-launch`.
 

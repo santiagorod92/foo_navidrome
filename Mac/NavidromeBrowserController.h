@@ -17,6 +17,7 @@ typedef NS_ENUM(NSInteger, NavidromeNodeType) {
     NavidromeNodeTypeGenre,     // A genre from getGenres.view
     NavidromeNodeTypeRadioStation, // A saved internet radio station
     NavidromeNodeTypeLibrary,   // A Navidrome library — shown when 2+ are selected in the filter
+    NavidromeNodeTypePodcastChannel, // A subscribed podcast channel
     NavidromeNodeTypeLoading,   // Placeholder while loading children
     NavidromeNodeTypeError,     // Placeholder when load fails
 };
@@ -35,6 +36,8 @@ typedef NS_ENUM(NSInteger, NavidromeCategoryKind) {
     NavidromeCategoryPlaylists,        // getPlaylists.view      → playlists
     NavidromeCategoryBookmarks,        // getBookmarks.view      → songs
     NavidromeCategoryRadio,            // getInternetRadioStations.view → stations
+    NavidromeCategoryPodcasts,         // getPodcasts.view       → channels
+    NavidromeCategoryNowPlaying,       // getNowPlaying.view     → songs
 };
 
 @interface NavidromeNode : NSObject
@@ -55,6 +58,7 @@ typedef NS_ENUM(NSInteger, NavidromeCategoryKind) {
 @property (nonatomic, assign) BOOL      starred;    // server-side favorite
 @property (nonatomic, assign) NSInteger rating;     // 0 = unrated, else 1-5
 @property (nonatomic, assign) NSTimeInterval bookmarkPositionMs; // > 0 when this song has a saved resume position
+@property (nonatomic, copy)   NSString *infoText; // podcast episode status, or "user · Nm ago" for Now Playing
 
 // True if children have been loaded (may still be empty)
 @property (nonatomic, assign) BOOL childrenLoaded;

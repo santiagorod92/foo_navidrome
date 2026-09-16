@@ -116,6 +116,20 @@ public:
                             std::string& outError);
     bool deleteRadioStation(const std::string& id, std::string& outError);
 
+    // --- Podcasts --------------------------------------------------------
+    // getPodcastChannels is the cheap list call (no episodes); getPodcastEpisodes
+    // scopes to one channel with includeEpisodes=true. Keeping them separate
+    // means the "Podcasts" category node costs one request and each channel's
+    // own expand costs one more, matching every other two-level category.
+    std::vector<PodcastChannel> getPodcastChannels(std::string& outError);
+    std::vector<PodcastEpisode> getPodcastEpisodes(const std::string& channelId,
+                                                    std::string& outError);
+    std::string createPodcastChannel(const std::string& url, std::string& outError);
+    bool        deletePodcastChannel(const std::string& id, std::string& outError);
+
+    // --- Now playing -------------------------------------------------
+    std::vector<NowPlayingEntry> getNowPlaying(std::string& outError);
+
     // --- Bookmarks ---------------------------------------------------
     std::vector<Bookmark> getBookmarks(std::string& outError);
     bool createBookmark(const std::string& songId, double positionMs, const std::string& comment,

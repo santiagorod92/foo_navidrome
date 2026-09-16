@@ -389,6 +389,29 @@ bool navidrome::SubsonicClientWin::deleteRadioStation(const std::string& id,
     return m_core->deleteRadioStation(id, outError);
 }
 
+std::vector<navidrome::PodcastChannel>
+navidrome::SubsonicClientWin::getPodcastChannels(std::string& outError) {
+    return m_core->getPodcastChannels(outError);
+}
+std::vector<navidrome::PodcastEpisode>
+navidrome::SubsonicClientWin::getPodcastEpisodes(const std::string& channelId,
+                                                  std::string& outError) {
+    return m_core->getPodcastEpisodes(channelId, outError);
+}
+std::string navidrome::SubsonicClientWin::createPodcastChannel(const std::string& url,
+                                                                 std::string& outError) {
+    return m_core->createPodcastChannel(url, outError);
+}
+bool navidrome::SubsonicClientWin::deletePodcastChannel(const std::string& id,
+                                                          std::string& outError) {
+    return m_core->deletePodcastChannel(id, outError);
+}
+
+std::vector<navidrome::NowPlayingEntry>
+navidrome::SubsonicClientWin::getNowPlaying(std::string& outError) {
+    return m_core->getNowPlaying(outError);
+}
+
 std::vector<navidrome::Bookmark>
 navidrome::SubsonicClientWin::getBookmarks(std::string& outError) {
     return m_core->getBookmarks(outError);

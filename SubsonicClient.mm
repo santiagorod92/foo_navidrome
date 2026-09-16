@@ -142,6 +142,25 @@ static NSString *nsstr(const std::string &s) {
 }
 @end
 
+@implementation SubsonicPodcastEpisode
+- (NSString *)description {
+    return [NSString stringWithFormat:@"<SubsonicPodcastEpisode %@ %@ (%@)>",
+            _episodeId, _title, _status];
+}
+@end
+
+@implementation SubsonicPodcastChannel
+- (NSString *)description {
+    return [NSString stringWithFormat:@"<SubsonicPodcastChannel %@ %@>", _channelId, _title];
+}
+@end
+
+@implementation SubsonicNowPlayingEntry
+- (NSString *)description {
+    return [NSString stringWithFormat:@"<SubsonicNowPlayingEntry %@ %@>", _username, _song.title];
+}
+@end
+
 // ---------------------------------------------------------------------------
 // navidrome::X struct -> ObjC Subsonic* view-model. A straight field copy: the
 // json parsing, field names and Subsonic quirks all live in SubsonicTypes.h,
@@ -228,6 +247,37 @@ static SubsonicBookmark *BookmarkFromCore(const navidrome::Bookmark &b) {
     bm.positionMs = b.positionMs;
     bm.comment    = nsstr(b.comment);
     return bm;
+}
+
+static SubsonicPodcastEpisode *PodcastEpisodeFromCore(const navidrome::PodcastEpisode &e) {
+    SubsonicPodcastEpisode *ep = [[SubsonicPodcastEpisode alloc] init];
+    ep.episodeId          = nsstr(e.id);
+    ep.streamId           = nsstr(e.streamId);
+    ep.channelId          = nsstr(e.channelId);
+    ep.title              = nsstr(e.title);
+    ep.episodeDescription = nsstr(e.description);
+    ep.status             = nsstr(e.status);
+    ep.duration           = e.duration;
+    return ep;
+}
+
+static SubsonicPodcastChannel *PodcastChannelFromCore(const navidrome::PodcastChannel &c) {
+    SubsonicPodcastChannel *ch = [[SubsonicPodcastChannel alloc] init];
+    ch.channelId         = nsstr(c.id);
+    ch.url               = nsstr(c.url);
+    ch.title              = nsstr(c.title);
+    ch.channelDescription = nsstr(c.description);
+    ch.status             = nsstr(c.status);
+    ch.errorMessage       = nsstr(c.errorMessage);
+    return ch;
+}
+
+static SubsonicNowPlayingEntry *NowPlayingEntryFromCore(const navidrome::NowPlayingEntry &e) {
+    SubsonicNowPlayingEntry *np = [[SubsonicNowPlayingEntry alloc] init];
+    np.song       = SongFromCore(e.song);
+    np.username   = nsstr(e.username);
+    np.minutesAgo = e.minutesAgo;
+    return np;
 }
 
 static NSArray<SubsonicSong *> *SongsFromCore(const std::vector<navidrome::Song> &v) {
@@ -683,6 +733,50 @@ struct MacSettingsProvider : navidrome::ISettingsProvider {
     BOOL ok = _core->deleteRadioStation(stationId.UTF8String ?: "", err);
     if (!ok && error) *error = NavidromeMakeError(err, -2);
     return ok;
+}
+
+- (NSArray<SubsonicPodcastChannel *> *)getPodcastChannelsWithError:(NSError **)error {
+    std::string err;
+    auto v = _core->getPodcastChannels(err);
+    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
+    NSMutableArray<SubsonicPodcastChannel *> *result = [NSMutableArray arrayWithCapacity:v.size()];
+    for (const auto &c : v) [result addObject:PodcastChannelFromCore(c)];
+    return result;
+}
+
+- (NSArray<SubsonicPodcastEpisode *> *)getPodcastEpisodesForChannel:(NSString *)channelId
+                                                                error:(NSError **)error {
+    std::string err;
+    auto v = _core->getPodcastEpisodes(channelId.UTF8String ?: "", err);
+    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
+    NSMutableArray<SubsonicPodcastEpisode *> *result = [NSMutableArray arrayWithCapacity:v.size()];
+    for (const auto &e : v) [result addObject:PodcastEpisodeFromCore(e)];
+    return result;
+}
+
+- (NSString *)createPodcastChannelWithURL:(NSString *)url error:(NSError **)error {
+    if (url.length == 0) return nil;
+    std::string err;
+    _core->createPodcastChannel(url.UTF8String ?: "", err);
+    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
+    // Like createRadioStation, Subsonic's create endpoint echoes no id back.
+    return @"";
+}
+
+- (BOOL)deletePodcastChannel:(NSString *)channelId error:(NSError **)error {
+    std::string err;
+    BOOL ok = _core->deletePodcastChannel(channelId.UTF8String ?: "", err);
+    if (!ok && error) *error = NavidromeMakeError(err, -2);
+    return ok;
+}
+
+- (NSArray<SubsonicNowPlayingEntry *> *)getNowPlayingWithError:(NSError **)error {
+    std::string err;
+    auto v = _core->getNowPlaying(err);
+    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
+    NSMutableArray<SubsonicNowPlayingEntry *> *result = [NSMutableArray arrayWithCapacity:v.size()];
+    for (const auto &e : v) [result addObject:NowPlayingEntryFromCore(e)];
+    return result;
 }
 
 - (NSArray<SubsonicBookmark *> *)getBookmarksWithError:(NSError **)error {

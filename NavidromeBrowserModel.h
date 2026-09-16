@@ -26,6 +26,7 @@ namespace navidrome {
 struct BrowserNode {
     enum Type {
         Artist, Album, Song, Category, Playlist, Genre, Radio, Library,
+        PodcastChannel,
         Loading, Error,
     };
     // Smart-list roots shown above the artist list; each maps to one Subsonic
@@ -43,6 +44,8 @@ struct BrowserNode {
         CatPlaylists,        // getPlaylists.view              -> playlists
         CatBookmarks,        // getBookmarks.view              -> songs
         CatRadio,            // getInternetRadioStations.view  -> stations
+        CatPodcasts,         // getPodcasts.view                -> channels
+        CatNowPlaying,       // getNowPlaying.view              -> songs
     };
 
     Type         type       = Loading;
@@ -61,6 +64,8 @@ struct BrowserNode {
     bool         starred    = false;   // server-side favorite
     int          rating     = 0;       // 0 = unrated, else 1-5
     double       bookmarkPositionMs = 0.0; // > 0 when this song has a saved resume position
+    std::string  infoText;    // secondary annotation: podcast episode status, or
+                               // "user · Nm ago" for a Now Playing row; "" otherwise
 
     bool         childrenLoaded = false;
     bool         isLoading       = false;
@@ -155,6 +160,31 @@ inline BrowserNodePtr makeRadioNode(const RadioStation& s) {
     return n;
 }
 
+inline BrowserNodePtr makePodcastChannelNode(const PodcastChannel& c) {
+    auto n = std::make_shared<BrowserNode>();
+    n->type        = BrowserNode::PodcastChannel;
+    n->id          = c.id;
+    n->displayName = c.title;
+    n->subtitle    = !c.description.empty() ? c.description
+                    : (c.status == "error" ? ("Error: " + c.errorMessage) : c.status);
+    return n;
+}
+
+// A podcast episode reuses the Song shape. `id` is only set once the server
+// has finished downloading it (status == "completed") — until then it's left
+// empty so collectSongIdsDeep's existing "skip id-less nodes" filter makes it
+// unplayable/unenqueueable with no extra platform code; infoText shows why.
+inline BrowserNodePtr makePodcastEpisodeNode(const PodcastEpisode& e) {
+    auto n = std::make_shared<BrowserNode>();
+    n->type           = BrowserNode::Song;
+    n->id             = (e.status == "completed") ? e.streamId : "";
+    n->displayName    = e.title;
+    n->duration       = e.duration;
+    n->infoText       = (e.status == "completed") ? "" : e.status;
+    n->childrenLoaded = true;
+    return n;
+}
+
 inline BrowserNodePtr makeLibraryNode(const std::string& id, const std::string& name) {
     auto n = std::make_shared<BrowserNode>();
     n->type        = BrowserNode::Library;
@@ -205,6 +235,8 @@ inline std::vector<BrowserNodePtr> buildCategoryNodes() {
         { BrowserNode::CatPlaylists,      "Playlists"       },
         { BrowserNode::CatBookmarks,      "Bookmarks"       },
         { BrowserNode::CatRadio,          "Radio"           },
+        { BrowserNode::CatPodcasts,       "Podcasts"        },
+        { BrowserNode::CatNowPlaying,     "Now Playing"     },
     };
     std::vector<BrowserNodePtr> out;
     out.reserve(sizeof(kCategories) / sizeof(kCategories[0]));
@@ -247,6 +279,7 @@ struct NodeDisplay {
     std::string ratingStars;   // "" when unrated, else N x U+2605
     std::string bookmarkText;  // "" unless a resume position is set, else "U+23F1 m:ss"
     std::string durationText;  // "" when duration is 0, else M:SS
+    std::string infoText;      // "" unless set, else podcast status / "user · Nm ago"
 };
 
 inline NodeDisplay nodeDisplay(const BrowserNode& n) {
@@ -275,6 +308,8 @@ inline NodeDisplay nodeDisplay(const BrowserNode& n) {
     if (n.duration > 0)
         d.durationText = formatDurationMMSS(n.duration);
 
+    d.infoText = n.infoText;
+
     return d;
 }
 
@@ -285,6 +320,7 @@ inline std::string singleColumnLabel(const BrowserNode& n) {
     std::string label = d.name;
     if (!d.ratingStars.empty())  label += "  " + d.ratingStars;
     if (!d.bookmarkText.empty()) label += "  " + d.bookmarkText;
+    if (!d.infoText.empty())     label += "  " + d.infoText;
     return label;
 }
 
@@ -321,6 +357,15 @@ struct IBrowserClient {
                                                   std::string& outError) = 0;
     virtual std::vector<RadioStation> getRadioStations(std::string& outError) = 0;
     virtual std::vector<Bookmark>     getBookmarks(std::string& outError) = 0;
+    // Podcasts: getPodcastChannels is the cheap list call, getPodcastEpisodes
+    // scopes to one channel (its own lazy expand). Subscribe/unsubscribe go
+    // straight to the platform facade from the UI handler, same as radio
+    // station create/update/delete — only the read path needs abstracting
+    // here since it's what the shared fetchChildren() dispatch uses.
+    virtual std::vector<PodcastChannel> getPodcastChannels(std::string& outError) = 0;
+    virtual std::vector<PodcastEpisode> getPodcastEpisodes(const std::string& channelId,
+                                                            std::string& outError) = 0;
+    virtual std::vector<NowPlayingEntry> getNowPlaying(std::string& outError) = 0;
     // "Play Similar" (last.fm-derived) and "Random Mix" — both back a
     // context-menu action, not a browsable node (see CLAUDE.md gotcha on why
     // Random Mix isn't a category).
