@@ -1,3 +1,15 @@
+## [1.14.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.13.5...v1.14.0) (2026-09-16)
+
+
+### Features
+
+* add Podcast and Now Playing browsing ([767886c](https://github.com/santiagorod92/foo_navidrome/commit/767886cb1416b1d4870124797db18fc768a665d8))
+
+
+### Bug Fixes
+
+* log context-menu failures for star/rate/playlist operations ([8111410](https://github.com/santiagorod92/foo_navidrome/commit/811141099795a6527f6a8fec6aa17be94cc3404a))
+
 ## [1.13.5](https://github.com/santiagorod92/foo_navidrome/compare/v1.13.4...v1.13.5) (2026-09-15)
 
 
