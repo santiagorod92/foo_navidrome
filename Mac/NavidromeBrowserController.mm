@@ -3,6 +3,7 @@
 #include "../SubsonicTypes.h"
 #include "../NavidromeBrowserModel.h"
 #include "../NavidromeBrowserEnqueue.h"
+#include "../NavidromeDebugLog.h"
 #include <SDK/playlist.h>
 #include <SDK/metadb.h>
 #include <SDK/playable_location.h>
@@ -884,6 +885,9 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
         // The type dispatch, the API call and the rating push-back are shared
         // with Windows — see navidrome::applyStarredToNodes.
         auto result = navidrome::applyStarredToNodes(browserClient(), core, starred);
+        if (!result.error.empty())
+            NAVIDROME_WARN("UI", std::string(starred ? "star" : "unstar") +
+                " failed: " + result.error);
         dispatch_async(dispatch_get_main_queue(), ^{
             [_spinner stopAnimation:nil];
             for (NSUInteger i = 0; i < targets.count; i++)
@@ -921,6 +925,9 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         // Shared with Windows — see navidrome::applyRatingToNodes.
         auto result = navidrome::applyRatingToNodes(browserClient(), core, (int)rating);
+        if (!result.error.empty())
+            NAVIDROME_WARN("UI", "setRatingFromMenu: rating=" + std::to_string((long)rating) +
+                " failed: " + result.error);
         dispatch_async(dispatch_get_main_queue(), ^{
             [_spinner stopAnimation:nil];
             for (NSUInteger i = 0; i < songs.count; i++)
@@ -973,6 +980,9 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
         BOOL ok = [SubsonicClient.sharedClient createPlaylistNamed:name
                                                            songIds:songIds
                                                              error:&err] != nil;
+        if (!ok)
+            NAVIDROME_WARN("UI", "sendActivePlaylist \"" + NBCStr(name) + "\" failed: " +
+                NBCStr(err.localizedDescription));
         dispatch_async(dispatch_get_main_queue(), ^{
             [_spinner stopAnimation:nil];
             if (!ok) {
@@ -1177,6 +1187,9 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
             BOOL ok = [SubsonicClient.sharedClient addSongs:ids
                                                  toPlaylist:target.playlistId
                                                       error:&one];
+            if (!ok)
+                NAVIDROME_WARN("UI", "addSelectionToServerPlaylist \"" + NBCStr(target.name) +
+                    "\" failed: " + NBCStr(one.localizedDescription));
             dispatch_async(dispatch_get_main_queue(), ^{
                 [self->_spinner stopAnimation:nil];
                 self->_statusLabel.stringValue = ok
@@ -1212,6 +1225,9 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
             NSString *newId = [SubsonicClient.sharedClient createPlaylistNamed:name
                                                                         songIds:ids
                                                                           error:&one];
+            if (!newId)
+                NAVIDROME_WARN("UI", "newServerPlaylist \"" + NBCStr(name) + "\" failed: " +
+                    NBCStr(one.localizedDescription));
             dispatch_async(dispatch_get_main_queue(), ^{
                 [self->_spinner stopAnimation:nil];
                 self->_statusLabel.stringValue = newId
@@ -1260,6 +1276,9 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
         BOOL ok = [SubsonicClient.sharedClient removeIndexes:indexes
                                                 fromPlaylist:playlistId
                                                        error:&err];
+        if (!ok)
+            NAVIDROME_WARN("UI", "removeFromPlaylist \"" + NBCStr(playlistName) + "\" failed: " +
+                NBCStr(err.localizedDescription));
         dispatch_async(dispatch_get_main_queue(), ^{
             [self->_spinner stopAnimation:nil];
             self->_statusLabel.stringValue = ok
@@ -1288,6 +1307,9 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
         BOOL ok = [SubsonicClient.sharedClient renamePlaylist:playlistId
                                                        toName:name
                                                         error:&err];
+        if (!ok)
+            NAVIDROME_WARN("UI", "renamePlaylist -> \"" + NBCStr(name) + "\" failed: " +
+                NBCStr(err.localizedDescription));
         dispatch_async(dispatch_get_main_queue(), ^{
             [self->_spinner stopAnimation:nil];
             if (ok) {
@@ -1323,6 +1345,9 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         NSError *err = nil;
         BOOL ok = [SubsonicClient.sharedClient deletePlaylist:playlistId error:&err];
+        if (!ok)
+            NAVIDROME_WARN("UI", "deletePlaylist \"" + NBCStr(playlistName) + "\" failed: " +
+                NBCStr(err.localizedDescription));
         dispatch_async(dispatch_get_main_queue(), ^{
             [self->_spinner stopAnimation:nil];
             self->_statusLabel.stringValue = ok

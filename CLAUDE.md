@@ -213,6 +213,8 @@ Single source of truth: `version.txt`. Xcode's "Generate Version Header" phase r
 
 - **Report skipped coverage, stay quiet about user-chosen states.** Startup refresh has four no-op paths: switch off / no server configured (user's choice, don't log every start) vs. no album id / skipped-after-partial-run (leaves entries behind, must log counts).
 
+- **Every context-menu action's failure branch must `NAVIDROME_WARN("UI", …)`, not just `setStatus`/error label.** Star/unstar, rate, and playlist CRUD (add/create/remove/rename/delete, send active playlist) on both platforms log the error string when the underlying call fails — `setStatus`/`_statusLabel` alone is invisible once the window closes, and it's the only record when a user reports "X didn't work" after the fact. Still missing this on both platforms: bookmark removal, radio station CRUD. Add the same one-liner (op name + target + error) when touching those.
+
 - Startup refresh's off switch is an `advconfig_checkbox_factory` (*Preferences › Advanced › Tools*), not a `cfg_bool` — avoids UI work on both prefs dialogs and the `cfg_var_modern::cfg_bool` qualification trap.
 
 - **Any code consuming `navidrome://` URIs must be updated when the scheme changes** — the art extractor's `is_our_path` once only matched legacy `/rest/stream.view` URLs and silently broke (missing cover art, no error) when the scheme moved to `navidrome://`. Audit `strstr`/`strncmp` calls in `*.mm`/`*.cpp` whenever the URI scheme is touched.

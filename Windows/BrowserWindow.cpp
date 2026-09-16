@@ -1508,6 +1508,9 @@ void BrowserWindow::applyStarred(bool starred) {
 
     std::thread([this, targets, starred]() {
         auto result = navidrome::applyStarredToNodes(browserClient(), targets, starred);
+        if (!result.error.empty())
+            NAVIDROME_WARN("UI", std::string(starred ? "star" : "unstar") +
+                " failed: " + result.error);
         fb2k::inMainThread([this, targets, starred, result]() {
             if (!IsWindow()) return;
             for (auto& n : targets) refreshLabel(n);
@@ -1563,6 +1566,9 @@ void BrowserWindow::OnRate(UINT, int id, HWND) {
 
     std::thread([this, songs, stars]() {
         auto result = navidrome::applyRatingToNodes(browserClient(), songs, stars);
+        if (!result.error.empty())
+            NAVIDROME_WARN("UI", "OnRate: stars=" + std::to_string(stars) +
+                " failed: " + result.error);
         fb2k::inMainThread([this, songs, result]() {
             if (!IsWindow()) return;
             for (auto& n : songs) refreshLabel(n);
@@ -1607,6 +1613,7 @@ void BrowserWindow::OnSendActivePlaylist(UINT, int, HWND) {
         // The id is only needed to grow the playlist further; an empty id with
         // no error still means the upload succeeded.
         bool ok = err.empty();
+        if (!ok) NAVIDROME_WARN("UI", "OnSendActivePlaylist \"" + name + "\" failed: " + err);
         fb2k::inMainThread([this, name, songIds, skipped, ok, err]() {
             if (!IsWindow()) return;
             if (!ok) {
@@ -1781,6 +1788,7 @@ void BrowserWindow::OnAddToServerPlaylist(UINT, int id, HWND) {
         }
         std::string err;
         bool ok = navidrome::SubsonicClientWin::get().addToPlaylist(playlistId, ids, err);
+        if (!ok) NAVIDROME_WARN("UI", "OnAddToServerPlaylist \"" + name + "\" failed: " + err);
         fb2k::inMainThread([this, playlistId, name, ids, ok, err]() {
             if (!IsWindow()) return;
             setStatus(ok ? "Added " + std::to_string(ids.size()) + " track(s) to \"" + name + "\""
@@ -1809,6 +1817,7 @@ void BrowserWindow::OnNewServerPlaylist(UINT, int, HWND) {
             navidrome::SubsonicClientWin::get().createPlaylist(nameU8, ids, err);
         // An empty id with no error means the server just didn't echo one back.
         bool ok = err.empty();
+        if (!ok) NAVIDROME_WARN("UI", "OnNewServerPlaylist \"" + nameU8 + "\" failed: " + err);
         fb2k::inMainThread([this, nameU8, ids, ok, err]() {
             if (!IsWindow()) return;
             setStatus(ok ? "Created \"" + nameU8 + "\" (" +
@@ -1850,6 +1859,7 @@ void BrowserWindow::OnRemoveFromPlaylist(UINT, int, HWND) {
         std::string err;
         bool ok = navidrome::SubsonicClientWin::get()
                       .removeFromPlaylist(playlistId, indexes, err);
+        if (!ok) NAVIDROME_WARN("UI", "OnRemoveFromPlaylist \"" + name + "\" failed: " + err);
         fb2k::inMainThread([this, playlistId, name, indexes, ok, err]() {
             if (!IsWindow()) return;
             setStatus(ok ? "Removed " + std::to_string(indexes.size()) +
@@ -1876,6 +1886,7 @@ void BrowserWindow::OnRenamePlaylist(UINT, int, HWND) {
         std::string err;
         bool ok = navidrome::SubsonicClientWin::get()
                       .renamePlaylist(playlistId, nameU8, err);
+        if (!ok) NAVIDROME_WARN("UI", "OnRenamePlaylist -> \"" + nameU8 + "\" failed: " + err);
         fb2k::inMainThread([this, playlist, nameU8, ok, err]() {
             if (!IsWindow()) return;
             if (ok) {
@@ -1907,6 +1918,7 @@ void BrowserWindow::OnDeletePlaylist(UINT, int, HWND) {
     std::thread([this, playlistId, name]() {
         std::string err;
         bool ok = navidrome::SubsonicClientWin::get().deletePlaylist(playlistId, err);
+        if (!ok) NAVIDROME_WARN("UI", "OnDeletePlaylist \"" + name + "\" failed: " + err);
         fb2k::inMainThread([this, name, ok, err]() {
             if (!IsWindow()) return;
             setStatus(ok ? "Deleted \"" + name + "\""
