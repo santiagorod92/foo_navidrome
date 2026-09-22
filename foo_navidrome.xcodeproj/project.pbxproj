@@ -23,7 +23,7 @@
 		FE0BAD320000000000000001 /* libshared.a in Frameworks */ = {isa = PBXBuildFile; fileRef = FE0BAD130000000000000001 /* libshared.a */; };
 		FE0BAD330000000000000001 /* libfoobar2000_SDK.a in Frameworks */ = {isa = PBXBuildFile; fileRef = FE0BAD100000000000000001 /* libfoobar2000_SDK.a */; };
 		FE0BAD340000000000000001 /* libfoobar2000_SDK_helpers.a in Frameworks */ = {isa = PBXBuildFile; fileRef = FE0BAD110000000000000001 /* libfoobar2000_SDK_helpers.a */; };
-		FE0BAD350000000000000001 /* libpfc-Mac.a in Frameworks */ = {isa = PBXBuildFile; fileRef = FE0BAD120000000000000001 /* libpfc-Mac.a */; };
+		FE0BAD350000000000000001 /* libpfc.a in Frameworks */ = {isa = PBXBuildFile; fileRef = FE0BAD120000000000000001 /* libpfc.a */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -51,7 +51,7 @@
 		FE0BAD940000000000000001 /* MacSubsonicBrowserClient.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = MacSubsonicBrowserClient.h; sourceTree = "<group>"; };
 		FE0BAD100000000000000001 /* libfoobar2000_SDK.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; path = libfoobar2000_SDK.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		FE0BAD110000000000000001 /* libfoobar2000_SDK_helpers.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; path = libfoobar2000_SDK_helpers.a; sourceTree = BUILT_PRODUCTS_DIR; };
-		FE0BAD120000000000000001 /* libpfc-Mac.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; path = "libpfc-Mac.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		FE0BAD120000000000000001 /* libpfc.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; path = "libpfc.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		FE0BAD130000000000000001 /* libshared.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; path = libshared.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		FE0BAD140000000000000001 /* libfoobar2000_component_client.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; path = libfoobar2000_component_client.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		FE0BAD150000000000000001 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = System/Library/Frameworks/Cocoa.framework; sourceTree = SDKROOT; };
@@ -92,7 +92,7 @@
 				FE0BAD320000000000000001 /* libshared.a in Frameworks */,
 				FE0BAD330000000000000001 /* libfoobar2000_SDK.a in Frameworks */,
 				FE0BAD340000000000000001 /* libfoobar2000_SDK_helpers.a in Frameworks */,
-				FE0BAD350000000000000001 /* libpfc-Mac.a in Frameworks */,
+				FE0BAD350000000000000001 /* libpfc.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -138,7 +138,7 @@
 				FE0BAD130000000000000001 /* libshared.a */,
 				FE0BAD100000000000000001 /* libfoobar2000_SDK.a */,
 				FE0BAD110000000000000001 /* libfoobar2000_SDK_helpers.a */,
-				FE0BAD120000000000000001 /* libpfc-Mac.a */,
+				FE0BAD120000000000000001 /* libpfc.a */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
