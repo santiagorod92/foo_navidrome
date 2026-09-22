@@ -1,3 +1,10 @@
+## [1.15.3](https://github.com/santiagorod92/foo_navidrome/compare/v1.15.2...v1.15.3) (2026-09-22)
+
+
+### Bug Fixes
+
+* use printf not echo to patch stdafx.cpp (missing trailing newline) ([d4d3151](https://github.com/santiagorod92/foo_navidrome/commit/d4d31519e58f0cb1a8753f7a8053397e6c915886))
+
 ## [1.15.2](https://github.com/santiagorod92/foo_navidrome/compare/v1.15.1...v1.15.2) (2026-09-22)
 
 
