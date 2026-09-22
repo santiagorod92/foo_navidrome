@@ -1,3 +1,16 @@
+## [1.15.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.14.0...v1.15.0) (2026-09-22)
+
+
+### Features
+
+* add Artist Info and Top Songs/Similar Artists browsing ([8e728c1](https://github.com/santiagorod92/foo_navidrome/commit/8e728c151ae75140e3c122370d8956fda807f2d5))
+
+
+### Bug Fixes
+
+* link against pfc's renamed product (libpfc.a, not libpfc-Mac.a) ([d619942](https://github.com/santiagorod92/foo_navidrome/commit/d619942c673074f8e7c62afd51487ff7f81b423b))
+* pin an explicit Xcode scheme so the macOS release build stops relying on autocreation ([71d3437](https://github.com/santiagorod92/foo_navidrome/commit/71d3437c0c93c2700b6569affb2f35732ed1e68f))
+
 ## [1.14.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.13.5...v1.14.0) (2026-09-16)
 
 
