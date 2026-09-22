@@ -54,7 +54,7 @@ void testUriEncodeDecode() {
         "unreserved characters pass through unescaped");
     check(uriEncode(" a/b?c&d") == "%20a%2Fb%3Fc%26d",
         "reserved and space characters are percent-encoded");
-    check(uriEncode(u8"café") == "caf%C3%A9",
+    check(uriEncode("café") == "caf%C3%A9",
         "UTF-8 bytes are individually percent-encoded");
     check(uriDecode("a%20b%2Fc") == "a b/c", "decode reverses encode");
     check(uriDecode("a%2fb") == "a/b", "lowercase hex escapes decode too");
@@ -64,8 +64,8 @@ void testUriEncodeDecode() {
         "a trailing bare percent is passed through, not dropped");
     check(uriDecode("50%2 off") == "50%2 off",
         "an incomplete escape (non-hex second digit) is passed through");
-    check(uriDecode(uriEncode(u8"中文 + spaces & symbols")) ==
-        u8"中文 + spaces & symbols", "round-trip preserves arbitrary text");
+    check(uriDecode(uriEncode("中文 + spaces & symbols")) ==
+        "中文 + spaces & symbols", "round-trip preserves arbitrary text");
 }
 
 void testNormalizeUrl() {
@@ -96,7 +96,7 @@ void testJsEscapeEdgeCases() {
     check(jsEscape(std::string(1, '\x01')) == "\\u0001",
         "other control characters use \\u escapes");
     check(jsEscape("") == "", "empty input stays empty");
-    check(jsEscape(u8"emoji 😀 survives") == u8"emoji 😀 survives",
+    check(jsEscape("emoji 😀 survives") == "emoji 😀 survives",
         "non-control UTF-8 bytes pass through unescaped");
 }
 
@@ -180,7 +180,7 @@ void testIdentifiers() {
     check(resolveArtId("navidrome://track/song%252Fraw") == "song%2Fraw",
         "path id is decoded exactly once");
     check(resolveArtId("navidrome://track/%E4%B8%AD%E6%96%87%2Bplus+literal") ==
-        u8"中文+plus+literal", "UTF-8, encoded plus and literal plus survive");
+        "中文+plus+literal", "UTF-8, encoded plus and literal plus survive");
     check(resolveArtId("https://server/rest/stream.view?id=old%2Fid&u=user") ==
         "old/id", "legacy stream id is supported");
     check(resolveArtId("https://server/music.mp3").empty(), "unowned path has no id");
@@ -197,7 +197,7 @@ void testIdentifiers() {
 
 void testCoverUrl() {
     const auto url = navidrome::buildCoverArtUrl(" HTTPS://Example.COM/root/ ",
-        "user name", "distinct-password-9", "salt-42", u8"封面/id+", 300);
+        "user name", "distinct-password-9", "salt-42", "封面/id+", 300);
     check(url.find("https://example.com/root/rest/getCoverArt.view?") == 0,
         "server identity is normalized");
     check(url.find("u=user%20name") != std::string::npos, "username is encoded");
@@ -357,7 +357,7 @@ void testConfig() {
     const std::string password = "distinct-password-9";
     const auto config = navidrome::buildEsLyricConfigJs(
         " HTTPS://Example.COM/root/ ", "user\"name", password, "salt-42",
-        {{"X-Access", "line1\r\nline2"}, {u8"中文", u8"值😀"}}, "1.3.0");
+        {{"X-Access", "line1\r\nline2"}, {"中文", "值😀"}}, "1.3.0");
     check(config.find("export const config") != std::string::npos,
         "config module exports canonical object");
     check(config.find("https://example.com/root") != std::string::npos,
@@ -376,7 +376,7 @@ void testConfig() {
         "config exposes the caller's componentVersion (no hardcoded script version)");
     check(config == navidrome::buildEsLyricConfigJs(
         " HTTPS://Example.COM/root/ ", "user\"name", password, "salt-42",
-        {{"X-Access", "line1\r\nline2"}, {u8"中文", u8"值😀"}}, "1.3.0"),
+        {{"X-Access", "line1\r\nline2"}, {"中文", "值😀"}}, "1.3.0"),
         "config generation is stable");
 
     const auto withDebug = navidrome::buildEsLyricConfigJs(
@@ -419,7 +419,7 @@ void testFileNames() {
         "trailing dots are trimmed (Windows rejects them)");
     check(sanitizeFileName("   ") == "untitled",
         "an all-trimmed name falls back to a placeholder");
-    check(sanitizeFileName(u8"中文 title") == u8"中文 title",
+    check(sanitizeFileName("中文 title") == "中文 title",
         "non-ASCII names survive untouched");
     check(sanitizeFileName("a\\b*c<d>e|f\"g") == "a_b_c_d_e_f_g",
         "every remaining Windows-reserved character is replaced");
@@ -653,7 +653,7 @@ void testCrossParserParity() {
     // implementations that both pull <id> out of navidrome://track/<id>.
     // CLAUDE.md flags scheme drift between the two as a live trap — pin them to
     // the same decoded output for ids that exercise the decoder.
-    const char* ids[] = {"plain", "a/b", "a%2Fb", u8"中文+plus", "x?y"};
+    const char* ids[] = {"plain", "a/b", "a%2Fb", "中文+plus", "x?y"};
     for (const char* id : ids) {
         const auto uri = "navidrome://track/" + navidrome::uriEncode(id);
         check(resolveArtId(uri) == trackIdFromURI(uri),
