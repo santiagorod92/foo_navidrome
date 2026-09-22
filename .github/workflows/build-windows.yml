@@ -120,7 +120,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo '#include "wrap_pfc_hooks.h"' >> foobar2000/shared/stdafx.cpp
+          # printf, not echo >>: stdafx.cpp has no trailing newline, so a bare
+          # `echo >>` glues onto the existing #include line instead of adding
+          # a new one (confirmed in a real CI log — the "patched" cat showed
+          # one corrupted line, and the #include silently never took effect).
+          printf '\n#include "wrap_pfc_hooks.h"\n' >> foobar2000/shared/stdafx.cpp
           echo "patched foobar2000/shared/stdafx.cpp:"
           cat foobar2000/shared/stdafx.cpp
 
