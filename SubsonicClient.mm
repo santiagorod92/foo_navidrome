@@ -161,6 +161,13 @@ static NSString *nsstr(const std::string &s) {
 }
 @end
 
+@implementation SubsonicArtistInfo
+- (NSString *)description {
+    return [NSString stringWithFormat:@"<SubsonicArtistInfo %@ similar=%lu>",
+            _lastFmUrl, (unsigned long)_similarArtists.count];
+}
+@end
+
 // ---------------------------------------------------------------------------
 // navidrome::X struct -> ObjC Subsonic* view-model. A straight field copy: the
 // json parsing, field names and Subsonic quirks all live in SubsonicTypes.h,
@@ -278,6 +285,21 @@ static SubsonicNowPlayingEntry *NowPlayingEntryFromCore(const navidrome::NowPlay
     np.username   = nsstr(e.username);
     np.minutesAgo = e.minutesAgo;
     return np;
+}
+
+static SubsonicArtistInfo *ArtistInfoFromCore(const navidrome::ArtistInfo &info) {
+    SubsonicArtistInfo *ai = [[SubsonicArtistInfo alloc] init];
+    ai.biography      = nsstr(info.biography);
+    ai.musicBrainzId   = nsstr(info.musicBrainzId);
+    ai.lastFmUrl       = nsstr(info.lastFmUrl);
+    ai.smallImageUrl   = nsstr(info.smallImageUrl);
+    ai.mediumImageUrl  = nsstr(info.mediumImageUrl);
+    ai.largeImageUrl   = nsstr(info.largeImageUrl);
+    NSMutableArray<SubsonicArtist *> *similar =
+        [NSMutableArray arrayWithCapacity:info.similarArtists.size()];
+    for (const auto &a : info.similarArtists) [similar addObject:ArtistFromCore(a)];
+    ai.similarArtists = similar;
+    return ai;
 }
 
 static NSArray<SubsonicSong *> *SongsFromCore(const std::vector<navidrome::Song> &v) {
@@ -594,6 +616,25 @@ struct MacSettingsProvider : navidrome::ISettingsProvider {
                                                 error:(NSError **)error {
     std::string err;
     auto v = _core->getRandomSongs((int)count, err);
+    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
+    return SongsFromCore(v);
+}
+
+- (SubsonicArtistInfo *)getArtistInfoForId:(NSString *)artistId
+                                      error:(NSError **)error {
+    if (artistId.length == 0) return nil;
+    std::string err;
+    auto info = _core->getArtistInfo(artistId.UTF8String ?: "", err);
+    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
+    return ArtistInfoFromCore(info);
+}
+
+- (NSArray<SubsonicSong *> *)getTopSongsForArtist:(NSString *)artistName
+                                             count:(NSInteger)count
+                                             error:(NSError **)error {
+    if (artistName.length == 0) return @[];
+    std::string err;
+    auto v = _core->getTopSongs(artistName.UTF8String ?: "", (int)count, err);
     if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
     return SongsFromCore(v);
 }

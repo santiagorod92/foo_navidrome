@@ -38,6 +38,10 @@ typedef NS_ENUM(NSInteger, NavidromeCategoryKind) {
     NavidromeCategoryRadio,            // getInternetRadioStations.view → stations
     NavidromeCategoryPodcasts,         // getPodcasts.view       → channels
     NavidromeCategoryNowPlaying,       // getNowPlaying.view     → songs
+    // Per-artist synthetic children — see BrowserNode::CategoryKind in
+    // NavidromeBrowserModel.h for how id/subtitle carry the parent artist.
+    NavidromeCategoryArtistTopSongs,        // getTopSongs.view       → songs
+    NavidromeCategoryArtistSimilarArtists,  // getArtistInfo2.view    → artists
 };
 
 @interface NavidromeNode : NSObject

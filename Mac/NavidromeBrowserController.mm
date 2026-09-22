@@ -272,6 +272,11 @@ NBCWrapList(const std::vector<navidrome::BrowserNodePtr> &nodes) {
                                                  action:@selector(playSimilarSelection:)
                                           keyEquivalent:@""];
     similarItem.target = self;
+    // Biography + last.fm link for the selected artist.
+    NSMenuItem *artistInfoItem = [rowMenu addItemWithTitle:@"Artist Info"
+                                                     action:@selector(showArtistInfo:)
+                                              keyEquivalent:@""];
+    artistInfoItem.target = self;
 
     // Server-side favorites + ratings. Both are per-user state on Navidrome, so
     // they show up in its web UI and in every other Subsonic client.
@@ -831,6 +836,45 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
                 return;
             }
             [self enqueueNodes:songNodes play:YES clearFirst:NO];
+        });
+    });
+}
+
+// Fetches the selected artist's biography + last.fm link and shows it in a
+// modal alert — a read-only lookup, not an enqueue action, so it skips
+// -enqueueNodes:play:clearFirst: every other context-menu action here goes through.
+- (IBAction)showArtistInfo:(id)sender {
+    NavidromeNode *node = [self selectedNodes].firstObject;
+    if (!node || node.type != NavidromeNodeTypeArtist) {
+        _statusLabel.stringValue = @"Artist Info needs an artist";
+        return;
+    }
+
+    [_spinner startAnimation:nil];
+    _statusLabel.stringValue = @"Fetching artist info…";
+    std::string artistId = NBCStr(node.nodeId);
+    NSString *artistName = node.displayName;
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        std::string err;
+        auto info = browserClient().getArtistInfo(artistId, err);
+        NSString *text = @(navidrome::formatArtistBiography(info).c_str());
+        NSString *lastFmUrl = info.lastFmUrl.empty() ? nil : @(info.lastFmUrl.c_str());
+        std::string errCopy = err;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [_spinner stopAnimation:nil];
+            if (!errCopy.empty()) {
+                _statusLabel.stringValue = [NSString stringWithFormat:@"Error: %s", errCopy.c_str()];
+                return;
+            }
+            _statusLabel.stringValue = @"";
+            NSAlert *alert = [[NSAlert alloc] init];
+            alert.messageText = artistName;
+            alert.informativeText = text;
+            [alert addButtonWithTitle:@"OK"];
+            if (lastFmUrl) [alert addButtonWithTitle:@"Open on Last.fm"];
+            if ([alert runModal] == NSAlertSecondButtonReturn && lastFmUrl) {
+                [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:lastFmUrl]];
+            }
         });
     });
 }

@@ -1064,6 +1064,39 @@ void testSubsonicParsers() {
         "{\"scanStatus\":{\"scanning\":true,\"count\":1234}}"));
     check(ss.scanning && ss.count == 1234, "parseScanStatus reads scanning + count");
 
+    // --- parseArtistInfo2: biography + similar artists, array-collapsed like scanStatus ---
+    navidrome::ArtistInfo ai = navidrome::parseArtistInfo2(parse(
+        "{\"artistInfo2\":{\"biography\":\"A great <a href=\\\"x\\\">band</a> &amp; friends\","
+        "\"lastFmUrl\":\"http://last.fm/band\",\"musicBrainzId\":\"mb1\","
+        "\"similarArtist\":[{\"id\":\"ar2\",\"name\":\"Other Band\"}]}}"));
+    check(ai.lastFmUrl == "http://last.fm/band" && ai.musicBrainzId == "mb1",
+        "parseArtistInfo2 reads top-level fields");
+    check(ai.similarArtists.size() == 1 && ai.similarArtists[0].id == "ar2" &&
+          ai.similarArtists[0].name == "Other Band",
+        "parseArtistInfo2 reuses parseArtist for similarArtist entries");
+    check(ai.biography == "A great <a href=\"x\">band</a> &amp; friends",
+        "parseArtistInfo2 keeps the biography raw (stripping happens at display time)");
+
+    navidrome::ArtistInfo aiEmpty = navidrome::parseArtistInfo2(parse("{}"));
+    check(aiEmpty.biography.empty() && aiEmpty.similarArtists.empty(),
+        "parseArtistInfo2 defaults on a missing artistInfo2 object");
+
+    // --- stripHtmlTags / formatArtistBiography ---
+    check(navidrome::stripHtmlTags("A great <a href=\"x\">band</a> &amp; friends") ==
+          "A great band & friends",
+        "stripHtmlTags drops tags and unescapes entities");
+    check(navidrome::stripHtmlTags("Line1<br>Line2   trailing  ") == "Line1 Line2 trailing",
+        "stripHtmlTags collapses whitespace left by stripped tags and trims trailing spaces");
+
+    navidrome::ArtistInfo bioInfo;
+    bioInfo.biography = "A <b>great</b> band";
+    bioInfo.lastFmUrl  = "http://last.fm/band";
+    check(navidrome::formatArtistBiography(bioInfo) ==
+          "A great band\n\nhttp://last.fm/band",
+        "formatArtistBiography strips markup and appends the last.fm link");
+    check(navidrome::formatArtistBiography(navidrome::ArtistInfo{}) == "No biography available.",
+        "formatArtistBiography falls back when the server has no biography");
+
     // --- parseSubsonicResponse: envelope handling ---
     navidrome::SubsonicResponse okResp = navidrome::parseSubsonicResponse(
         "{\"subsonic-response\":{\"status\":\"ok\",\"version\":\"1.16.1\","
@@ -1328,6 +1361,23 @@ struct FakeBrowserClient : navidrome::IBrowserClient {
         if (!error.empty()) return {};
         navidrome::Song s; s.id = "s7"; s.title = "Random"; return { s };
     }
+    navidrome::ArtistInfo getArtistInfo(const std::string& id, std::string& e) override {
+        calls.push_back("getArtistInfo:" + id);
+        e = error;
+        if (!error.empty()) return {};
+        navidrome::ArtistInfo info;
+        info.biography = "Bio";
+        navidrome::Artist similar; similar.id = "ar-similar"; similar.name = "Similar";
+        info.similarArtists = { similar };
+        return info;
+    }
+    std::vector<navidrome::Song> getTopSongs(const std::string& artistName, int count,
+                                             std::string& e) override {
+        calls.push_back("getTopSongs:" + artistName + ":" + std::to_string(count));
+        e = error;
+        if (!error.empty()) return {};
+        navidrome::Song s; s.id = "s-top"; s.title = "Top"; return { s };
+    }
     std::vector<std::string> groupingLibraryIds() override {
         calls.push_back("groupingLibraryIds");
         return groupIds;
@@ -1407,8 +1457,15 @@ void testBrowserFetchDispatch() {
         FakeBrowserClient fc; std::string err;
         auto out = navidrome::fetchChildren(fc, artist(""), err);
         check(fc.calls.size() == 1 && fc.calls[0] == "getAlbumsForArtist:",
-              "an unpinned artist fetches albums with an empty scope");
-        check(out.size() == 1 && out[0]->type == BrowserNode::Album, "-> album nodes");
+              "an unpinned artist fetches albums with an empty scope "
+              "(Top Songs/Similar Artists are lazy placeholders, no network call yet)");
+        check(out.size() == 3 &&
+              out[0]->type == BrowserNode::Category &&
+              out[0]->category == BrowserNode::CatArtistTopSongs &&
+              out[1]->type == BrowserNode::Category &&
+              out[1]->category == BrowserNode::CatArtistSimilarArtists &&
+              out[2]->type == BrowserNode::Album,
+              "-> Top Songs + Similar Artists placeholders, then album nodes");
     }
     {
         FakeBrowserClient fc; std::string err;
@@ -1466,6 +1523,28 @@ void testBrowserFetchDispatch() {
               "the Now Playing category yields song nodes annotated with user + minutesAgo");
     }
     {
+        // Placeholder as built by fetchChildren's Artist case: id = artist id,
+        // subtitle = artist name (see makeArtistSubNode).
+        FakeBrowserClient fc; std::string err;
+        BrowserNode topSongsNode;
+        topSongsNode.type = BrowserNode::Category; topSongsNode.category = BrowserNode::CatArtistTopSongs;
+        topSongsNode.id = "ar1"; topSongsNode.subtitle = "Artist Name";
+        auto out = navidrome::fetchChildren(fc, topSongsNode, err);
+        check(fc.calls[0] == "getTopSongs:Artist Name:50" && out.size() == 1 &&
+              out[0]->type == BrowserNode::Song && out[0]->id == "s-top",
+              "the artist's Top Songs placeholder calls getTopSongs keyed by the artist NAME");
+    }
+    {
+        FakeBrowserClient fc; std::string err;
+        BrowserNode similarNode;
+        similarNode.type = BrowserNode::Category; similarNode.category = BrowserNode::CatArtistSimilarArtists;
+        similarNode.id = "ar1"; similarNode.subtitle = "Artist Name";
+        auto out = navidrome::fetchChildren(fc, similarNode, err);
+        check(fc.calls[0] == "getArtistInfo:ar1" && out.size() == 1 &&
+              out[0]->type == BrowserNode::Artist && out[0]->id == "ar-similar",
+              "the artist's Similar Artists placeholder maps getArtistInfo's similarArtists to artist nodes");
+    }
+    {
         FakeBrowserClient fc; std::string err;
         navidrome::fetchChildren(fc, cat(BrowserNode::CatMostPlayed), err);
         check(fc.calls[0] == std::string("getAlbumList:frequent:100"),
@@ -1495,6 +1574,13 @@ void testBrowserFetchDispatch() {
         // artist -> (fetch) album -> (fetch) song
         check(songs.size() == 1 && songs[0]->type == BrowserNode::Song,
               "collectSongsDeep walks artist -> album -> song via fetches");
+        bool touchedSubCategories = false;
+        for (auto& c : fc.calls)
+            if (c.rfind("getTopSongs", 0) == 0 || c.rfind("getArtistInfo", 0) == 0)
+                touchedSubCategories = true;
+        check(!touchedSubCategories,
+              "collectSongsDeep skips an artist's Top Songs/Similar Artists placeholders "
+              "(no duplicate top tracks, no unrelated artists dragged in)");
 
         FakeBrowserClient fc2;
         auto preloaded = std::make_shared<BrowserNode>();

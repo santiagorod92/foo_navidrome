@@ -129,6 +129,18 @@ navidrome::NowPlayingEntry conv(SubsonicNowPlayingEntry *x) {
     return r;
 }
 
+navidrome::ArtistInfo conv(SubsonicArtistInfo *x) {
+    navidrome::ArtistInfo r;
+    r.biography      = str(x.biography);
+    r.musicBrainzId  = str(x.musicBrainzId);
+    r.lastFmUrl       = str(x.lastFmUrl);
+    r.smallImageUrl   = str(x.smallImageUrl);
+    r.mediumImageUrl  = str(x.mediumImageUrl);
+    r.largeImageUrl   = str(x.largeImageUrl);
+    for (SubsonicArtist *a in x.similarArtists) r.similarArtists.push_back(conv(a));
+    return r;
+}
+
 // Map an ObjC array to std::vector<navidrome::X> via the matching conv()
 // overload. The element type is given explicitly, so nothing is deduced from
 // the (generics-erased) NSArray type.
@@ -258,6 +270,21 @@ struct MacBrowserClient final : navidrome::IBrowserClient {
     std::vector<navidrome::Song> getRandomSongs(int count, std::string& e) override {
         NSError *err = nil;
         auto v = mapArr<SubsonicSong>([client getRandomSongsWithCount:count error:&err]);
+        e = errString(err);
+        return v;
+    }
+    navidrome::ArtistInfo getArtistInfo(const std::string& id, std::string& e) override {
+        NSError *err = nil;
+        SubsonicArtistInfo *info = [client getArtistInfoForId:@(id.c_str()) error:&err];
+        e = errString(err);
+        return info ? conv(info) : navidrome::ArtistInfo{};
+    }
+    std::vector<navidrome::Song> getTopSongs(const std::string& artistName, int count,
+                                             std::string& e) override {
+        NSError *err = nil;
+        auto v = mapArr<SubsonicSong>([client getTopSongsForArtist:@(artistName.c_str())
+                                                               count:count
+                                                               error:&err]);
         e = errString(err);
         return v;
     }

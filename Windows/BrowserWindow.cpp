@@ -988,6 +988,11 @@ struct WinBrowserClient final : navidrome::IBrowserClient {
         return c.getSimilarSongs(id, n, e); }
     std::vector<navidrome::Song> getRandomSongs(int n, std::string& e) override {
         return c.getRandomSongs(n, e); }
+    navidrome::ArtistInfo getArtistInfo(const std::string& id, std::string& e) override {
+        return c.getArtistInfo(id, e); }
+    std::vector<navidrome::Song> getTopSongs(const std::string& name, int n,
+                                             std::string& e) override {
+        return c.getTopSongs(name, n, e); }
     std::vector<std::string> groupingLibraryIds() override {
         return c.libraryGroupingIds(); }
     std::vector<navidrome::MusicFolder> musicFolders() override {
@@ -1369,6 +1374,34 @@ void BrowserWindow::OnPlaySimilar(UINT, int, HWND) {
     }).detach();
 }
 
+// Fetches the selected artist's biography + last.fm link and shows it in a
+// plain message box — a read-only lookup, not an enqueue action, so it skips
+// the enqueueNodes path every other context-menu action here goes through.
+void BrowserWindow::OnArtistInfo(UINT, int, HWND) {
+    dbgLog("OnArtistInfo fired");
+    auto selected = selectedNodes();
+    auto node = selected.empty() ? nullptr : selected.front();
+    if (!node || node->type != navidrome::BrowserNode::Artist) {
+        setStatus("Artist Info needs an artist");
+        return;
+    }
+
+    setStatus("Fetching artist info…");
+    std::string artistId   = node->id;
+    std::wstring artistName = u8ToWide(node->displayName);
+    std::thread([this, artistId, artistName]() {
+        std::string err;
+        auto info = navidrome::SubsonicClientWin::get().getArtistInfo(artistId, err);
+        std::wstring text = u8ToWide(navidrome::formatArtistBiography(info));
+        fb2k::inMainThread([this, artistName, text, err]() mutable {
+            if (!IsWindow()) return;
+            if (!err.empty()) { setStatus("Error: " + err); return; }
+            setStatus("");
+            MessageBoxW(text.c_str(), artistName.c_str(), MB_OK | MB_ICONINFORMATION);
+        });
+    }).detach();
+}
+
 // Fetches a fresh batch of random tracks and appends + plays them. No
 // selection needed — always available, like "Send Active Playlist".
 void BrowserWindow::OnRandomMix(UINT, int, HWND) {
@@ -1430,6 +1463,7 @@ void BrowserWindow::OnContextMenu(CWindow wnd, CPoint point) {
     menu.AppendMenu(MF_STRING, IDC_PLAY, L"Play Now");
     menu.AppendMenu(MF_STRING, IDC_ADD,  L"Add to Playlist");
     menu.AppendMenu(MF_STRING, IDC_PLAY_SIMILAR, L"Play Similar");
+    menu.AppendMenu(MF_STRING, IDC_ARTIST_INFO,  L"Artist Info");
 
     // Server-side favorites + ratings. Both are per-user state on Navidrome, so
     // they show up in its web UI and in every other Subsonic client.

@@ -91,6 +91,12 @@ public:
     std::vector<Song>  getSongsForGenre(const std::string& genre, int count, std::string& outError);
     std::vector<Song>  getSimilarSongs(const std::string& itemId, int count, std::string& outError);
     std::vector<Song>  getRandomSongs(int count, std::string& outError);
+    // Biography + last.fm-derived similar artists (getArtistInfo2.view). Backs
+    // the "Artist Info" context-menu action and the artist's "Similar Artists"
+    // child node — one request serves both.
+    ArtistInfo         getArtistInfo(const std::string& artistId, std::string& outError);
+    // getTopSongs.view keys off the artist NAME, not the id (Subsonic quirk).
+    std::vector<Song>  getTopSongs(const std::string& artistName, int count, std::string& outError);
     bool setStarred(bool starred, const std::string& itemId, StarKind kind, std::string& outError);
     bool setRating(int rating, const std::string& songId, std::string& outError);
     bool getSong(const std::string& songId, Song& out, std::string& outError);

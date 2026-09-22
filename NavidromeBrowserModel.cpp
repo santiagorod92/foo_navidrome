@@ -76,6 +76,10 @@ std::vector<BrowserNodePtr> fetchChildren(IBrowserClient& client,
                 out.push_back(makeLibraryArtistNode(a, node.id));
             break;
         case BrowserNode::Artist:
+            out.push_back(makeArtistSubNode(BrowserNode::CatArtistTopSongs, "Top Songs",
+                                            node.id, node.displayName));
+            out.push_back(makeArtistSubNode(BrowserNode::CatArtistSimilarArtists, "Similar Artists",
+                                            node.id, node.displayName));
             for (const auto& a : client.getAlbumsForArtist(node.id, node.libraryId, outError))
                 out.push_back(makeAlbumNode(a));
             break;
@@ -126,6 +130,16 @@ std::vector<BrowserNodePtr> fetchChildren(IBrowserClient& client,
                         out.push_back(n);
                     }
                     break;
+                case BrowserNode::CatArtistTopSongs:
+                    // node.subtitle carries the artist name (see makeArtistSubNode) —
+                    // getTopSongs.view keys off the name, not the id.
+                    for (const auto& s : client.getTopSongs(node.subtitle, 50, outError)) addSong(s);
+                    break;
+                case BrowserNode::CatArtistSimilarArtists: {
+                    auto info = client.getArtistInfo(node.id, outError);
+                    for (const auto& a : info.similarArtists) out.push_back(makeArtistNode(a));
+                    break;
+                }
                 default:   // the four getAlbumList2-backed smart lists
                     for (const auto& a : client.getAlbumList(
                             albumListTypeForCategory(node.category), 100, outError))
@@ -142,6 +156,22 @@ std::vector<BrowserNodePtr> fetchChildren(IBrowserClient& client,
     return out;
 }
 
+// An artist's "Top Songs"/"Similar Artists" children are extra browsing
+// entry points, not part of the artist's own discography — a deep walk that
+// started at the Artist (Play/Add "whole artist") must skip them, or it picks
+// up duplicate top tracks and drags in unrelated artists' entire catalogs.
+// Selecting either node directly still works: this only filters them out of
+// their *parent*'s recursion, and the function has no other special case for
+// BrowserNode::Category, so a direct call on one of these nodes falls through
+// to the normal fetch-then-recurse path below.
+namespace {
+bool isArtistSubCategory(const BrowserNodePtr& n) {
+    return n->type == BrowserNode::Category &&
+           (n->category == BrowserNode::CatArtistTopSongs ||
+            n->category == BrowserNode::CatArtistSimilarArtists);
+}
+} // namespace
+
 void collectSongsDeep(IBrowserClient& client, const BrowserNodePtr& node,
                       std::vector<BrowserNodePtr>& out) {
     if (!node) return;
@@ -152,13 +182,14 @@ void collectSongsDeep(IBrowserClient& client, const BrowserNodePtr& node,
     if (node->type == BrowserNode::Loading || node->type == BrowserNode::Error) return;
 
     if (node->childrenLoaded && !node->children.empty()) {
-        for (const auto& c : node->children) collectSongsDeep(client, c, out);
+        for (const auto& c : node->children)
+            if (!isArtistSubCategory(c)) collectSongsDeep(client, c, out);
         return;
     }
 
     std::string err;
     for (const auto& c : fetchChildren(client, *node, err))
-        collectSongsDeep(client, c, out);
+        if (!isArtistSubCategory(c)) collectSongsDeep(client, c, out);
 }
 
 std::vector<std::string> collectSongIdsDeep(IBrowserClient& client,

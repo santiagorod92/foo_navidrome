@@ -84,6 +84,7 @@ public:
         COMMAND_ID_HANDLER_EX(IDC_PLAY,    OnPlay)
         COMMAND_ID_HANDLER_EX(IDC_PLAY_SIMILAR, OnPlaySimilar)
         COMMAND_ID_HANDLER_EX(IDC_RANDOM_MIX, OnRandomMix)
+        COMMAND_ID_HANDLER_EX(IDC_ARTIST_INFO, OnArtistInfo)
         COMMAND_ID_HANDLER_EX(IDC_REFRESH, OnRefresh)
         COMMAND_ID_HANDLER_EX(IDC_STAR,    OnStar)
         COMMAND_ID_HANDLER_EX(IDC_UNSTAR,  OnUnstar)
@@ -133,6 +134,7 @@ private:
         IDC_DELETE_RADIO    = 1024,
         IDC_SUBSCRIBE_PODCAST   = 1027,
         IDC_UNSUBSCRIBE_PODCAST = 1028,
+        IDC_ARTIST_INFO         = 1029,
         // One id per entry in the server-playlist submenu; the offset from
         // IDC_PLAYLIST_FIRST indexes m_serverPlaylists.
         IDC_PLAYLIST_FIRST = 1100,
@@ -163,6 +165,7 @@ private:
     void    OnPlay(UINT, int, HWND);
     void    OnPlaySimilar(UINT, int, HWND);
     void    OnRandomMix(UINT, int, HWND);
+    void    OnArtistInfo(UINT, int, HWND);
     void    OnRefresh(UINT, int, HWND);
     void    OnStar(UINT, int, HWND);
     void    OnUnstar(UINT, int, HWND);

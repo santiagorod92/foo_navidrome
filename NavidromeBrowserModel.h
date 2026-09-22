@@ -46,6 +46,11 @@ struct BrowserNode {
         CatRadio,            // getInternetRadioStations.view  -> stations
         CatPodcasts,         // getPodcasts.view                -> channels
         CatNowPlaying,       // getNowPlaying.view              -> songs
+        // Per-artist synthetic children, injected by fetchChildren's Artist
+        // case rather than shown in buildCategoryNodes — id/subtitle carry the
+        // parent artist's id/name (see makeArtistSubNode).
+        CatArtistTopSongs,        // getTopSongs.view (by artist name) -> songs
+        CatArtistSimilarArtists,  // getArtistInfo2.view similarArtist -> artists
     };
 
     Type         type       = Loading;
@@ -199,6 +204,17 @@ inline BrowserNodePtr makeCategoryNode(BrowserNode::CategoryKind kind,
     n->type        = BrowserNode::Category;
     n->category    = kind;
     n->displayName = title;
+    return n;
+}
+
+// Per-artist synthetic children (see fetchChildren's Artist case). id carries
+// the artist id, subtitle the artist name — getTopSongs.view needs the name,
+// getArtistInfo2.view needs the id, and both live on the one node either way.
+inline BrowserNodePtr makeArtistSubNode(BrowserNode::CategoryKind kind, const std::string& title,
+                                        const std::string& artistId, const std::string& artistName) {
+    auto n = makeCategoryNode(kind, title);
+    n->id       = artistId;
+    n->subtitle = artistName;
     return n;
 }
 
@@ -372,6 +388,13 @@ struct IBrowserClient {
     virtual std::vector<Song>         getSimilarSongs(const std::string& itemId, int count,
                                                       std::string& outError) = 0;
     virtual std::vector<Song>         getRandomSongs(int count, std::string& outError) = 0;
+    // Biography + similar artists (getArtistInfo2.view) — backs "Artist Info"
+    // and the "Similar Artists" child node, and top tracks (getTopSongs.view,
+    // keyed by artist NAME) — backs the "Top Songs" child node.
+    virtual ArtistInfo                 getArtistInfo(const std::string& artistId,
+                                                      std::string& outError) = 0;
+    virtual std::vector<Song>         getTopSongs(const std::string& artistName, int count,
+                                                  std::string& outError) = 0;
 
     // Multi-library grouping. groupingLibraryIds() returns 2+ ids only when the
     // tree should show a Library level (see the Decisions note in CLAUDE.md);

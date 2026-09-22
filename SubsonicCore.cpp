@@ -493,6 +493,32 @@ std::vector<Song> SubsonicCore::getSimilarSongs(const std::string& itemId, int c
     return result;
 }
 
+ArtistInfo SubsonicCore::getArtistInfo(const std::string& artistId, std::string& outError) {
+    if (artistId.empty()) return {};
+    std::string body = httpGet(
+        buildURL("getArtistInfo2.view", "id=" + enc(artistId) + "&count=20"), outError);
+    if (body.empty()) return {};
+    auto root = checkResponse(body, outError);
+    if (root.isNull()) return {};
+    return parseArtistInfo2(root);
+}
+
+std::vector<Song> SubsonicCore::getTopSongs(const std::string& artistName, int count,
+                                            std::string& outError) {
+    if (artistName.empty()) return {};
+    std::string body = httpGet(
+        buildURL("getTopSongs.view", "artist=" + enc(artistName) + "&count=" + std::to_string(count)),
+        outError);
+    if (body.empty()) return {};
+    auto root = checkResponse(body, outError);
+    if (root.isNull()) return {};
+
+    std::vector<Song> result;
+    for (auto* s : root["topSongs"]["song"].items())
+        result.push_back(parseSong(*s));
+    return result;
+}
+
 std::vector<Song> SubsonicCore::getRandomSongs(int count, std::string& outError) {
     const auto folderIds = activeMusicFolderIds();
     // Split the requested size across the fanned-out libraries so the merged

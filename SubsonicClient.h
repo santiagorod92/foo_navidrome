@@ -113,6 +113,19 @@
 @property (nonatomic, assign) NSInteger minutesAgo;
 @end
 
+// Artist biography + last.fm-derived similar artists (getArtistInfo2.view).
+// Backs the "Artist Info" context-menu action and the artist's "Similar
+// Artists" child node — one request serves both.
+@interface SubsonicArtistInfo : NSObject
+@property (nonatomic, copy) NSString *biography;
+@property (nonatomic, copy) NSString *musicBrainzId;
+@property (nonatomic, copy) NSString *lastFmUrl;
+@property (nonatomic, copy) NSString *smallImageUrl;
+@property (nonatomic, copy) NSString *mediumImageUrl;
+@property (nonatomic, copy) NSString *largeImageUrl;
+@property (nonatomic, copy) NSArray<SubsonicArtist *> *similarArtists;
+@end
+
 // Item kinds accepted by star.view / unstar.view — Subsonic names the query
 // parameter differently per kind (id / albumId / artistId).
 typedef NS_ENUM(NSInteger, SubsonicStarKind) {
@@ -201,6 +214,17 @@ typedef NS_ENUM(NSInteger, SubsonicStarKind) {
 // smart-list node.
 - (NSArray<SubsonicSong *> *)getRandomSongsWithCount:(NSInteger)count
                                                 error:(NSError **)error;
+
+// Biography + last.fm-derived similar artists (getArtistInfo2.view). Backs
+// the "Artist Info" context-menu action and the "Similar Artists" child node.
+- (SubsonicArtistInfo *)getArtistInfoForId:(NSString *)artistId
+                                      error:(NSError **)error;
+
+// Top tracks for an artist (getTopSongs.view, keyed by artist NAME, not id).
+// Backs the "Top Songs" child node.
+- (NSArray<SubsonicSong *> *)getTopSongsForArtist:(NSString *)artistName
+                                             count:(NSInteger)count
+                                             error:(NSError **)error;
 
 // Favorites + ratings. Both are per-user server-side state, so they show up in
 // the Navidrome web UI and every other Subsonic client.

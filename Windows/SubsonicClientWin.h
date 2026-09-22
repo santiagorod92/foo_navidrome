@@ -90,6 +90,14 @@ public:
     // smart-list node.
     std::vector<Song>    getRandomSongs(int count, std::string& outError);
 
+    // Biography + last.fm-derived similar artists (getArtistInfo2.view). Backs
+    // the "Artist Info" context-menu action and the "Similar Artists" child node.
+    ArtistInfo            getArtistInfo(const std::string& artistId, std::string& outError);
+    // Top tracks for an artist (getTopSongs.view, keyed by artist NAME). Backs
+    // the "Top Songs" child node.
+    std::vector<Song>    getTopSongs(const std::string& artistName, int count,
+                                     std::string& outError);
+
     // Favorites + ratings. Per-user server-side state, so it shows up in the
     // Navidrome web UI and every other Subsonic client.
     bool setStarred(bool starred, const std::string& itemId, StarKind kind,

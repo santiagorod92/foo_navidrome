@@ -127,6 +127,20 @@ struct NowPlayingEntry {
     int         minutesAgo = 0;
 };
 
+// Artist biography + last.fm-derived similar artists (getArtistInfo2.view).
+// Backs the "Artist Info" context-menu action and the artist's "Similar
+// Artists" child node. biography may carry HTML (last.fm's own markup) —
+// see stripHtmlTags/formatArtistBiography below.
+struct ArtistInfo {
+    std::string biography;
+    std::string musicBrainzId;
+    std::string lastFmUrl;
+    std::string smallImageUrl;
+    std::string mediumImageUrl;
+    std::string largeImageUrl;
+    std::vector<Artist> similarArtists;
+};
+
 // Library scan progress (startScan.view / getScanStatus.view). count is the
 // number of items processed so far; only meaningful while scanning is true —
 // Subsonic doesn't report a total, so this can only show "N processed", not
@@ -1292,6 +1306,83 @@ inline NowPlayingEntry parseNowPlayingEntry(const json::Value& e) {
     np.username   = jStr(e, "username");
     np.minutesAgo = jInt(e, "minutesAgo");
     return np;
+}
+
+// getArtistInfo2.view: the inner response object carries an "artistInfo2"
+// object (Subsonic may array-collapse it, same as scanStatus) plus a
+// "similarArtist" array reusing the plain Artist shape.
+inline ArtistInfo parseArtistInfo2(const json::Value& inner) {
+    ArtistInfo info;
+    auto items = inner["artistInfo2"].items();
+    if (items.empty()) return info;
+    const json::Value& a = *items[0];
+    info.biography      = jStr(a, "biography");
+    info.musicBrainzId  = jStr(a, "musicBrainzId");
+    info.lastFmUrl       = jStr(a, "lastFmUrl");
+    info.smallImageUrl   = jStr(a, "smallImageUrl");
+    info.mediumImageUrl  = jStr(a, "mediumImageUrl");
+    info.largeImageUrl   = jStr(a, "largeImageUrl");
+    for (auto* s : a["similarArtist"].items())
+        info.similarArtists.push_back(parseArtist(*s));
+    return info;
+}
+
+// Strips HTML tags and unescapes the handful of entities last.fm-sourced
+// biographies actually use, so the text is safe to drop straight into a
+// plain-text dialog (NSAlert / MessageBoxW) with no markup leaking through.
+inline std::string stripHtmlTags(const std::string& html) {
+    std::string out;
+    out.reserve(html.size());
+    bool inTag = false;
+    for (std::size_t i = 0; i < html.size(); ++i) {
+        char c = html[i];
+        // A stripped tag becomes a space, not nothing — <br>/<p> etc. would
+        // otherwise glue the words on either side together; the whitespace
+        // collapse below cleans up any doubled-up spaces this introduces.
+        if (c == '<') { inTag = true;  out += ' '; continue; }
+        if (c == '>') { inTag = false; continue; }
+        if (inTag) continue;
+        out += c;
+    }
+    auto replaceAll = [](std::string& s, const char* from, const char* to) {
+        std::size_t pos = 0, fromLen = std::strlen(from);
+        while ((pos = s.find(from, pos)) != std::string::npos) {
+            s.replace(pos, fromLen, to);
+            pos += std::strlen(to);
+        }
+    };
+    replaceAll(out, "&amp;",  "&");
+    replaceAll(out, "&lt;",   "<");
+    replaceAll(out, "&gt;",   ">");
+    replaceAll(out, "&quot;", "\"");
+    replaceAll(out, "&#39;",  "'");
+    replaceAll(out, "&apos;", "'");
+    // Collapse runs of whitespace left behind by stripped block tags.
+    std::string collapsed;
+    collapsed.reserve(out.size());
+    bool lastWasSpace = false;
+    for (char c : out) {
+        bool isSpace = (c == ' ' || c == '\t' || c == '\n' || c == '\r');
+        if (isSpace) {
+            if (!lastWasSpace && !collapsed.empty()) collapsed += ' ';
+            lastWasSpace = true;
+        } else {
+            collapsed += c;
+            lastWasSpace = false;
+        }
+    }
+    while (!collapsed.empty() && collapsed.back() == ' ') collapsed.pop_back();
+    return collapsed;
+}
+
+// The full "Artist Info" dialog body: stripped biography (or a fallback
+// when the server has none) plus the last.fm link, one shared implementation
+// so the Windows MessageBoxW and macOS NSAlert text read identically.
+inline std::string formatArtistBiography(const ArtistInfo& info) {
+    std::string bio = stripHtmlTags(info.biography);
+    std::string text = bio.empty() ? "No biography available." : bio;
+    if (!info.lastFmUrl.empty()) text += "\n\n" + info.lastFmUrl;
+    return text;
 }
 
 // startScan.view / getScanStatus.view: the inner response object carries a

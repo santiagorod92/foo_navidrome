@@ -27,6 +27,8 @@ A [foobar2000](https://www.foobar2000.org/) component that lets you browse and s
 - Add albums or artists to playlist in one click (loads all songs automatically)
 - Right-click any row for a **Play Now / Add to Playlist** context menu
 - **Play Similar** from the right-click menu — queues and plays last.fm-derived recommendations for the selected artist, album, or song (`getSimilarSongs2.view`)
+- **Artist Info** from the right-click menu on an artist row — shows the last.fm biography and a link to the full page (`getArtistInfo2.view`)
+- Every artist has **Top Songs** and **Similar Artists** child nodes, so you can browse an artist's most popular tracks or jump straight to related artists without leaving the tree (`getTopSongs.view`, `getArtistInfo2.view`)
 - Double-click a song to play immediately
 - Live search across artists, albums and songs — results update as you type (debounced, no per-keystroke server hammering)
 - **Rescan Library Now** button in Preferences › Tools › Navidrome — triggers a server-side scan and shows live progress, for when files were added/removed server-side and you don't want to wait for Navidrome's own scan schedule
