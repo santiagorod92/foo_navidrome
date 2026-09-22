@@ -1,3 +1,10 @@
+## [1.15.2](https://github.com/santiagorod92/foo_navidrome/compare/v1.15.1...v1.15.2) (2026-09-22)
+
+
+### Bug Fixes
+
+* work around SDK's missing wrap_pfc_hooks.h include for ARM64EC ([be78524](https://github.com/santiagorod92/foo_navidrome/commit/be78524d419964ec8bfa11c717d24c361d9dac0c))
+
 ## [1.15.1](https://github.com/santiagorod92/foo_navidrome/compare/v1.15.0...v1.15.1) (2026-09-22)
 
 
