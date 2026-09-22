@@ -103,6 +103,27 @@ jobs:
           done
           rm -rf _sdk-staging
 
+      # Work around an incomplete upstream SDK sync (reupen/foobar2000-sdk-unmodified
+      # SDK-2026-09-17): pfc's other.cpp/win-objects.cpp now reference
+      # pfc_crashHook/pfc_winFormatSystemErrorMessageHook as extern "C", and
+      # foobar2000/shared/wrap_pfc_hooks.h defines them — but nothing in the
+      # shared project's own sources #includes that header, so ARM64EC linking
+      # of shared.vcxproj fails with unresolved externals (x64/Win32 don't hit
+      # this — see the pfc-Mac Gotcha for how this was diagnosed). Until
+      # upstream wires the include themselves, append it to stdafx.cpp (a
+      # single-TU file already part of every shared build) — matches the
+      # header's own single-definition contract. Safe to drop once upstream
+      # fixes it themselves (the extra #include becomes a harmless no-op collision
+      # only if they also add one to stdafx.cpp specifically, which the build
+      # would then flag — revisit if this step ever needs removing).
+      - name: Work around missing wrap_pfc_hooks.h include in the SDK's shared project
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '#include "wrap_pfc_hooks.h"' >> foobar2000/shared/stdafx.cpp
+          echo "patched foobar2000/shared/stdafx.cpp:"
+          cat foobar2000/shared/stdafx.cpp
+
       # main.cpp reads COMPONENT_VERSION from version_generated.h when present
       # (else falls back to "1.0.0"). The Windows vcxproj has no version-header
       # build phase, so synthesize it from the explicit input or version.txt.
