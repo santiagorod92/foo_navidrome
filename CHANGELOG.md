@@ -1,3 +1,10 @@
+## [1.15.1](https://github.com/santiagorod92/foo_navidrome/compare/v1.15.0...v1.15.1) (2026-09-22)
+
+
+### Bug Fixes
+
+* bump to C++20 for the same upstream SDK sync that renamed pfc ([564499c](https://github.com/santiagorod92/foo_navidrome/commit/564499c0fcdaa73ba807313a6ada96734e67a98f))
+
 ## [1.15.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.14.0...v1.15.0) (2026-09-22)
 
 
