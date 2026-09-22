@@ -68,7 +68,7 @@ DEFS=(/DWIN32 /D_WINDOWS /D_USRDLL /DUNICODE /D_UNICODE /DNDEBUG /D_CRT_SECURE_N
 # bundles the ARM64EC flavour of VCRUNTIME140/MSVCP140. An emulated x64 component
 # can't use those, so link the CRT statically to stay self-contained. (CI builds
 # native ARM64EC with /MD for releases, where foobar's bundled CRT matches.)
-CL_COMMON=(--target=x86_64-pc-windows-msvc /c /std:c++17 /EHsc /MT /GR /w "${DEFS[@]}" /FI"$PREFIX_H" "${SYS_INC[@]}" "${PROJ_INC[@]}")
+CL_COMMON=(--target=x86_64-pc-windows-msvc /c /std:c++20 /EHsc /MT /GR /w "${DEFS[@]}" /FI"$PREFIX_H" "${SYS_INC[@]}" "${PROJ_INC[@]}")
 
 SRCS=()
 while IFS= read -r f; do SRCS+=("$f"); done < <(

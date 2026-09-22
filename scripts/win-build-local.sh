@@ -147,7 +147,7 @@ PROJ_INC=(
 DEFS=( /DWIN32 /D_WINDOWS /D_USRDLL /DUNICODE /D_UNICODE /DNDEBUG
        /D_CRT_SECURE_NO_WARNINGS /D_SECURE_ATL=1 /DNAVIDROME_DEBUG_LOG=1 )
 FORCE=( /FI"$PREFIX_H" )
-CL_COMMON=( --target="$TARGET" /c /std:c++17 /EHsc /MD /GR /w
+CL_COMMON=( --target="$TARGET" /c /std:c++20 /EHsc /MD /GR /w
             "${DEFS[@]}" "${FORCE[@]}" "${SYS_INC[@]}" "${PROJ_INC[@]}" )
 
 # Directories the casing resolver may symlink within (system + SDK sources).
