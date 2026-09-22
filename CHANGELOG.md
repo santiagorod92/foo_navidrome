@@ -1,3 +1,10 @@
+## [1.15.4](https://github.com/santiagorod92/foo_navidrome/compare/v1.15.3...v1.15.4) (2026-09-22)
+
+
+### Bug Fixes
+
+* drop u8 prefix from test literals (C++20 char8_t breaking change) ([9956227](https://github.com/santiagorod92/foo_navidrome/commit/995622740f11c068124ceb8d30147db728ad5e73))
+
 ## [1.15.3](https://github.com/santiagorod92/foo_navidrome/compare/v1.15.2...v1.15.3) (2026-09-22)
 
 
