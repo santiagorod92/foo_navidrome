@@ -13,6 +13,32 @@ Any feature/fix touching shared or platform code must land on **both** macOS and
 - **Make/scripts**: if a new build/test/deploy step is needed, wire it into the `Makefile` + the relevant script (`run-unit-tests.sh`, `win-build-local.sh`, `mac-dev-build.sh`, etc.), not just run ad hoc. Same for any command reached for more than once that's long or easy to forget the flags of (a build+launch combo, a multi-step VM flow, a symbolizer invocation) — turn it into a `make` target instead of re-typing/re-deriving it each time.
 - **Docs**: update this CLAUDE.md (architecture/decisions/gotchas as relevant) and README when user-facing.
 
+## Cross-compatibility with other same-author components
+
+Some standard foobar2000 SDK paths don't fit `navidrome://` tracks — there's no real file
+backing them, so e.g. a `metadb_io_v2` tag write fails with "Tagging of this file format is not
+supported". Where another of this author's components needs to do something to a Navidrome track
+that only this repo can do correctly, the pattern is: expose a small `service_base`-derived
+interface here (GUID + pure-virtual contract only, `FB2K_MAKE_SERVICE_INTERFACE_ENTRYPOINT`,
+implementation in `main.cpp` or a dedicated `.cpp`), and the other component vendors a copy of
+just the contract header (GUID must match byte-for-byte) and finds it via
+`service_enum_t<T>` at runtime. No build-time coupling, no-op if the other component isn't
+installed.
+
+- **`navidrome_rating_api`** (`NavidromeRatingService.h`) — lets another component set a rating
+  on a navidrome:// track (`set_rating_async`, preserves starred state, syncs the change back to
+  matching playlist entries) without hitting the tag-write error above. First (only) consumer:
+  [foo_ui_panels](https://github.com/santiagorod92/foo_ui_panels) — its star-rating widgets
+  (`src/skin_engine.cpp`'s `set_rating()`/`TAG:SET:rating:`) route through this service instead
+  of the standard file-tag path when the track is one of ours; its rating *display* also reads
+  `NAVIDROME_RATING` as a fallback field (see this repo's own "Don't name an exported field
+  `rating`" gotcha below — that's exactly why a separate read path is needed on the consumer side
+  too). Vendored copy: `foo_ui_panels/src/navidrome_rating_api.h`.
+
+Adding a new cross-component interface: follow the same shape, and add a bullet here naming the
+interface, what it's for, and every known consumer — keeps both repos' CLAUDE.md honest about
+who depends on what without needing to grep across machines.
+
 ## Architecture
 
 Shared C++ core + per-platform UI/HTTP layers:

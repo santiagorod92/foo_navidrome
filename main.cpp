@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "NavidromePlaylistSync.h"
 #include "NavidromeBrowserEnqueue.h"
+#include "NavidromeRatingService.h"
 #include "SubsonicTypes.h"
 #include <SDK/metadb.h>
 #include <SDK/playlist.h>
@@ -376,5 +377,38 @@ public:
 };
 
 static contextmenu_item_factory_t<navidrome_context_menu> g_navidrome_context_menu;
+
+// Lets other components (e.g. a custom skin's own rating UI) set a rating on a navidrome://
+// track without going through metadb_io_v2 (fails: "Tagging of this file format is not
+// supported" — there's no real file to tag). Same seed-then-change-one-field approach as
+// navidrome_context_menu::context_command above, minus the starred branch (not this API's job).
+class navidrome_rating_api_impl : public navidrome::navidrome_rating_api {
+public:
+    bool is_navidrome_track(const metadb_handle_ptr& track) override {
+        return track.is_valid() && !navidrome::trackIdFromURI(track->get_path()).empty();
+    }
+
+    void set_rating_async(const metadb_handle_ptr& track, int stars) override {
+        if (track.is_empty()) return;
+        std::string songId = navidrome::trackIdFromURI(track->get_path());
+        if (songId.empty()) return;
+        if (stars < 0) stars = 0;
+        if (stars > 5) stars = 5;
+
+        navidrome::RatingUpdate u;
+        u.songId = songId;
+        u.rating = stars;
+        file_info_impl info;
+        if (track->get_info(info))
+            u.starred = info.meta_get_count_by_name(navidrome::kStarredTag) > 0;
+
+        std::thread([u = std::move(u)]() mutable {
+            if (navidrome::setRatingOnServer(u.songId, u.rating))
+                navidrome::syncRatingsToPlaylists({ std::move(u) });
+        }).detach();
+    }
+};
+
+static service_factory_single_t<navidrome_rating_api_impl> g_navidrome_rating_api_factory;
 
 } // namespace
