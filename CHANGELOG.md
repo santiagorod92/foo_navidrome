@@ -1,3 +1,10 @@
+## [1.16.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.15.4...v1.16.0) (2026-09-25)
+
+
+### Features
+
+* expose navidrome_rating_api for cross-component rating writes ([2437422](https://github.com/santiagorod92/foo_navidrome/commit/2437422ed5c7f13980fa275f7b5a0a558cbda91d))
+
 ## [1.15.4](https://github.com/santiagorod92/foo_navidrome/compare/v1.15.3...v1.15.4) (2026-09-22)
 
 
