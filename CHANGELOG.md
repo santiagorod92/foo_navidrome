@@ -1,3 +1,16 @@
+## [1.17.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.16.0...v1.17.0) (2026-09-29)
+
+
+### Features
+
+* auto-skip tracks deleted from the server via fb2k::skipTrack ([adfaf6a](https://github.com/santiagorod92/foo_navidrome/commit/adfaf6a6c66d0d486771eb07880881009ff5425c))
+* expose navidrome_library_api for cross-component library browsing ([81732dc](https://github.com/santiagorod92/foo_navidrome/commit/81732dcf668e24820b490eef3ee3f4134a98d30f))
+
+
+### Bug Fixes
+
+* **build:** predefine _NO_SYS_GUID_OPERATOR_EQ_ in the clang-cl forced-include prefix ([14a7523](https://github.com/santiagorod92/foo_navidrome/commit/14a7523326361cbc82e600498f268c82c3a268c3))
+
 ## [1.16.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.15.4...v1.16.0) (2026-09-25)
 
 
