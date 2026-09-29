@@ -7,7 +7,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -840,6 +842,41 @@ private:
     double      length_    = 0.0;
     bool        submitted_ = false;
 };
+
+// ---------------------------------------------------------------------------
+// Session-scoped set of Navidrome song ids known unplayable this run (server
+// returned "not found" on the stream). Populated by the input handler's
+// decode_initialize() on a definite exception_io_not_found; queried by the
+// fb2k::skipTrack SDK hook (2.26+) so repeat/shuffle/Random Mix doesn't retry
+// a doomed HTTP GET on the same stale entry every loop. Never cleared mid-run
+// — a server-side fix (track restored) needs a restart to replay, same as any
+// other session-only cache in this codebase. Mutex-guarded: markBroken() runs
+// on the decode thread, isBroken() on whatever thread the core calls
+// skipTrack from.
+// ---------------------------------------------------------------------------
+class BrokenTrackRegistry {
+public:
+    void markBroken(const std::string& songId) {
+        if (songId.empty()) return;
+        std::lock_guard<std::mutex> lock(mutex_);
+        broken_.insert(songId);
+    }
+    bool isBroken(const std::string& songId) const {
+        if (songId.empty()) return false;
+        std::lock_guard<std::mutex> lock(mutex_);
+        return broken_.count(songId) != 0;
+    }
+
+private:
+    mutable std::mutex mutex_;
+    std::unordered_set<std::string> broken_;
+};
+
+// One instance per process, shared by every TU that includes this header.
+inline BrokenTrackRegistry& brokenTrackRegistry() {
+    static BrokenTrackRegistry instance;
+    return instance;
+}
 
 // ---------------------------------------------------------------------------
 // One-line session-env summary for the startup `Env` trace line. Both

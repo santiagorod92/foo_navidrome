@@ -902,6 +902,23 @@ void testScrobbleTracker() {
     }
 }
 
+void testBrokenTrackRegistry() {
+    // Fresh instance per case — not the process-wide brokenTrackRegistry()
+    // singleton, so cases can't bleed into each other.
+    navidrome::BrokenTrackRegistry r;
+    check(!r.isBroken("s1"), "nothing is broken before markBroken");
+
+    r.markBroken("s1");
+    check(r.isBroken("s1"), "marked id reads back as broken");
+    check(!r.isBroken("s2"), "an unmarked id stays unaffected");
+
+    r.markBroken("s1");  // idempotent
+    check(r.isBroken("s1"), "marking the same id twice is a no-op, not an error");
+
+    r.markBroken("");
+    check(!r.isBroken(""), "an empty id is never markable/broken (not-one-of-ours sentinel)");
+}
+
 void testSessionEnv() {
     navidrome::SessionEnv e;
     e.platform        = "Windows";
@@ -1908,6 +1925,7 @@ int main() {
     testSubsonicParsers();
     testRetryPolicy();
     testScrobbleTracker();
+    testBrokenTrackRegistry();
     testSessionEnv();
     testFanOutMerge();
     testAlbumArtistFilter();

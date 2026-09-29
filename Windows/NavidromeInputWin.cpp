@@ -7,6 +7,7 @@
 #include <SDK/input_impl.h>
 #include <SDK/file.h>
 #include <SDK/http_client.h>
+#include <SDK/skipTrack.h>
 #include <string>
 #include <vector>
 #include <cstdlib>
@@ -98,12 +99,22 @@ public:
 
         NAVIDROME_LOG("Input", "g_open_for_decoding  hint=" + navidrome::dbg::scrubAuth(hint)
                  + (httpFile.is_valid() ? "  (own http file)" : "  (foobar opens url)"));
-        input_entry::g_open_for_decoding(m_decoder, httpFile, hint, p_abort, true);
-        if (m_decoder.is_empty()) {
-            NAVIDROME_ERR("Input", "g_open_for_decoding produced no decoder — unsupported/corrupt stream");
-            throw exception_io_data();
+        try {
+            input_entry::g_open_for_decoding(m_decoder, httpFile, hint, p_abort, true);
+            if (m_decoder.is_empty()) {
+                NAVIDROME_ERR("Input", "g_open_for_decoding produced no decoder — unsupported/corrupt stream");
+                throw exception_io_data();
+            }
+            m_decoder->initialize(0, p_flags, p_abort);
+        } catch (const exception_io_not_found&) {
+            // Server said the track is gone — blacklist for the rest of this
+            // session so a later shuffle/repeat/Random Mix hit doesn't retry
+            // a doomed GET. Transient errors (timeout/network) don't land here.
+            navidrome::brokenTrackRegistry().markBroken(m_song_id);
+            NAVIDROME_WARN("Input", "id=" + m_song_id
+                           + " not found on server — marking broken for this session");
+            throw;
         }
-        m_decoder->initialize(0, p_flags, p_abort);
         NAVIDROME_LOG("Input", "decoder ready");
     }
 
@@ -165,5 +176,27 @@ private:
 
 static input_singletrack_factory_t<navidrome_input_win, input_entry::flag_redirect>
     g_navidrome_input_win_factory;
+
+// ---------------------------------------------------------------------------
+// fb2k::skipTrack (SDK 2.26+) — preflight check the core runs before a
+// playlist advance/shuffle/Random Mix actually opens a track. Returning false
+// here skips it without ever attempting the decode, for ids decode_initialize
+// already proved dead this session (see BrokenTrackRegistry in SubsonicTypes.h).
+// ---------------------------------------------------------------------------
+class navidrome_skip_track_win : public fb2k::skipTrack {
+public:
+    bool testTrack(const fb2k::skipTrackParam& p) override {
+        if (p.track.is_empty()) return true;
+        std::string id = navidrome::trackIdFromURI(p.track->get_path());
+        if (id.empty()) return true;  // not one of ours
+        if (navidrome::brokenTrackRegistry().isBroken(id)) {
+            NAVIDROME_WARN("Input", "skipTrack: skipping known-broken id=" + id);
+            return false;
+        }
+        return true;
+    }
+};
+
+FB2K_SERVICE_FACTORY(navidrome_skip_track_win);
 
 } // namespace

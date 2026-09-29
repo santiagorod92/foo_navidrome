@@ -36,6 +36,7 @@ A [foobar2000](https://www.foobar2000.org/) component that lets you browse and s
 - Credentials saved in foobar2000's config (persistent across restarts)
 - Test Connection button to verify server connectivity
 - **Native `navidrome://` URI scheme**: tracks added to playlists store a stable URI, not a transient HTTP URL — playlists survive credential rotation or server URL changes
+- **Auto-skips tracks deleted from the server**: once a track 404s during playback (e.g. a stale playlist entry after a library reorg), it's skipped automatically for the rest of the session on any later shuffle/repeat/Random Mix — no more retrying the same dead stream over and over
 - Appears under **Preferences › Media Library › Library viewers** alongside Album List / Artist View, and (macOS) can also be docked as a panel in the main window layout via **Preferences › Display › Layout › Edit Layout**
 - **Lyrics on Windows** via [ESLyric](https://github.com/ESLyric/release) — see [Lyrics (ESLyric)](#lyrics-eslyric-windows)
 
