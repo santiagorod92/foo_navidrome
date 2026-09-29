@@ -151,6 +151,7 @@
     <ClCompile Include="SubsonicClientWin.cpp" />
     <ClCompile Include="NavidromePluginWin.cpp" />
     <ClCompile Include="NavidromeInputWin.cpp" />
+    <ClCompile Include="NavidromeLibraryServiceWin.cpp" />
     <ClCompile Include="BrowserWindow.cpp" />
     <ClCompile Include="..\NavidromeBrowserModel.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>

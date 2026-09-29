@@ -35,6 +35,14 @@ installed.
   `rating`" gotcha below — that's exactly why a separate read path is needed on the consumer side
   too). Vendored copy: `foo_ui_panels/src/navidrome_rating_api.h`.
 
+- **`navidrome_library_api`** (`NavidromeLibraryService.h`, impl `Windows/NavidromeLibraryServiceWin.cpp`,
+  Windows only) — publishes the server's albums (streamed through a caller-implemented
+  `library_album_sink`, plain `const char*`/`int` so nothing crosses the DLL boundary in a
+  std/pfc container), cover-art bytes (`fetch_cover`, thumbnails cached under `<id>@<size>`) and a
+  `play_album` action. `list_albums`/`fetch_cover` block (one request per artist) — worker thread
+  only. Consumer: foo_ui_panels' album grid (`src/album_list.cpp`). Vendored copy:
+  `foo_ui_panels/src/navidrome_library_api.h`.
+
 Adding a new cross-component interface: follow the same shape, and add a bullet here naming the
 interface, what it's for, and every known consumer — keeps both repos' CLAUDE.md honest about
 who depends on what without needing to grep across machines.
