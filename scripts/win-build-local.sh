@@ -119,6 +119,13 @@ cat > "$PREFIX_H" <<'EOF'
 #ifndef _WIN32_WINNT
 #  define _WIN32_WINNT 0x0601
 #endif
+// pfc/pfc-lite.h normally defines this itself before #include <windows.h> to
+// stop <guiddef.h> emitting its own non-constexpr GUID operator==/!= (so pfc
+// can provide a constexpr one instead — needed since the 2026-09-16 SDK sync
+// added a compile-time static_assert(guid1==guid2) self-check in guid.cpp).
+// Because windows.h lands here, ahead of every TU via /FI, before pfc-lite.h
+// ever runs, that guard is always too late unless we set it first ourselves.
+#define _NO_SYS_GUID_OPERATOR_EQ_
 #include <WinSock2.h>   // must precede windows.h (pfc-lite.h requirement)
 #include <windows.h>    // full (no WIN32_LEAN_AND_MEAN) -> COM: interface, IUnknown
 #include <timeapi.h>    // timeGetTime (pfc/timers.h)
