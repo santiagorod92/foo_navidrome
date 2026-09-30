@@ -1,3 +1,10 @@
+## [1.17.2](https://github.com/santiagorod92/foo_navidrome/compare/v1.17.1...v1.17.2) (2026-09-30)
+
+
+### Code Refactoring
+
+* split sources into src/core and src/platform/{mac,win} ([7c2bb60](https://github.com/santiagorod92/foo_navidrome/commit/7c2bb605e3200e32d208dcb5346629a566de051d))
+
 ## [1.17.1](https://github.com/santiagorod92/foo_navidrome/compare/v1.17.0...v1.17.1) (2026-09-30)
 
 
