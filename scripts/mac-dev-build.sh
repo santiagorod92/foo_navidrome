@@ -78,8 +78,13 @@ fi
 # and build the copy. rsync, not a symlink: Xcode canonicalizes symlinked source
 # paths, which breaks the very relative includes we're trying to satisfy.
 # ---------------------------------------------------------------------------
+# The xcodeproj searches `..` and `../..` for <helpers/...> and <pfc/...>, and the workspace
+# points at ../SDK, ../helpers, ../shared and ../../pfc — i.e. the repo has to sit INSIDE the
+# SDK's foobar2000/ dir. Test for that exact layout: checking ../foobar2000/helpers instead
+# matches a repo that merely sits NEXT to an SDK checkout, where every one of those relative
+# paths misses and the build dies on "'helpers/foobar2000+atl.h' file not found".
 BUILD_ROOT="$ROOT"
-if [ ! -f "$ROOT/../foobar2000/helpers/foobar2000+atl.h" ]; then
+if [ ! -f "$ROOT/../helpers/foobar2000+atl.h" ]; then
     SDK_TREE="${FOO_NAVIDROME_SDK:-$HOME/.local/share/foo_navidrome-sdk}"
     if [ ! -f "$SDK_TREE/foobar2000/helpers/foobar2000+atl.h" ]; then
         cat >&2 <<EOF
@@ -130,10 +135,15 @@ if [ "$DO_RELEASE" = false ]; then
     XCB_EXTRA=(OTHER_CFLAGS='$(inherited) -DNAVIDROME_DEBUG_LOG=1')
 fi
 
+# MACOSX_DEPLOYMENT_TARGET on the command line applies to every target in the workspace,
+# ours and the SDK's own projects alike. Xcode 26+ rejects their hardcoded 11.0 outright
+# ("the range of supported deployment target versions is 12.0 to ..."), and the SDK tree is
+# re-cloned upstream content we don't get to edit.
 if xcodebuild \
     -workspace foo_navidrome.xcworkspace \
     -scheme foo_navidrome \
     -configuration Release \
+    MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-12.0}" \
     ${XCB_EXTRA[@]+"${XCB_EXTRA[@]}"} \
     build > "$LOG" 2>&1; then
     grep -E "warning:|\*\* BUILD" "$LOG" | grep -v "iOSSimulator" | tail -n 10 || true
