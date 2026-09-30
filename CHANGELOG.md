@@ -1,3 +1,11 @@
+## [1.17.1](https://github.com/santiagorod92/foo_navidrome/compare/v1.17.0...v1.17.1) (2026-09-30)
+
+
+### Bug Fixes
+
+* **build:** require macOS 12 and force the deployment target ([2e6924e](https://github.com/santiagorod92/foo_navidrome/commit/2e6924ee215fa124d376c7d7bff617fae1e63243))
+* **mac:** stop the browser looping forever on Similar Artists ([51ff08a](https://github.com/santiagorod92/foo_navidrome/commit/51ff08ae3df75a56be636a922aedc68907e6025c))
+
 ## [1.17.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.16.0...v1.17.0) (2026-09-29)
 
 
