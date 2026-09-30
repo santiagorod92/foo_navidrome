@@ -144,7 +144,7 @@ jobs:
 
       # The SDK helpers/shared projects include WTL headers (<atlapp.h>, etc.),
       # which ship in no Visual Studio image. WTL is vendored in the repo
-      # (Windows/third_party/wtl) so there's no per-run download. Drop a root
+      # (third_party/wtl) so there's no per-run download. Drop a root
       # Directory.Build.targets that prepends its Include dir to IncludePath for
       # every project in the build (SDK + ours) — MSBuild auto-imports that file
       # from the workspace root the .vcxproj files sit under. (ATL itself is
@@ -153,7 +153,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $wtl = "$env:GITHUB_WORKSPACE\foobar2000\foo_navidrome\Windows\third_party\wtl\Include"
+          $wtl = "$env:GITHUB_WORKSPACE\foobar2000\foo_navidrome\third_party\wtl\Include"
           if (-not (Test-Path "$wtl\atlapp.h")) { Write-Error "vendored WTL missing: $wtl\atlapp.h"; exit 1 }
           Write-Host "WTL include: $wtl"
           # Directory.Build.targets is imported last (after the Cpp targets have
@@ -196,7 +196,7 @@ jobs:
             # 2019), which windows-2022 no longer ships, while ATL is
             # preinstalled for v143. A global override unifies the SDK projects
             # and ours onto the one toolset present with ATL.
-            msbuild Windows\foo_navidrome.vcxproj `
+            msbuild src\platform\win\foo_navidrome.vcxproj `
               /p:Configuration=Release `
               /p:Platform=$($t.Platform) `
               /p:PlatformToolset=v143 `

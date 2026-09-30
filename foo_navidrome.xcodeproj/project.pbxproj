@@ -102,20 +102,8 @@
 		FE0BAD400000000000000001 /* Root */ = {
 			isa = PBXGroup;
 			children = (
-				FE0BAD0D0000000000000001 /* foobar2000-mac-class-suffix.h */,
-				FE0BAD030000000000000001 /* stdafx.h */,
-				FE0BAD020000000000000001 /* main.cpp */,
-				FE0BAD040000000000000001 /* SubsonicClient.h */,
-				FE0BAD050000000000000001 /* SubsonicClient.mm */,
-				FE0BAD060000000000000001 /* NavidromePlugin.mm */,
-				FE0BAD0E0000000000000001 /* NavidromeArtExtractor.mm */,
-				FE0BAD160000000000000001 /* NavidromeInput.mm */,
-				FE0BAD950000000000000001 /* NavidromeBrowserModel.h */,
-				FE0BAD900000000000000001 /* NavidromeBrowserModel.cpp */,
-				FE0BAD960000000000000001 /* NavidromeBrowserEnqueue.h */,
-				FE0BADA20000000000000001 /* SubsonicCore.h */,
-				FE0BADA00000000000000001 /* SubsonicCore.cpp */,
-				FE0BAD430000000000000001 /* Mac */,
+				FE0BAD450000000000000001 /* core */,
+				FE0BAD430000000000000001 /* platform/mac */,
 				FE0BAD440000000000000001 /* helpers-mac */,
 				FE0BAD410000000000000001 /* Products */,
 				FE0BAD420000000000000001 /* Frameworks */,
@@ -143,9 +131,30 @@
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
-		FE0BAD430000000000000001 /* Mac */ = {
+		FE0BAD450000000000000001 /* core */ = {
 			isa = PBXGroup;
 			children = (
+				FE0BAD030000000000000001 /* stdafx.h */,
+				FE0BAD020000000000000001 /* main.cpp */,
+				FE0BAD950000000000000001 /* NavidromeBrowserModel.h */,
+				FE0BAD900000000000000001 /* NavidromeBrowserModel.cpp */,
+				FE0BAD960000000000000001 /* NavidromeBrowserEnqueue.h */,
+				FE0BADA20000000000000001 /* SubsonicCore.h */,
+				FE0BADA00000000000000001 /* SubsonicCore.cpp */,
+			);
+			name = core;
+			path = src/core;
+			sourceTree = "<group>";
+		};
+		FE0BAD430000000000000001 /* platform/mac */ = {
+			isa = PBXGroup;
+			children = (
+				FE0BAD0D0000000000000001 /* foobar2000-mac-class-suffix.h */,
+				FE0BAD040000000000000001 /* SubsonicClient.h */,
+				FE0BAD050000000000000001 /* SubsonicClient.mm */,
+				FE0BAD060000000000000001 /* NavidromePlugin.mm */,
+				FE0BAD0E0000000000000001 /* NavidromeArtExtractor.mm */,
+				FE0BAD160000000000000001 /* NavidromeInput.mm */,
 				FE0BAD070000000000000001 /* NavidromeBrowserController.h */,
 				FE0BAD080000000000000001 /* NavidromeBrowserController.mm */,
 				FE0BAD940000000000000001 /* MacSubsonicBrowserClient.h */,
@@ -153,7 +162,8 @@
 				FE0BAD090000000000000001 /* NavidromePreferencesController.h */,
 				FE0BAD0A0000000000000001 /* NavidromePreferencesController.mm */,
 			);
-			path = Mac;
+			name = "platform/mac";
+			path = src/platform/mac;
 			sourceTree = "<group>";
 		};
 		FE0BAD440000000000000001 /* helpers-mac */ = {
@@ -294,7 +304,7 @@
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_OPTIMIZATION_LEVEL = 0;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
-				GCC_PREFIX_HEADER = stdafx.h;
+				GCC_PREFIX_HEADER = src/core/stdafx.h;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"DEBUG=1",
 					"$(inherited)",
@@ -306,6 +316,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				HEADER_SEARCH_PATHS = (
+					"$(SRCROOT)",
 					..,
 					../..
 				);
@@ -358,7 +369,7 @@
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
-				GCC_PREFIX_HEADER = stdafx.h;
+				GCC_PREFIX_HEADER = src/core/stdafx.h;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
 				GCC_WARN_UNDECLARED_SELECTOR = YES;
@@ -366,6 +377,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				HEADER_SEARCH_PATHS = (
+					"$(SRCROOT)",
 					..,
 					../..
 				);

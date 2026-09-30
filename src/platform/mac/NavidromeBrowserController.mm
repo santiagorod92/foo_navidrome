@@ -1,9 +1,9 @@
 #import "NavidromeBrowserController.h"
 #import "MacSubsonicBrowserClient.h"
-#include "../SubsonicTypes.h"
-#include "../NavidromeBrowserModel.h"
-#include "../NavidromeBrowserEnqueue.h"
-#include "../NavidromeDebugLog.h"
+#include "../../core/SubsonicTypes.h"
+#include "../../core/NavidromeBrowserModel.h"
+#include "../../core/NavidromeBrowserEnqueue.h"
+#include "../../core/NavidromeDebugLog.h"
 #include <SDK/playlist.h>
 #include <SDK/metadb.h>
 #include <SDK/playable_location.h>

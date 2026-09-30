@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "BrowserWindow.h"
 #include "SubsonicClientWin.h"
-#include "../NavidromeBrowserEnqueue.h"
+#include "../../core/NavidromeBrowserEnqueue.h"
 #include <SDK/playlist.h>
 #include <SDK/metadb.h>
 #include <SDK/playable_location.h>
@@ -25,7 +25,7 @@ namespace navidrome {
 // Debug-only tracing — see Windows/NavidromeDebugLog.h. The shared tracer adds a
 // timestamp + level + tag and is what `make win-logs` pretty-prints live.
 // This shim keeps the existing bare-message call sites; they log under "UI".
-#include "../NavidromeDebugLog.h"
+#include "../../core/NavidromeDebugLog.h"
 static inline void dbgLog(const std::string& msg) { NAVIDROME_LOG("UI", msg); }
 
 static std::wstring u8ToWide(const std::string& s) {

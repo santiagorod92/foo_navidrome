@@ -31,9 +31,9 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="MediaEnrichmentLogicTests.cpp" />
-    <ClCompile Include="..\Windows\MediaEnrichmentLogic.cpp" />
-    <ClCompile Include="..\NavidromeBrowserModel.cpp" />
-    <ClCompile Include="..\SubsonicCore.cpp" />
+    <ClCompile Include="..\src\core\MediaEnrichmentLogic.cpp" />
+    <ClCompile Include="..\src\core\NavidromeBrowserModel.cpp" />
+    <ClCompile Include="..\src\core\SubsonicCore.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

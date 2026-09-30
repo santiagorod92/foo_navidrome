@@ -1,5 +1,5 @@
 #import "NavidromePreferencesController.h"
-#import "../SubsonicClient.h"
+#import "SubsonicClient.h"
 #include <SDK/cfg_var.h>
 
 // Forward declarations of config vars defined in NavidromePlugin.mm

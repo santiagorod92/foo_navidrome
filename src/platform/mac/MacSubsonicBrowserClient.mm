@@ -1,5 +1,5 @@
 #import "MacSubsonicBrowserClient.h"
-#import "../SubsonicClient.h"
+#import "SubsonicClient.h"
 #import <Foundation/Foundation.h>
 #include <string>
 #include <utility>

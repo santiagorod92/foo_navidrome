@@ -92,14 +92,14 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalIncludeDirectories>
         .;
-        ..;
-        ../..;
         ../../..;
-        ../../SDK;
-        ../../helpers;
-        ../../shared;
-        ../../foobar2000_component_client;
-        ../../../pfc;
+        ../../../..;
+        ../../../../..;
+        ../../../../SDK;
+        ../../../../helpers;
+        ../../../../shared;
+        ../../../../foobar2000_component_client;
+        ../../../../../pfc;
         %(AdditionalIncludeDirectories)
       </AdditionalIncludeDirectories>
       <PreprocessorDefinitions>
@@ -147,19 +147,19 @@
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\main.cpp" />
+    <ClCompile Include="..\..\core\main.cpp" />
     <ClCompile Include="SubsonicClientWin.cpp" />
     <ClCompile Include="NavidromePluginWin.cpp" />
     <ClCompile Include="NavidromeInputWin.cpp" />
     <ClCompile Include="NavidromeLibraryServiceWin.cpp" />
     <ClCompile Include="BrowserWindow.cpp" />
-    <ClCompile Include="..\NavidromeBrowserModel.cpp">
+    <ClCompile Include="..\..\core\NavidromeBrowserModel.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\SubsonicCore.cpp">
+    <ClCompile Include="..\..\core\SubsonicCore.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="MediaEnrichmentLogic.cpp">
+    <ClCompile Include="..\..\core\MediaEnrichmentLogic.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="EsLyricBridge.cpp">
@@ -169,33 +169,33 @@
 
   <ItemGroup>
     <ClInclude Include="stdafx.h" />
-    <ClInclude Include="..\SubsonicTypes.h" />
-    <ClInclude Include="..\NavidromeBrowserModel.h" />
-    <ClInclude Include="..\NavidromeBrowserEnqueue.h" />
-    <ClInclude Include="..\SubsonicCore.h" />
-    <ClInclude Include="..\NavidromeDebugLog.h" />
+    <ClInclude Include="..\..\core\SubsonicTypes.h" />
+    <ClInclude Include="..\..\core\NavidromeBrowserModel.h" />
+    <ClInclude Include="..\..\core\NavidromeBrowserEnqueue.h" />
+    <ClInclude Include="..\..\core\SubsonicCore.h" />
+    <ClInclude Include="..\..\core\NavidromeDebugLog.h" />
     <ClInclude Include="SubsonicClientWin.h" />
     <ClInclude Include="BrowserWindow.h" />
-    <ClInclude Include="MediaEnrichmentLogic.h" />
+    <ClInclude Include="..\..\core\MediaEnrichmentLogic.h" />
     <ClInclude Include="EsLyricBridge.h" />
     <ClInclude Include="EsLyricScript.h" />
   </ItemGroup>
 
   <!-- SDK project references (adjust paths if your SDK layout differs) -->
   <ItemGroup>
-    <ProjectReference Include="..\..\SDK\foobar2000_SDK.vcxproj">
+    <ProjectReference Include="..\..\..\..\SDK\foobar2000_SDK.vcxproj">
       <Project>{E8091321-D79D-4575-86EF-064EA1A4A20D}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\..\helpers\foobar2000_SDK_helpers.vcxproj">
+    <ProjectReference Include="..\..\..\..\helpers\foobar2000_SDK_helpers.vcxproj">
       <Project>{EE47764E-A202-4F85-A767-ABDAB4AFF35F}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\..\shared\shared.vcxproj">
+    <ProjectReference Include="..\..\..\..\shared\shared.vcxproj">
       <Project>{054C606B-17BF-4540-AC4E-A9A7243628B8}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\..\foobar2000_component_client\foobar2000_component_client.vcxproj">
+    <ProjectReference Include="..\..\..\..\foobar2000_component_client\foobar2000_component_client.vcxproj">
       <Project>{71AD2674-065B-48F5-B8B0-E1F9D3892081}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\..\..\pfc\pfc.vcxproj">
+    <ProjectReference Include="..\..\..\..\..\pfc\pfc.vcxproj">
       <Project>{EBFFFB4E-261D-44D3-B89C-957B31A0BF9C}</Project>
     </ProjectReference>
   </ItemGroup>

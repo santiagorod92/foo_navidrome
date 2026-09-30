@@ -135,7 +135,7 @@ If you prefer Xcode directly:
 
 `make mac-test` builds and runs the shared logic test suite
 (`tests/MediaEnrichmentLogicTests.cpp` — covers `SubsonicTypes.h` and
-`Windows/MediaEnrichmentLogic.cpp`) with a plain `clang++`, no Xcode or SDK
+`src/core/MediaEnrichmentLogic.cpp`) with a plain `clang++`, no Xcode or SDK
 needed. It is the same source file the Windows CI runs; `release.yml` runs it on
 the macOS runner before every `xcodebuild`. On Linux the equivalent is
 `make test` (clang-cl + Wine).
@@ -269,7 +269,7 @@ Tracks land in the playlist as `navidrome://track/<id>?...` URIs. The component 
 
 ### Build steps
 
-1. Open `Windows/foo_navidrome.vcxproj` in Visual Studio
+1. Open `src/platform/win/foo_navidrome.vcxproj` in Visual Studio
 2. Update the `<ProjectReference>` GUIDs in the `.vcxproj` to match your local SDK project GUIDs
 3. Build in **Release | x64** configuration (the `.vcxproj` also defines **Win32** and **ARM64EC** if you need those binaries; CI builds all three)
 4. Copy `foo_navidrome.dll` to your foobar2000 components folder:
@@ -450,26 +450,37 @@ The Windows CI build is driven by `.github/workflows/build-windows.yml` (MSBuild
 
 ```
 foo_navidrome/
-├── main.cpp                        # Shared: component version + filename
-├── stdafx.h                        # Shared precompiled header
-├── SubsonicTypes.h                 # Shared pure-C++ data types
-├── SubsonicClient.h/.mm            # macOS: ObjC Subsonic HTTP client
-├── NavidromeInput.h/.mm            # macOS: input_singletrack handler for navidrome:// URIs
-├── NavidromePlugin.mm              # macOS: plugin registration, cfg vars, prefs, menu, library_viewer
-├── NavidromeArtExtractor.mm        # macOS: album art fallback (album_art_fallback)
-├── Mac/
-│   ├── NavidromeBrowserController.h/.mm    # macOS: NSWindowController browser UI
-│   └── NavidromePreferencesController.h/.mm # macOS: NSViewController preferences
-├── Windows/
-│   ├── stdafx.h/.cpp               # Windows precompiled header
-│   ├── SubsonicClientWin.h/.cpp    # Windows: WinHTTP Subsonic client
-│   ├── NavidromePluginWin.cpp      # Windows: plugin registration, cfg vars, prefs, menu, art
-│   ├── NavidromeInputWin.h/.cpp    # Windows: navidrome:// input_singletrack handler
-│   ├── BrowserWindow.h/.cpp        # Windows: ATL browser window
-│   ├── MediaEnrichmentLogic.h/.cpp # URI/cover-art/ESLyric-config logic (SDK-free; MD5 is the only #ifdef)
-│   ├── EsLyricBridge.h/.cpp        # Windows: writes the ESLyric config + searcher script
-│   ├── EsLyricScript.h             # Windows: embedded ESLyric searcher script source
-│   └── foo_navidrome.vcxproj       # Visual Studio project
+├── src/
+│   ├── core/                               # Shared by both platforms — all logic lives here
+│   │   ├── main.cpp                        # Component version, playlist sync, browser enqueue, rating service (SDK)
+│   │   ├── stdafx.h                        # Shared precompiled/prefix header
+│   │   ├── SubsonicTypes.h                 # Data types, URI codec, JSON parser, Subsonic mappers (SDK-free)
+│   │   ├── SubsonicCore.h/.cpp             # Subsonic API core over IHttpTransport/ISettingsProvider (SDK-free)
+│   │   ├── NavidromeBrowserModel.h/.cpp    # Browser tree model behind IBrowserClient (SDK-free)
+│   │   ├── NavidromeBrowserEnqueue.h       # enqueueBrowserNodes() (impl in main.cpp)
+│   │   ├── NavidromePlaylistSync.h         # Rating push-back to playlists (impl in main.cpp)
+│   │   ├── NavidromeDebugLog.h             # NAVIDROME_LOG/WARN/ERR file logger
+│   │   ├── MediaEnrichmentLogic.h/.cpp     # Cover-art/URL/ESLyric-config helpers (SDK-free; MD5 is the only #ifdef)
+│   │   └── Navidrome{Rating,Library}Service.h # Cross-component service contracts
+│   └── platform/
+│       ├── mac/                            # macOS: ObjC++ adapters + AppKit UI
+│       │   ├── SubsonicClient.h/.mm        #   NSURLSession transport over SubsonicCore
+│       │   ├── NavidromePlugin.mm          #   registration, cfg vars, prefs, menu, library_viewer, scrobbler
+│       │   ├── NavidromeInput.mm           #   navidrome:// input handler + skipTrack
+│       │   ├── NavidromeArtExtractor.mm    #   album art extractor
+│       │   ├── MacSubsonicBrowserClient.*  #   IBrowserClient adapter
+│       │   ├── NavidromeBrowserController.*     # browser NSViewController
+│       │   └── NavidromePreferencesController.* # prefs NSViewController
+│       └── win/                            # Windows: Win32/ATL adapters + UI
+│           ├── foo_navidrome.vcxproj       #   Visual Studio project
+│           ├── stdafx.h/.cpp               #   Windows precompiled header
+│           ├── SubsonicClientWin.h/.cpp    #   WinHTTP transport over SubsonicCore
+│           ├── NavidromePluginWin.cpp      #   registration, cfg vars, prefs, menu, art
+│           ├── NavidromeInputWin.cpp       #   navidrome:// input handler + skipTrack
+│           ├── NavidromeLibraryServiceWin.cpp # navidrome_library_api implementation
+│           ├── BrowserWindow.h/.cpp        #   ATL browser window
+│           └── EsLyricBridge.* / EsLyricScript.h # ESLyric config + searcher script
+├── third_party/wtl/                # Vendored WTL headers (Windows builds)
 ├── tests/                          # cross-platform unit tests — Windows (vcxproj), Linux (make test), macOS (make mac-test)
 ├── scripts/                        # build / install / toolchain helpers
 │   ├── mac-dev-build.sh            #   macOS dev loop (bump + xcodebuild + install)
@@ -477,6 +488,7 @@ foo_navidrome/
 │   ├── install-macos.sh            #   macOS install + package helper
 │   ├── win-setup-toolchain.sh      #   Linux: provision clang-cl + xwin SDK/ATL + WTL
 │   ├── win-build-local.sh          #   Linux: cross-compile the Windows DLL + install
+│   ├── component-sources.sh        #   Windows source list, parsed from the vcxproj
 │   ├── run-unit-tests.sh           #   build + run the unit tests (per-host toolchain; called by the build scripts)
 │   ├── navidrome-logs.sh           #   follow the colourised component debug log (win + mac)
 │   ├── install-windows.sh          #   Windows install + package helper
@@ -499,22 +511,22 @@ Pull requests are welcome. This section is the fast path from a fresh clone to a
 
 The component is a **shared C++ core + per-platform UI/HTTP layers** — see [Project Structure](#project-structure) for the full file map. Quick orientation:
 
-- **Cross-platform / pure C++:** `main.cpp`, `stdafx.h`, `SubsonicTypes.h`.
-- **macOS (ObjC++):** `SubsonicClient.mm` (NSURLSession HTTP), `NavidromePlugin.mm` (service registration), `NavidromeInput.mm` (the `navidrome://` input handler), `NavidromeArtExtractor.mm` (album art), `Mac/*` (the AppKit browser + preferences UI).
-- **Windows (Win32/ATL):** `Windows/SubsonicClientWin.cpp` (WinHTTP HTTP), `Windows/NavidromePluginWin.cpp`, `Windows/BrowserWindow.*`.
+- **`src/core/` — shared by both platforms:** Subsonic API (`SubsonicCore`), data types/URI/JSON (`SubsonicTypes.h`), browser tree model (`NavidromeBrowserModel`), and the SDK glue in `main.cpp`. New behaviour goes here.
+- **`src/platform/mac/` (ObjC++):** `SubsonicClient.mm` (NSURLSession transport), `NavidromePlugin.mm` (service registration), `NavidromeInput.mm` (the `navidrome://` input handler), `NavidromeArtExtractor.mm` (album art), plus the AppKit browser + preferences UI.
+- **`src/platform/win/` (Win32/ATL):** `SubsonicClientWin.cpp` (WinHTTP transport), `NavidromePluginWin.cpp`, `NavidromeInputWin.cpp`, `BrowserWindow.*`.
 
-If you fix a bug in the data layer, check whether the **macOS and Windows HTTP clients both need it** — they are separate implementations of the same Subsonic protocol.
+Platform folders only hold transport, widget and wiring code — a data-layer fix belongs in `src/core/` so both platforms get it.
 
 ### Key architectural concepts to know
 
 - **`navidrome://track/<id>?...` URI scheme.** Tracks are queued as these URIs, not raw HTTP URLs, so playlists survive credential/server changes. Metadata is embedded in the query string; the stream URL is resolved at decode time. **Any code that parses these URIs must be updated together when the scheme changes** — `NavidromeInput`, the art extractor's `is_our_path`, etc. The host-vs-path RFC-3986 trap is documented in `CLAUDE.md`.
-- **GUIDs.** Every registered service has a hardcoded `static constexpr GUID`. **If you fork this component you must regenerate all of them** (`NavidromePlugin.mm` and `NavidromeInput.mm`) — two components sharing a GUID will collide in foobar2000.
+- **GUIDs.** Every registered service has a hardcoded `static constexpr GUID`. **If you fork this component you must regenerate all of them** (`src/platform/mac/NavidromePlugin.mm`, `src/platform/mac/NavidromeInput.mm` and their `src/platform/win/` counterparts) — two components sharing a GUID will collide in foobar2000.
 - **Logging is the debugger.** There's no practical debugger-attach for foobar2000 components on Mac; use the `navi_log` file-logging helper (writes to `/tmp/foo_navidrome.log`, survives a crash). Remove temporary logs before submitting.
 
 ### Coding conventions
 
 - Match the surrounding style (naming, comment density, indentation) rather than introducing a new one.
-- Keep platform-specific code behind the existing macOS / `Windows/` split — don't `#ifdef` platform branches into the shared core unless there's no alternative.
+- Keep platform-specific code in `src/platform/{mac,win}/` — don't `#ifdef` platform branches into the shared core unless there's no alternative.
 - Update `CLAUDE.md` when you make a decision or hit a gotcha worth recording for the next contributor.
 
 ### Commits, versioning, and PRs

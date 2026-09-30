@@ -1,7 +1,7 @@
 #pragma once
 #include "stdafx.h"
-#include "../SubsonicTypes.h"
-#include "../NavidromeBrowserModel.h"
+#include "../../core/SubsonicTypes.h"
+#include "../../core/NavidromeBrowserModel.h"
 #include <SDK/coreDarkMode.h>
 #include <SDK/ui_element.h>
 #include <cstdint>

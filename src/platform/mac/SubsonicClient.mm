@@ -1,7 +1,7 @@
 #import "SubsonicClient.h"
-#import "SubsonicTypes.h"
-#import "SubsonicCore.h"
-#import "NavidromeDebugLog.h"
+#import "../../core/SubsonicTypes.h"
+#import "../../core/SubsonicCore.h"
+#import "../../core/NavidromeDebugLog.h"
 
 #import <memory>
 

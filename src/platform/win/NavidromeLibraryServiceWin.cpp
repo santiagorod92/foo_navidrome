@@ -2,10 +2,10 @@
 // server's album list, cover art and a play-album action to other components.
 #include "stdafx.h"
 #include "SubsonicClientWin.h"
-#include "MediaEnrichmentLogic.h"
-#include "../NavidromeLibraryService.h"
-#include "../NavidromeBrowserEnqueue.h"
-#include "../NavidromeBrowserModel.h"
+#include "../../core/MediaEnrichmentLogic.h"
+#include "../../core/NavidromeLibraryService.h"
+#include "../../core/NavidromeBrowserEnqueue.h"
+#include "../../core/NavidromeBrowserModel.h"
 #include <SDK/album_art_helpers.h>
 #include <thread>
 

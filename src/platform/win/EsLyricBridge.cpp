@@ -2,7 +2,7 @@
 #include "EsLyricBridge.h"
 
 #include "EsLyricScript.h"
-#include "MediaEnrichmentLogic.h"
+#include "../../core/MediaEnrichmentLogic.h"
 #include "SubsonicClientWin.h"
 
 #if __has_include("version_generated.h")

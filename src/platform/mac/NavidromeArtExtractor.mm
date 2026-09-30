@@ -1,7 +1,7 @@
-#import "stdafx.h"
+#import "../../core/stdafx.h"
 #import "SubsonicClient.h"
-#import "SubsonicTypes.h"
-#import "NavidromeDebugLog.h"
+#import "../../core/SubsonicTypes.h"
+#import "../../core/NavidromeDebugLog.h"
 #include <SDK/album_art.h>
 
 // ---------------------------------------------------------------------------

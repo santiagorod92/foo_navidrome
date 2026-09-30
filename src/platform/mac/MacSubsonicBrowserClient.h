@@ -5,7 +5,7 @@
 // is written against. Converts NSArray<SubsonicX *> -> std::vector<navidrome::X>
 // and NSError * -> a human-readable error string. ObjC++ only.
 
-#include "../NavidromeBrowserModel.h"
+#include "../../core/NavidromeBrowserModel.h"
 #include <memory>
 
 namespace navidrome {

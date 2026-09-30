@@ -1,7 +1,7 @@
 #pragma once
-#include "../SubsonicTypes.h"
-#include "../SubsonicCore.h"
-#include "MediaEnrichmentLogic.h"
+#include "../../core/SubsonicTypes.h"
+#include "../../core/SubsonicCore.h"
+#include "../../core/MediaEnrichmentLogic.h"
 #include <cstdint>
 #include <memory>
 #include <string>

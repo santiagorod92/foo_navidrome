@@ -1,16 +1,16 @@
-#import "stdafx.h"
+#import "../../core/stdafx.h"
 #import "SubsonicClient.h"
-#import "Mac/NavidromeBrowserController.h"
-#import "Mac/NavidromePreferencesController.h"
+#import "NavidromeBrowserController.h"
+#import "NavidromePreferencesController.h"
 #include <helpers/advconfig_impl.h>
 #include <SDK/cfg_var.h>
 #include <SDK/library_manager.h>
 #include <SDK/play_callback.h>
 #include <SDK/initquit.h>
 #include <SDK/ui_element_mac.h>
-#include "SubsonicTypes.h"
-#include "NavidromePlaylistSync.h"
-#include "NavidromeDebugLog.h"
+#include "../../core/SubsonicTypes.h"
+#include "../../core/NavidromePlaylistSync.h"
+#include "../../core/NavidromeDebugLog.h"
 #include <algorithm>
 #include <cstring>
 

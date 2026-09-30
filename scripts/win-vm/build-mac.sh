@@ -61,7 +61,7 @@ EOF
 
 SYS_INC=(-imsvc "$WTL" -imsvc "$XWIN/crt/include" -imsvc "$XWIN/sdk/include/um"
          -imsvc "$XWIN/sdk/include/shared" -imsvc "$XWIN/sdk/include/ucrt" -imsvc "$XWIN/sdk/include/winrt")
-PROJ_INC=(-I "$REPO/Windows" -I "$REPO" -I "$SDK_ROOT" -I "$SDK_ROOT/.." -I "$PFC_ROOT")
+PROJ_INC=(-I "$REPO/src/platform/win" -I "$REPO" -I "$SDK_ROOT" -I "$SDK_ROOT/.." -I "$PFC_ROOT")
 DEFS=(/DWIN32 /D_WINDOWS /D_USRDLL /DUNICODE /D_UNICODE /DNDEBUG /D_CRT_SECURE_NO_WARNINGS /D_SECURE_ATL=1)
 # clang-cl reads /Users/... as the /U flag, so sources are passed as /Tp<path>.
 # Static CRT (/MT): the local build is x64 but foobar-on-ARM is ARM64EC and only
@@ -75,7 +75,7 @@ while IFS= read -r f; do SRCS+=("$f"); done < <(
   {
     ls "$PFC_ROOT"/*.cpp "$SDK_ROOT/SDK"/*.cpp "$SDK_ROOT/helpers"/*.cpp \
        "$LIBPPUI_ROOT"/*.cpp "$SDK_ROOT/foobar2000_component_client"/*.cpp 2>/dev/null
-    # Component sources are parsed from Windows/foo_navidrome.vcxproj — add a
+    # Component sources are parsed from src/platform/win/foo_navidrome.vcxproj — add a
     # new .cpp there and this cross-build picks it up with no edit here.
     bash "$REPO/scripts/component-sources.sh" "$REPO"
   } | grep -vE '/(pfc-fb2k-hooks|nix-objects)\.cpp$'

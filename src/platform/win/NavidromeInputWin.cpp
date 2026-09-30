@@ -1,8 +1,8 @@
 #include "stdafx.h"
 #include "SubsonicClientWin.h"
-#include "MediaEnrichmentLogic.h"
-#include "../NavidromeDebugLog.h"
-#include "../NavidromePlaylistSync.h"
+#include "../../core/MediaEnrichmentLogic.h"
+#include "../../core/NavidromeDebugLog.h"
+#include "../../core/NavidromePlaylistSync.h"
 #include <SDK/cfg_var.h>
 #include <SDK/input_impl.h>
 #include <SDK/file.h>

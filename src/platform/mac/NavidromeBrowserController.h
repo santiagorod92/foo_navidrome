@@ -1,7 +1,7 @@
 #pragma once
 #import <Cocoa/Cocoa.h>
-#include "../SubsonicClient.h"
-#include "../NavidromeBrowserModel.h"
+#include "SubsonicClient.h"
+#include "../../core/NavidromeBrowserModel.h"
 
 // ---------------------------------------------------------------------------
 // Tree node types for the NSOutlineView

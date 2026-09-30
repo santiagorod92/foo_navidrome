@@ -7,7 +7,7 @@ foobar2000 v2 component: browse/stream from Navidrome / Subsonic-compatible serv
 ## Working rule: every change is cross-platform
 
 Any feature/fix touching shared or platform code must land on **both** macOS and Windows, not one — put logic in a shared file (`SubsonicTypes.h`, `SubsonicCore.h/.cpp`, `NavidromeBrowserModel.h/.cpp`, `main.cpp` SDK-only helpers) so both platforms consume the same implementation; only widget/wiring code stays platform-side. Checklist for any non-trivial change:
-- **Both platforms**: implement/wire on macOS (`.mm`) and Windows (`Windows/*.cpp`) — don't ship one-sided.
+- **Both platforms**: implement/wire on macOS (`src/platform/mac/`) and Windows (`src/platform/win/`) — don't ship one-sided.
 - **Logging**: add `NAVIDROME_LOG`/`WARN`/`ERR` calls (see Gotchas) at meaningful steps (request sent, error, decision taken) — `scrubAuth()` any URL.
 - **Tests**: add/extend a case in `tests/MediaEnrichmentLogicTests.cpp` for any shared/SDK-free logic — it's the one file all three toolchains run. Then **actually run `make test`** (or `scripts/run-unit-tests.sh win`) after any logic change — shared or platform-side — before calling it done, not just after adding a new case. A change that "should still pass" is unverified until the suite says so.
 - **Make/scripts**: if a new build/test/deploy step is needed, wire it into the `Makefile` + the relevant script (`run-unit-tests.sh`, `win-build-local.sh`, `mac-dev-build.sh`, etc.), not just run ad hoc. Same for any command reached for more than once that's long or easy to forget the flags of (a build+launch combo, a multi-step VM flow, a symbolizer invocation) — turn it into a `make` target instead of re-typing/re-deriving it each time.
@@ -29,19 +29,19 @@ installed.
   on a navidrome:// track (`set_rating_async`, preserves starred state, syncs the change back to
   matching playlist entries) without hitting the tag-write error above. First (only) consumer:
   [foo_ui_panels](https://github.com/santiagorod92/foo_ui_panels) — its star-rating widgets
-  (`src/skin_engine.cpp`'s `set_rating()`/`TAG:SET:rating:`) route through this service instead
+  (`src/core/skin_engine.cpp`'s `set_rating()`/`TAG:SET:rating:`) route through this service instead
   of the standard file-tag path when the track is one of ours; its rating *display* also reads
   `NAVIDROME_RATING` as a fallback field (see this repo's own "Don't name an exported field
   `rating`" gotcha below — that's exactly why a separate read path is needed on the consumer side
-  too). Vendored copy: `foo_ui_panels/src/navidrome_rating_api.h`.
+  too). Vendored copy: `foo_ui_panels/src/core/navidrome_rating_api.h`.
 
-- **`navidrome_library_api`** (`NavidromeLibraryService.h`, impl `Windows/NavidromeLibraryServiceWin.cpp`,
+- **`navidrome_library_api`** (`NavidromeLibraryService.h`, impl `src/platform/win/NavidromeLibraryServiceWin.cpp`,
   Windows only) — publishes the server's albums (streamed through a caller-implemented
   `library_album_sink`, plain `const char*`/`int` so nothing crosses the DLL boundary in a
   std/pfc container), cover-art bytes (`fetch_cover`, thumbnails cached under `<id>@<size>`) and a
   `play_album` action. `list_albums`/`fetch_cover` block (one request per artist) — worker thread
-  only. Consumer: foo_ui_panels' album grid (`src/album_list.cpp`). Vendored copy:
-  `foo_ui_panels/src/navidrome_library_api.h`.
+  only. Consumer: foo_ui_panels' album grid (`src/panels/album_list.cpp`). Vendored copy:
+  `foo_ui_panels/src/core/navidrome_library_api.h`.
 
 Adding a new cross-component interface: follow the same shape, and add a bullet here naming the
 interface, what it's for, and every known consumer — keeps both repos' CLAUDE.md honest about
@@ -49,24 +49,34 @@ who depends on what without needing to grep across machines.
 
 ## Architecture
 
-Shared C++ core + per-platform UI/HTTP layers:
+Shared C++ core + per-platform UI/HTTP layers, laid out like foo_ui_panels:
+
+```
+src/core/            shared by both platforms: SDK-free logic + main.cpp SDK glue + stdafx.h prefix header
+                     + cross-component service contracts. Anything a platform could share goes here.
+src/platform/mac/    macOS only: ObjC++ transport/settings adapters, service registration, AppKit UI
+src/platform/win/    Windows only: WinHTTP/ATL adapters, registration, Win32 UI, foo_navidrome.vcxproj
+third_party/wtl/     vendored WTL headers (Windows builds; CI wires it via Directory.Build.targets)
+tests/               SDK-free unit tests over src/core
+```
+Includes are relative, foo_ui_panels-style: platform files use `"../../core/X.h"`, tests use `"../src/core/X.h"`, siblings in the same folder use bare names. `version_generated.h` stays at the repo root (every toolchain has the repo root on its include path: Xcode `$(SRCROOT)`, vcxproj `../../..`, clang-cl `-I $REPO`). The Xcode project/workspace stay at the repo root (the workspace's `../SDK/...` refs assume it); their groups point into `src/`. File bullets below use bare names — `src/core/` unless the name says otherwise:
 
 - `main.cpp`, `stdafx.h`, `SubsonicTypes.h` — cross-platform shared code (version, pure-C++ data types, `trackIdFromURI()`, `StarKind`/`AlbumListType` enums)
 - `SubsonicCore.h/.cpp` — shared Subsonic API core, SDK-free. Owns every request body: URL/auth assembly, retry loop, status-wrapper check, JSON→`navidrome::parseX`, music-folder cache, multi-library fan-out. Platform fills two seams: `IHttpTransport::getOnce()` (one GET, no retry) and `ISettingsProvider::load()`. Unit-tested (`testSubsonicCore`).
 - `SubsonicClient.h/.mm` — macOS adapter over `SubsonicCore`: `MacHttpTransport` (NSURLSession) + `MacSettingsProvider`, raw byte paths for cover art/download, `navidrome::X` → ObjC `Subsonic*` marshalling.
-- `Windows/SubsonicClientWin.h/.cpp` — Windows adapter over `SubsonicCore`: `WinHttpTransport` (WinHTTP) + `WinSettingsProvider`, plus Windows-only `httpGetBinary`/`httpDownloadToFile`. Singleton facade forwarding to `m_core`.
+- `src/platform/win/SubsonicClientWin.h/.cpp` — Windows adapter over `SubsonicCore`: `WinHttpTransport` (WinHTTP) + `WinSettingsProvider`, plus Windows-only `httpGetBinary`/`httpDownloadToFile`. Singleton facade forwarding to `m_core`.
 - `NavidromePlugin.mm` — macOS registration: `cfg_string` for URL/user/pass/salt, prefs page, File menu, `library_viewer` factory, scrobbler (`play_callback_static`).
-- `NavidromeInput.mm` / `Windows/NavidromeInputWin.cpp` — `input_singletrack` handler for `navidrome://track/<id>?...` URIs. Metadata embedded in URI; HTTP stream URL resolved at decode time. Registered `input_entry::flag_redirect`, opens nested decoder via `g_open_for_decoding(fromRedirect=true)`. Also owns each platform's `fb2k::skipTrack` implementation (SDK 2.26+) — see Decisions.
+- `NavidromeInput.mm` / `src/platform/win/NavidromeInputWin.cpp` — `input_singletrack` handler for `navidrome://track/<id>?...` URIs. Metadata embedded in URI; HTTP stream URL resolved at decode time. Registered `input_entry::flag_redirect`, opens nested decoder via `g_open_for_decoding(fromRedirect=true)`. Also owns each platform's `fb2k::skipTrack` implementation (SDK 2.26+) — see Decisions.
 - `SubsonicTypes.h` — also owns: URI codec (`TrackURI`, `buildTrackURI`/`parseTrackURI`, percent-encode/decode), `resolveArtId`/`rawQueryParam`, `scrobbleSubmitThreshold()`, the JSON parser (`json::Value`/`json::parse()`) + Subsonic mappers (`parseSong`/`parseAlbum`/etc.), `parseSubsonicResponse()`, `BrokenTrackRegistry`/`brokenTrackRegistry()` (session-scoped dead-track set backing `skipTrack`). Add any new SDK-free shared string/URL/parsing helper here.
 - `NavidromePlaylistSync.h` (impl in `main.cpp`) — `syncRatingsToPlaylists()` pushes `NAVIDROME_RATING`/`NAVIDROME_STARRED` onto playlist entries via forced hints. `scanPlaylistAlbums()` collects `albumId=` values for startup refresh.
 - `NavidromeBrowserModel.h/.cpp` — shared browser tree logic, SDK-free. Owns `navidrome::BrowserNode`, category order, model→node mappers, row-display formatting, and (behind `IBrowserClient`) `buildRootNodes()`, `fetchChildren()`, `collectSongsDeep()`, star/rate mutation, Play Similar/Random Mix/Artist Info fetch, `syncBrowserNodesToPlaylists()`. Platform supplies a thin `IBrowserClient` adapter (`WinBrowserClient`, `MacSubsonicBrowserClient`). Unit-tested (`testBrowserModel`, `testBrowserFetchDispatch`, `testStarRatingSimilarRandom`).
 - `NavidromeBrowserEnqueue.h` (impl in `main.cpp`) — `enqueueBrowserNodes()`: builds URIs, pushes metadb hints, appends/clears playlist, starts playback honoring Playback › Order, resumes bookmarks via `seekWhenReady()`.
 - `NavidromeArtExtractor.mm` — `album_art_fallback` for Navidrome-fetched art.
-- `Mac/NavidromeBrowserController.*` — browser `NSViewController`, mounted 3 ways (prefs sub-page, standalone window, dockable `ui_element_mac_navidrome`); each mount creates a fresh instance (Cocoa: one superview per NSView).
-- `Mac/NavidromePreferencesController.*` — prefs UI.
-- `Windows/NavidromePluginWin.cpp`, `Windows/BrowserWindow.*` — Windows ATL equivalents. `BrowserWindow` is a thin Win32 view over `NavidromeBrowserModel` via `WinBrowserClient`. Mounts as standalone window or embedded `WS_CHILD` panel. Context menu on right-click.
-- `Windows/MediaEnrichmentLogic.h/.cpp` — SDK-free helper (URI/URL codec, cover-art URL, HTTP classification, LRU `CoverCache`, ESLyric config gen). Windows-only consumer; tests build cross-platform. One platform-specific line: MD5 (`#if _WIN32` WinCrypt else CommonCrypto).
-- `Windows/EsLyricBridge.h/.cpp`, `Windows/EsLyricScript.h` — bridges to third-party [ESLyric](https://github.com/esdatura/eslyric-fb2k). Writes `scripts/lib/foo_navidrome/config.js` + searcher script on startup/credential-save. No-op if ESLyric not installed.
+- `src/platform/mac/NavidromeBrowserController.*` — browser `NSViewController`, mounted 3 ways (prefs sub-page, standalone window, dockable `ui_element_mac_navidrome`); each mount creates a fresh instance (Cocoa: one superview per NSView).
+- `src/platform/mac/NavidromePreferencesController.*` — prefs UI.
+- `src/platform/win/NavidromePluginWin.cpp`, `src/platform/win/BrowserWindow.*` — Windows ATL equivalents. `BrowserWindow` is a thin Win32 view over `NavidromeBrowserModel` via `WinBrowserClient`. Mounts as standalone window or embedded `WS_CHILD` panel. Context menu on right-click.
+- `src/core/MediaEnrichmentLogic.h/.cpp` — SDK-free helper (URI/URL codec, cover-art URL, HTTP classification, LRU `CoverCache`, ESLyric config gen). Windows-only consumer; tests build cross-platform. One platform-specific line: MD5 (`#if _WIN32` WinCrypt else CommonCrypto).
+- `src/platform/win/EsLyricBridge.h/.cpp`, `src/platform/win/EsLyricScript.h` — bridges to third-party [ESLyric](https://github.com/esdatura/eslyric-fb2k). Writes `scripts/lib/foo_navidrome/config.js` + searcher script on startup/credential-save. No-op if ESLyric not installed.
 
 GUIDs for cfg vars/prefs pages/menu commands are hardcoded constants in `NavidromePlugin.mm` (lines 17–30) — regenerate when forking.
 
@@ -116,10 +126,10 @@ pfc/                    ← sibling of foobar2000/
 Open `foo_navidrome.xcworkspace` (not the bare xcodeproj) → build `foo_navidrome` scheme → `./scripts/install-macos.sh` → restart foobar2000.
 
 ### Windows
-VS2022, `Windows/foo_navidrome.vcxproj` (update `<ProjectReference>` GUIDs to local SDK). Build Release|x64, copy `.dll` to `%APPDATA%\foobar2000\user-components\foo_navidrome\`.
+VS2022, `src/platform/win/foo_navidrome.vcxproj` (update `<ProjectReference>` GUIDs to local SDK). Build Release|x64, copy `.dll` to `%APPDATA%\foobar2000\user-components\foo_navidrome\`.
 
 ### Unit tests (`tests/`, one source, three toolchains)
-`tests/MediaEnrichmentLogicTests.cpp` — standalone console exe, no SDK. Covers `SubsonicTypes.h` + `Windows/MediaEnrichmentLogic.cpp`. `scripts/run-unit-tests.sh [mac|win|auto]` is the source of truth for the compile+run command.
+`tests/MediaEnrichmentLogicTests.cpp` — standalone console exe, no SDK. Covers `SubsonicTypes.h` + `src/core/MediaEnrichmentLogic.cpp`. `scripts/run-unit-tests.sh [mac|win|auto]` is the source of truth for the compile+run command.
 - Windows/MSVC: `tests/MediaEnrichmentTests.vcxproj` (CI runs every time, doesn't use the script).
 - macOS: `make mac-test` → plain clang++ -Wall -Wextra -Werror.
 - Linux: `make test` → clang-cl + xwin + wine (no foobar SDK siblings needed).
@@ -165,7 +175,7 @@ Single source of truth: `version.txt`. Xcode's "Generate Version Header" phase r
 
 - **Enter in the browser tree replaces the active playlist; double-click/Add/Play still append.** `clearFirst` bool threaded through both platforms' enqueue chain, `true` only on the Enter/`NM_RETURN` path (clears the active playlist only, nothing else).
 
-- **Auto-skip stale/deleted tracks via `fb2k::skipTrack` (new SDK 2.26 extension point, 2026-09-16 sync).** A stale playlist/shuffle/repeat/Random Mix loop that keeps hitting a Navidrome track since deleted server-side used to retry the doomed HTTP GET every time it came up. Now: `decode_initialize()` on both platforms catches `exception_io_not_found` specifically (not `exception_io_net`/`exception_io_timeout` — those are transient, must still retry) around `g_open_for_decoding`+`initialize()`, marks the id in `navidrome::brokenTrackRegistry()` (`SubsonicTypes.h`, mutex-guarded `unordered_set`, session-scoped — never cleared mid-run, matches every other session-only cache here), then rethrows so the existing error path is unchanged. Each platform's `NavidromeInput.mm`/`Windows/NavidromeInputWin.cpp` also registers a `fb2k::skipTrack` implementation (`navidrome_skip_track`/`navidrome_skip_track_win`, `FB2K_SERVICE_FACTORY`) whose `testTrack()` is the core's preflight before it ever opens a track — a hit skips without attempting the decode at all. Registry logic is SDK-free and unit-tested (`testBrokenTrackRegistry`); the `fb2k::skipTrack`/`exception_io_not_found` wiring itself needs live playback to verify and is SDK-only, so it isn't (and can't be) covered by `tests/MediaEnrichmentLogicTests.cpp`.
+- **Auto-skip stale/deleted tracks via `fb2k::skipTrack` (new SDK 2.26 extension point, 2026-09-16 sync).** A stale playlist/shuffle/repeat/Random Mix loop that keeps hitting a Navidrome track since deleted server-side used to retry the doomed HTTP GET every time it came up. Now: `decode_initialize()` on both platforms catches `exception_io_not_found` specifically (not `exception_io_net`/`exception_io_timeout` — those are transient, must still retry) around `g_open_for_decoding`+`initialize()`, marks the id in `navidrome::brokenTrackRegistry()` (`SubsonicTypes.h`, mutex-guarded `unordered_set`, session-scoped — never cleared mid-run, matches every other session-only cache here), then rethrows so the existing error path is unchanged. Each platform's `NavidromeInput.mm`/`src/platform/win/NavidromeInputWin.cpp` also registers a `fb2k::skipTrack` implementation (`navidrome_skip_track`/`navidrome_skip_track_win`, `FB2K_SERVICE_FACTORY`) whose `testTrack()` is the core's preflight before it ever opens a track — a hit skips without attempting the decode at all. Registry logic is SDK-free and unit-tested (`testBrokenTrackRegistry`); the `fb2k::skipTrack`/`exception_io_not_found` wiring itself needs live playback to verify and is SDK-only, so it isn't (and can't be) covered by `tests/MediaEnrichmentLogicTests.cpp`.
   - **Requires an SDK sibling with `skipTrack.h`** (post-2026-09-16 sync). This machine's local `../foobar2000` sibling predates that sync and is missing it — `make test` still passes (SDK-free), but `make win-build`/`mac-build` won't see the new header until that sibling is refreshed from `reupen/foobar2000-sdk-unmodified`. CI already reclones fresh every run, so the release pipeline is unaffected.
 
 - **Album art is a full `album_art_extractor`, not `album_art_fallback`** — guarantees `open()` is called, more reliable for streamed content. `is_our_path` matches `navidrome://` URIs and legacy `/rest/stream.view` URLs (old playlists). Art id priority: `coverArt=` → `id=` → `<id>` segment of the URI.
@@ -225,7 +235,7 @@ Single source of truth: `version.txt`. Xcode's "Generate Version Header" phase r
 
 - **`std::min`/`std::max` need parens on Windows:** `(std::min)(a, b)` — `windows.h` macros `min`/`max` otherwise mangle the call. macOS compiles the bare form fine.
 
-- **Adding a `Windows/*.cpp` only needs a `Windows/foo_navidrome.vcxproj` edit** — both clang-cl build scripts derive their source list from the vcxproj via `scripts/component-sources.sh`. A *moved/renamed* file still needs the vcxproj edit, and if it leaves `Windows/`, check `component-sources.sh`'s `../`-relative handling. Tested helpers also need `tests/MediaEnrichmentTests.vcxproj` + `run-unit-tests.sh`.
+- **Adding a `src/platform/win/*.cpp` only needs a `src/platform/win/foo_navidrome.vcxproj` edit** — both clang-cl build scripts derive their source list from the vcxproj via `scripts/component-sources.sh`. A *moved/renamed* file still needs the vcxproj edit, and `component-sources.sh` resolves every `Include=` relative to the vcxproj's own folder (so `..\..\core\X.cpp` works). Tested helpers also need `tests/MediaEnrichmentTests.vcxproj` + `run-unit-tests.sh`.
 
 - **Cover-art cache (`CoverCache`) and ESLyric config need explicit invalidation on credential/header changes** — keyed from server URL+user+token at last save, not read live. `NavidromePluginWin.cpp` clears/reinstalls both in `NavidromeHeadersWindow::OnSave` and `NavidromePrefsInstance::apply()`. Any new place credentials change needs the same two calls.
 
@@ -283,7 +293,7 @@ Single source of truth: `version.txt`. Xcode's "Generate Version Header" phase r
 
 - **Minimum macOS is 12.0, and the deployment target has to be forced on the xcodebuild command line.** Xcode 26+ refuses any target below 12.0 outright (`error: The macOS deployment target 'MACOSX_DEPLOYMENT_TARGET' is set to 11.0, but the range of supported deployment target versions is 12.0 to 27.0.x`), and it is not only our project that declares 11.0 — every SDK project in the workspace (`foobar2000_SDK`, `foobar2000_SDK_helpers`, `shared`, `foobar2000_component_client`, `pfc`) does too. That tree is upstream content re-cloned each run, so it can't be patched in place; a command-line `MACOSX_DEPLOYMENT_TARGET=` applies to every target in the workspace at once, which is why both `scripts/mac-dev-build.sh` and `scripts/mac-ci-build.sh` pass it. `foo_navidrome.xcodeproj` also carries 12.0 so a plain Xcode GUI build works. CI has not hit this yet only because `release.yml` still pins `macos-14` (Xcode 15); it breaks the moment that image moves. Big Sur support is intentionally dropped — there is no way to build with a modern Xcode and keep it.
 
-- **This same upstream SDK sync also bumped `pfc-lite.h`'s minimum language standard from C++17 to C++20** (`#if _MSVC_LANG < 202002L` / `#if __cplusplus < 202002L`, was `201703L`) — intentional, per the official changelog (foobar2000.org/changelog-sdk, 2026-09-16): *"C++20 is now widely used, a C++20 compatible compiler is required."* Every toolchain that compiles against real `pfc`/SDK headers needs `/std:c++20` or it's `error C1189: #error: C++20 please` before a single one of our own files even compiles. Four places hardcode the standard and all four had to move together: `Windows/foo_navidrome.vcxproj` and `tests/MediaEnrichmentTests.vcxproj`'s `<LanguageStandard>` (now `stdcpp20`), plus `scripts/win-build-local.sh` and `scripts/win-vm/build-mac.sh`'s clang-cl `/std:c++20` flag. `scripts/run-unit-tests.sh`'s two `-std=c++17`/`/std:c++17` flags (mac-test and Linux `make test`) were deliberately left alone — that path is genuinely SDK/pfc-free (no foobar2000 siblings needed), confirmed still green at C++17 through this exact incident, so there's nothing to bump there; don't cargo-cult the change onto it.
+- **This same upstream SDK sync also bumped `pfc-lite.h`'s minimum language standard from C++17 to C++20** (`#if _MSVC_LANG < 202002L` / `#if __cplusplus < 202002L`, was `201703L`) — intentional, per the official changelog (foobar2000.org/changelog-sdk, 2026-09-16): *"C++20 is now widely used, a C++20 compatible compiler is required."* Every toolchain that compiles against real `pfc`/SDK headers needs `/std:c++20` or it's `error C1189: #error: C++20 please` before a single one of our own files even compiles. Four places hardcode the standard and all four had to move together: `src/platform/win/foo_navidrome.vcxproj` and `tests/MediaEnrichmentTests.vcxproj`'s `<LanguageStandard>` (now `stdcpp20`), plus `scripts/win-build-local.sh` and `scripts/win-vm/build-mac.sh`'s clang-cl `/std:c++20` flag. `scripts/run-unit-tests.sh`'s two `-std=c++17`/`/std:c++17` flags (mac-test and Linux `make test`) were deliberately left alone — that path is genuinely SDK/pfc-free (no foobar2000 siblings needed), confirmed still green at C++17 through this exact incident, so there's nothing to bump there; don't cargo-cult the change onto it.
 
 - **Same SDK sync a third time: `pfc.lib`'s ARM64EC build now needs `pfc_crashHook`/`pfc_winFormatSystemErrorMessageHook` (extern "C") wired in, and nothing does it for us.** Confirmed intentional against the official changelog (foobar2000.org/changelog-sdk, 2026-09-16): *"PFC: Refactored redirection of PFC methods to shared.dll, 'FB2K Debug' / 'FB2K Release' build configurations are no longer required."* (same entry as the C++20 bump above). `foobar2000/shared/wrap_pfc_hooks.h` implements the redirect (its own comment: *"Inclusion of this header enables the redirect"*) — it's a new required integration step, not a bug, but `reupen/foobar2000-sdk-unmodified` ships the SDK exactly as its name says: raw, with no `#include` of it wired into any of the `shared` project's own `.cpp` files, so `shared.vcxproj`'s ARM64EC link fails with unresolved externals until something adds it (x64/Win32 don't reference the EC-only symbols, so they're unaffected). We can't edit the SDK's own vcxproj sources (checked out fresh every run, not vendored here), so `build-windows.yml` does the wiring post-checkout: appends `#include "wrap_pfc_hooks.h"` to the freshly-staged `foobar2000/shared/stdafx.cpp` (a single-TU file, matching the header's own single-definition contract) in its own step, right after "Move SDK subdirs into the expected sibling layout". **Use `printf '\n#include …\n' >>`, not `echo … >>`** — `stdafx.cpp` ships with no trailing newline, so a bare `echo >>` glues straight onto the existing `#include "shared.h"` line into one corrupted directive that silently never includes the new header (caught in a real CI log: the step's own diagnostic `cat` printed one mangled line, build still failed with the exact same unresolved externals). `release.yml` (macOS) doesn't need the same patch — the header is `#ifdef _WIN32`-guarded. If a *future* SDK sync ever moves this redirect somewhere our patch doesn't reach (or reupen starts wiring it themselves), re-check `foobar2000.org/changelog-sdk` first — it documents intentional SDK changes like this in plain English, faster than reverse-engineering a link error from a diff of two third-party repo snapshots.
 

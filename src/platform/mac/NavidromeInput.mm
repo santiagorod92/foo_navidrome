@@ -1,8 +1,8 @@
-#import "stdafx.h"
+#import "../../core/stdafx.h"
 #import "SubsonicClient.h"
-#import "SubsonicTypes.h"
-#import "NavidromeDebugLog.h"
-#import "NavidromePlaylistSync.h"
+#import "../../core/SubsonicTypes.h"
+#import "../../core/NavidromeDebugLog.h"
+#import "../../core/NavidromePlaylistSync.h"
 #import <Foundation/Foundation.h>
 #include <SDK/input_impl.h>
 #include <SDK/file.h>

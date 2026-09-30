@@ -1,9 +1,9 @@
 #include "stdafx.h"
 #include "BrowserWindow.h"
 #include "SubsonicClientWin.h"
-#include "MediaEnrichmentLogic.h"
-#include "../NavidromePlaylistSync.h"
-#include "../NavidromeDebugLog.h"
+#include "../../core/MediaEnrichmentLogic.h"
+#include "../../core/NavidromePlaylistSync.h"
+#include "../../core/NavidromeDebugLog.h"
 #include "EsLyricBridge.h"
 #include <SDK/cfg_var.h>
 #include <SDK/album_art.h>

@@ -79,7 +79,7 @@ help:
 	@echo ""
 	@echo "  clean                 remove local build-win/ artifacts"
 
-# --- Unit tests (tests/MediaEnrichmentLogicTests.cpp + Windows/MediaEnrichmentLogic.cpp) ---
+# --- Unit tests (tests/MediaEnrichmentLogicTests.cpp + src/core/*.cpp) ---
 # One source file, per-host toolchain. scripts/run-unit-tests.sh is the single
 # source of truth for the compile command; the local build scripts
 # (win-build-local.sh / mac-dev-build.sh) call it too, before building the

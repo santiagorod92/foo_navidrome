@@ -2,20 +2,20 @@
 // component links them), but the module is SDK-free and its one platform-
 // specific line is MD5 (#if defined(_WIN32) WinCrypt / #else CommonCrypto), so
 // this host builds on Windows, Linux (make test) and macOS (make mac-test).
-#include "../Windows/MediaEnrichmentLogic.h"
+#include "../src/core/MediaEnrichmentLogic.h"
 // SubsonicTypes.h is pure C++ (no SDK, no Windows headers), so its helpers can
 // be exercised from this standalone host executable too.
-#include "../SubsonicTypes.h"
+#include "../src/core/SubsonicTypes.h"
 // NavidromeBrowserModel.h is the shared browser tree model (SDK-free) — the
 // node struct, category list and row-label formatting used by both platform
 // browser views. NavidromeBrowserModel.cpp (built into this host) adds the
 // child-fetch dispatch over the IBrowserClient seam.
-#include "../NavidromeBrowserModel.h"
-#include "../NavidromePlaylistSync.h"
+#include "../src/core/NavidromeBrowserModel.h"
+#include "../src/core/NavidromePlaylistSync.h"
 // SubsonicCore.cpp (built into this host) is the shared Subsonic API core —
 // every request body over an IHttpTransport seam. Exercised with a fake
 // transport in testSubsonicCore.
-#include "../SubsonicCore.h"
+#include "../src/core/SubsonicCore.h"
 
 // NavidromeBrowserModel.cpp calls navidrome::syncRatingsToPlaylists after a
 // successful child fetch and from syncBrowserNodesToPlaylists; the real

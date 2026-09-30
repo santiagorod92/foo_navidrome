@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "SubsonicClientWin.h"
-#include "MediaEnrichmentLogic.h"
-#include "../NavidromeDebugLog.h"
+#include "../../core/MediaEnrichmentLogic.h"
+#include "../../core/NavidromeDebugLog.h"
 #include <SDK/cfg_var.h>
 
 #pragma comment(lib, "winhttp.lib")

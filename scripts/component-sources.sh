@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Single source of truth for the component's own translation units.
 #
-# The list is parsed straight out of Windows/foo_navidrome.vcxproj (the
+# The list is parsed straight out of src/platform/win/foo_navidrome.vcxproj (the
 # ClCompile ItemGroup), so adding a .cpp there is now the *only* edit needed —
 # both clang-cl builds pick it up automatically:
 #   - scripts/win-build-local.sh   (local Linux -> Wine loop)
@@ -15,7 +15,8 @@
 set -euo pipefail
 
 REPO="${1:?usage: component-sources.sh <repo-root>}"
-vcxproj="$REPO/Windows/foo_navidrome.vcxproj"
+PROJ_DIR="$REPO/src/platform/win"
+vcxproj="$PROJ_DIR/foo_navidrome.vcxproj"
 
 [ -f "$vcxproj" ] || { echo "component-sources.sh: $vcxproj not found" >&2; exit 1; }
 
@@ -26,7 +27,8 @@ grep -oE 'ClCompile Include="[^"]+"' "$vcxproj" |
     case "$inc" in
       stdafx.cpp) continue ;;                # MSVC-PCH bootstrap, not for clang-cl
       /*)         printf '%s\n' "$inc" ;;     # already absolute
-      ../*)       printf '%s\n' "$REPO/${inc#../}" ;;
-      *)          printf '%s\n' "$REPO/Windows/$inc" ;;
+      *)          # relative to the vcxproj (e.g. ../../core/x.cpp); cd+pwd
+                  # normalises the ../ (portable — macOS realpath has no -m)
+                  printf '%s/%s\n' "$(cd "$PROJ_DIR/$(dirname "$inc")" && pwd)" "$(basename "$inc")" ;;
     esac
   done

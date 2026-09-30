@@ -148,7 +148,7 @@ SYS_INC=(
 # Project includes. The SDK sources reach pfc via relative paths (../../pfc),
 # so the sibling layout does most of the work; these cover the umbrella headers.
 PROJ_INC=(
-  -I "$REPO/Windows" -I "$REPO"
+  -I "$REPO/src/platform/win" -I "$REPO"
   -I "$SDK_ROOT" -I "$SDK_ROOT/.." -I "$PFC_ROOT"
 )
 DEFS=( /DWIN32 /D_WINDOWS /D_USRDLL /DUNICODE /D_UNICODE /DNDEBUG
@@ -176,7 +176,7 @@ mapfile -t SRCS < <(
        "$SDK_ROOT/helpers"/*.cpp \
        "$LIBPPUI_ROOT"/*.cpp \
        "$SDK_ROOT/foobar2000_component_client"/*.cpp 2>/dev/null
-    # Component sources are parsed from Windows/foo_navidrome.vcxproj — add a
+    # Component sources are parsed from src/platform/win/foo_navidrome.vcxproj — add a
     # new .cpp there and this build picks it up with no edit here.
     bash "$REPO/scripts/component-sources.sh" "$REPO"
   } |

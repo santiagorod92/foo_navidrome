@@ -1,7 +1,7 @@
 #pragma once
 #import <Foundation/Foundation.h>
-#include "stdafx.h"
-#include "SubsonicTypes.h"
+#include "../../core/stdafx.h"
+#include "../../core/SubsonicTypes.h"
 
 // ---------------------------------------------------------------------------
 // Data model objects

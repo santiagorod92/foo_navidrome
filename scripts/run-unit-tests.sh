@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # run-unit-tests.sh — build + run the cross-platform logic unit tests.
 #
-# One source file (tests/MediaEnrichmentLogicTests.cpp) + Windows/MediaEnrichmentLogic.cpp,
+# One source file (tests/MediaEnrichmentLogicTests.cpp) + the SDK-free src/core/*.cpp it exercises,
 # compiled with a per-host toolchain:
 #
 #   mac  -> native clang++                         (macOS dev / CI)
@@ -22,9 +22,9 @@ set -euo pipefail
 MODE="${1:-auto}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC=("$ROOT/tests/MediaEnrichmentLogicTests.cpp" \
-     "$ROOT/Windows/MediaEnrichmentLogic.cpp" \
-     "$ROOT/NavidromeBrowserModel.cpp" \
-     "$ROOT/SubsonicCore.cpp")
+     "$ROOT/src/core/MediaEnrichmentLogic.cpp" \
+     "$ROOT/src/core/NavidromeBrowserModel.cpp" \
+     "$ROOT/src/core/SubsonicCore.cpp")
 
 if [ "$MODE" = "auto" ]; then
   case "$(uname -s)" in
