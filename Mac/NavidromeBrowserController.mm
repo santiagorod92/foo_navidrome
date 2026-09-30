@@ -740,6 +740,17 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
     if (self.standalone) [self.view.window close];
 }
 
+// An artist's synthetic children (Top Songs, Similar Artists) are for browsing, not for
+// "add this artist to the playlist": Top Songs would duplicate the discography, and Similar
+// Artists is a cyclic graph — Tremonti lists Alter Bridge, Alter Bridge lists Tremonti — so
+// descending into it never terminates. Mirrors isArtistSubCategory in
+// navidrome::collectSongsDeep (NavidromeBrowserModel.cpp), which this is the Obj-C twin of.
+static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
+    return n.type == NavidromeNodeTypeCategory &&
+           (n.categoryKind == NavidromeCategoryArtistTopSongs ||
+            n.categoryKind == NavidromeCategoryArtistSimilarArtists);
+}
+
 // Synchronous deep song collector — must be called from a background thread.
 // Walks any expandable node (artist, album, category, playlist) down to songs,
 // reusing already-expanded children and fetching the rest on demand.
@@ -762,6 +773,7 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
     }
 
     for (NavidromeNode *child in children) {
+        if (isArtistSubCategoryNode(child)) continue;
         [self collectSongsDeep:child into:songs error:outError];
         if (outError && *outError) return;
     }
