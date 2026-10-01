@@ -1,3 +1,10 @@
+## [1.18.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.17.2...v1.18.0) (2026-10-01)
+
+
+### Features
+
+* All Songs node and multi-select in the browser ([7c3a0c5](https://github.com/santiagorod92/foo_navidrome/commit/7c3a0c55e4d634ca74795b7ec4ab4f57436f7546))
+
 ## [1.17.2](https://github.com/santiagorod92/foo_navidrome/compare/v1.17.1...v1.17.2) (2026-09-30)
 
 
