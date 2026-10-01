@@ -6,7 +6,7 @@
 //
 // SDK-free and UI-toolkit-free: pure C++ over the structs in SubsonicTypes.h,
 // so it compiles into the component on every platform and into the standalone
-// unit-test host (tests/MediaEnrichmentLogicTests.cpp). The child-fetch
+// unit-test host (tests/Browser*Tests.cpp). The child-fetch
 // dispatch and the deep song collector that build on top of this live in
 // NavidromeBrowserModel.cpp behind the IBrowserClient seam; the SDK-coupled
 // enqueue step lives in NavidromeBrowserEnqueue.h / main.cpp.

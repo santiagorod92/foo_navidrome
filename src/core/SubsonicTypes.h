@@ -914,7 +914,7 @@ inline std::string describeSessionEnv(const SessionEnv& e) {
 // like getGenres' "value"-not-"name" is now fixed in exactly one place. Scope
 // is deliberately only what Subsonic sends — objects, arrays, strings, numbers,
 // true/false/null, shallow nesting; UTF-8 in, UTF-8 out (\uXXXX and surrogate
-// pairs decoded). Unit-tested in tests/MediaEnrichmentLogicTests.cpp
+// pairs decoded). Unit-tested in tests/JsonParserTests.cpp
 // (testJson / testSubsonicParsers).
 // ---------------------------------------------------------------------------
 namespace json {

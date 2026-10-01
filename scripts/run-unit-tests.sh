@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # run-unit-tests.sh — build + run the cross-platform logic unit tests.
 #
-# One source file (tests/MediaEnrichmentLogicTests.cpp) + the SDK-free src/core/*.cpp it exercises,
-# compiled with a per-host toolchain:
+# Every tests/*.cpp (one topic each, plus TestMain.cpp — see tests/TestHarness.h)
+# + the SDK-free src/core/*.cpp they exercise, compiled with a per-host toolchain:
 #
 #   mac  -> native clang++                         (macOS dev / CI)
 #   win  -> clang-cl + xwin SDK, run under wine     (Linux cross-compile / CI fast path)
@@ -21,7 +21,8 @@ set -euo pipefail
 
 MODE="${1:-auto}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SRC=("$ROOT/tests/MediaEnrichmentLogicTests.cpp" \
+# Globbed, so a new tests/*.cpp needs no edit here (the vcxproj globs too).
+SRC=("$ROOT"/tests/*.cpp \
      "$ROOT/src/core/MediaEnrichmentLogic.cpp" \
      "$ROOT/src/core/NavidromeBrowserModel.cpp" \
      "$ROOT/src/core/SubsonicCore.cpp")
@@ -39,8 +40,8 @@ case "$MODE" in
     mkdir -p "$OUT"
     echo "==> unit tests: clang++ (native macOS)"
     clang++ -std=c++17 -Wall -Wextra -Werror -O1 \
-      "${SRC[@]}" -o "$OUT/MediaEnrichmentLogicTests"
-    "$OUT/MediaEnrichmentLogicTests"
+      "${SRC[@]}" -o "$OUT/UnitTests"
+    "$OUT/UnitTests"
     ;;
   win)
     XWIN_SDK="${XWIN_SDK:-$HOME/.local/share/xwin/sdk}"
@@ -56,10 +57,10 @@ case "$MODE" in
       -imsvc "$XWIN_SDK/crt/include" -imsvc "$XWIN_SDK/sdk/include/um" \
       -imsvc "$XWIN_SDK/sdk/include/shared" -imsvc "$XWIN_SDK/sdk/include/ucrt" \
       "${SRC[@]}" \
-      /Fe:"$OUT/MediaEnrichmentLogicTests.exe" /Fo:"$OUT/" /link \
+      /Fe:"$OUT/UnitTests.exe" /Fo:"$OUT/" /link \
       "/libpath:$XWIN_SDK/crt/lib/x86_64" "/libpath:$XWIN_SDK/sdk/lib/um/x86_64" \
       "/libpath:$XWIN_SDK/sdk/lib/ucrt/x86_64" advapi32.lib
-    wine "$OUT/MediaEnrichmentLogicTests.exe"
+    wine "$OUT/UnitTests.exe"
     ;;
   *)
     echo "usage: $0 [mac|win|auto]" >&2

@@ -22,7 +22,7 @@ BUILD_MAC := build-mac
 help:
 	@echo "foo_navidrome — make targets"
 	@echo ""
-	@echo "  test                  fast clang-cl+wine build/run of MediaEnrichmentLogicTests (Linux)"
+	@echo "  test                  fast clang-cl+wine build/run of the unit tests (Linux)"
 	@echo "  test-clean            same, forcing a clean recompile"
 	@echo "  mac-test              native clang++ build/run of the SAME test suite (macOS)"
 	@echo "  mac-test-clean        same, forcing a clean recompile"
@@ -79,8 +79,8 @@ help:
 	@echo ""
 	@echo "  clean                 remove local build-win/ artifacts"
 
-# --- Unit tests (tests/MediaEnrichmentLogicTests.cpp + src/core/*.cpp) ---
-# One source file, per-host toolchain. scripts/run-unit-tests.sh is the single
+# --- Unit tests (tests/*.cpp + src/core/*.cpp) ---
+# One test suite, per-host toolchain. scripts/run-unit-tests.sh is the single
 # source of truth for the compile command; the local build scripts
 # (win-build-local.sh / mac-dev-build.sh) call it too, before building the
 # component. See CLAUDE.md > Development > Unit tests.

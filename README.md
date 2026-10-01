@@ -134,9 +134,9 @@ If you prefer Xcode directly:
 ### Unit tests
 
 `make mac-test` builds and runs the shared logic test suite
-(`tests/MediaEnrichmentLogicTests.cpp` — covers `SubsonicTypes.h` and
-`src/core/MediaEnrichmentLogic.cpp`) with a plain `clang++`, no Xcode or SDK
-needed. It is the same source file the Windows CI runs; `release.yml` runs it on
+(`tests/*.cpp`, one file per shared module — covers `SubsonicTypes.h`,
+`SubsonicCore`, the browser model and `src/core/MediaEnrichmentLogic.cpp`) with a
+plain `clang++`, no Xcode or SDK needed. It is the same suite the Windows CI runs; `release.yml` runs it on
 the macOS runner before every `xcodebuild`. On Linux the equivalent is
 `make test` (clang-cl + Wine).
 
@@ -338,7 +338,7 @@ cross-compile, `mac-*` for the native macOS build, `win-vm-*` for the
 Windows-on-macOS VM flow, `mac-vm-*` for the macOS-on-Linux (Docker-OSX) flow.
 
 ```bash
-make test          # Linux: fast clang-cl+wine build/run of MediaEnrichmentLogicTests
+make test          # Linux: fast clang-cl+wine build/run of the unit tests
 make mac-test       # macOS: native clang++ build/run of the SAME test suite
 make win-build      # Linux: cross-compile the Windows x64 component
 make win-build-launch  # …same, then relaunch Wine foobar2000
