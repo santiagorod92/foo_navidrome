@@ -548,6 +548,51 @@ std::vector<Song> SubsonicCore::getRandomSongs(int count, std::string& outError)
     return merged;
 }
 
+std::vector<Song> SubsonicCore::getAllSongs(std::string& outError, int pageSize) {
+    // Navidrome (and OpenSubsonic servers generally) treat an empty search3
+    // query as "match everything", which makes it the one paged endpoint that
+    // walks the whole song table. A server that ignores songOffset would hand
+    // back the same page forever, so a page that adds no new id also stops it.
+    auto fetch = [&](const std::string& folderId) -> std::vector<Song> {
+        std::vector<Song> result;
+        std::unordered_set<std::string> seen;
+        for (int offset = 0;; offset += pageSize) {
+            const std::string params = "query=&artistCount=0&albumCount=0&songCount=" +
+                                       std::to_string(pageSize) +
+                                       "&songOffset=" + std::to_string(offset);
+            std::string body = httpGet(
+                buildURL("search3.view", appendMusicFolderParam(params, folderId)), outError);
+            if (body.empty()) return {};
+            auto root = checkResponse(body, outError);
+            if (root.isNull()) return {};
+
+            int pageCount = 0;
+            bool anyNew = false;
+            for (auto* s : root["searchResult3"]["song"].items()) {
+                ++pageCount;
+                Song so = parseSong(*s);
+                if (!so.id.empty() && !seen.insert(so.id).second) continue;
+                anyNew = true;
+                result.push_back(std::move(so));
+            }
+            if (pageCount < pageSize) break;
+            if (!anyNew) {
+                NAVIDROME_WARN("API", "getAllSongs: server repeated a page at offset " +
+                               std::to_string(offset) + " — stopping at " +
+                               std::to_string(result.size()) + " songs");
+                break;
+            }
+        }
+        return result;
+    };
+
+    auto songs = mergeFanOut<Song>(activeMusicFolderIds(), fetch,
+                                   [](const Song& s) { return s.id; });
+    if (!outError.empty()) return {};
+    NAVIDROME_LOG("API", "getAllSongs: " + std::to_string(songs.size()) + " songs");
+    return songs;
+}
+
 bool SubsonicCore::setStarred(bool starred, const std::string& itemId, StarKind kind,
                               std::string& outError) {
     if (itemId.empty()) return false;

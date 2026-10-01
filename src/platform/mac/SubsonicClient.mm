@@ -620,6 +620,13 @@ struct MacSettingsProvider : navidrome::ISettingsProvider {
     return SongsFromCore(v);
 }
 
+- (NSArray<SubsonicSong *> *)getAllSongsWithError:(NSError **)error {
+    std::string err;
+    auto v = _core->getAllSongs(err);
+    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
+    return SongsFromCore(v);
+}
+
 - (SubsonicArtistInfo *)getArtistInfoForId:(NSString *)artistId
                                       error:(NSError **)error {
     if (artistId.length == 0) return nil;

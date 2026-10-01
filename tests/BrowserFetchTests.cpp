@@ -18,8 +18,8 @@ TEST_CASE(testBrowserFetchDispatch) {
         std::string err;
         auto roots = navidrome::buildRootNodes(fc, err);
         check(err.empty(), "flat root load reports no error");
-        check(roots.size() == 12 && roots.back()->type == BrowserNode::Artist,
-              "flat roots = 11 categories + the artist list");
+        check(roots.size() == 13 && roots.back()->type == BrowserNode::Artist,
+              "flat roots = 12 categories + the artist list");
         check(roots.front()->type == BrowserNode::Category,
               "categories come first in the root list");
     }
@@ -27,9 +27,9 @@ TEST_CASE(testBrowserFetchDispatch) {
         FakeBrowserClient fc; fc.groupIds = {"1", "2"};
         std::string err;
         auto roots = navidrome::buildRootNodes(fc, err);
-        check(roots.size() == 13, "grouped roots = 11 categories + 2 library nodes");
-        check(roots[11]->type == BrowserNode::Library && roots[11]->id == "1" &&
-              roots[11]->displayName == "Music" && roots[12]->displayName == "Podcasts",
+        check(roots.size() == 14, "grouped roots = 12 categories + 2 library nodes");
+        check(roots[12]->type == BrowserNode::Library && roots[12]->id == "1" &&
+              roots[12]->displayName == "Music" && roots[13]->displayName == "Podcasts",
               "library nodes carry the folder id and resolved name");
         bool calledGetArtists = false;
         for (auto& c : fc.calls) if (c == "getArtists") calledGetArtists = true;
@@ -149,6 +149,20 @@ TEST_CASE(testBrowserFetchDispatch) {
     }
     {
         FakeBrowserClient fc; std::string err;
+        auto out = navidrome::fetchChildren(fc, cat(BrowserNode::CatAllSongs), err);
+        check(fc.calls.size() == 1 && fc.calls[0] == "getAllSongs" && out.size() == 2 &&
+              out[0]->type == BrowserNode::Song && out[1]->id == "all2",
+              "the All Songs category yields every song via one getAllSongs call");
+
+        FakeBrowserClient fc2;
+        std::vector<navidrome::BrowserNodePtr> songs;
+        auto allNode = std::make_shared<BrowserNode>(cat(BrowserNode::CatAllSongs));
+        navidrome::collectSongsDeep(fc2, allNode, songs);
+        check(songs.size() == 2 && songs[0]->id == "all1",
+              "Add/Play on the (never-expanded) All Songs node resolves its songs");
+    }
+    {
+        FakeBrowserClient fc; std::string err;
         navidrome::fetchChildren(fc, cat(BrowserNode::CatMostPlayed), err);
         check(fc.calls[0] == std::string("getAlbumList:frequent:100"),
               "Most Played maps to getAlbumList2 frequent, 100 rows");
@@ -165,6 +179,31 @@ TEST_CASE(testBrowserFetchDispatch) {
         auto out = navidrome::fetchChildren(fc, cat(BrowserNode::CatStarred), err);
         check(err == "net" && out.empty(),
               "a failed child fetch clears the result and surfaces the error");
+    }
+
+    // --- collectSelectionSongs: multi-select de-dupe across selected nodes ---
+    {
+        auto song = [](const char* id) {
+            navidrome::Song s; s.id = id; s.title = id; return navidrome::makeSongNode(s);
+        };
+        auto loaded = [](std::vector<navidrome::BrowserNodePtr> kids) {
+            auto n = std::make_shared<BrowserNode>();
+            n->type = BrowserNode::Playlist; n->childrenLoaded = true;
+            n->children = std::move(kids);
+            return n;
+        };
+        FakeBrowserClient fc;
+        auto a = loaded({ song("x"), song("x"), song("y") });   // playlist with a repeat
+        auto b = loaded({ song("y"), song("z") });              // overlaps a on "y"
+        auto out = navidrome::collectSelectionSongs(fc, { a, b });
+        std::string ids;
+        for (auto& s : out) ids += s->id;
+        check(ids == "xxyz",
+              "collectSelectionSongs drops songs an earlier selected node already "
+              "produced, but keeps repeats within one node");
+        auto idList = navidrome::collectSongIdsDeep(fc, { a, b });
+        check(idList.size() == 4 && idList[3] == "z",
+              "collectSongIdsDeep applies the same cross-selection de-dupe");
     }
 
     // --- collectSongsDeep: recurses through the tree, reuses loaded children ---

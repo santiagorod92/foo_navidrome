@@ -103,6 +103,14 @@ struct FakeBrowserClient : navidrome::IBrowserClient {
         if (!error.empty()) return {};
         navidrome::Song s; s.id = "s6"; s.title = "Similar"; return { s };
     }
+    std::vector<navidrome::Song> getAllSongs(std::string& e) override {
+        calls.push_back("getAllSongs");
+        e = error;
+        if (!error.empty()) return {};
+        navidrome::Song a; a.id = "all1"; a.title = "One";
+        navidrome::Song b; b.id = "all2"; b.title = "Two";
+        return { a, b };
+    }
     std::vector<navidrome::Song> getRandomSongs(int count, std::string& e) override {
         calls.push_back("getRandomSongs:" + std::to_string(count));
         e = error;

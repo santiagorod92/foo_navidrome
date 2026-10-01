@@ -215,6 +215,10 @@ typedef NS_ENUM(NSInteger, SubsonicStarKind) {
 - (NSArray<SubsonicSong *> *)getRandomSongsWithCount:(NSInteger)count
                                                 error:(NSError **)error;
 
+// Every song in the (filtered) library — paged search3.view with an empty
+// query. Backs the "All Songs" browser node.
+- (NSArray<SubsonicSong *> *)getAllSongsWithError:(NSError **)error;
+
 // Biography + last.fm-derived similar artists (getArtistInfo2.view). Backs
 // the "Artist Info" context-menu action and the "Similar Artists" child node.
 - (SubsonicArtistInfo *)getArtistInfoForId:(NSString *)artistId

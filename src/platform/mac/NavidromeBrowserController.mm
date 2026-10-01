@@ -65,10 +65,15 @@ static std::string NBCStr(NSString *x) {
     return n;
 }
 
+// Mirrors navidrome::isLeaf — "All Songs" is enqueue-only, never expanded.
 - (BOOL)isLeaf { return self.type == NavidromeNodeTypeSong ||
                         self.type == NavidromeNodeTypeRadioStation ||
                         self.type == NavidromeNodeTypeLoading ||
-                        self.type == NavidromeNodeTypeError; }
+                        self.type == NavidromeNodeTypeError ||
+                        [self isAllSongs]; }
+
+- (BOOL)isAllSongs { return self.type == NavidromeNodeTypeCategory &&
+                            self.categoryKind == NavidromeCategoryAllSongs; }
 
 // ---- Bridge to the shared C++ node model (NavidromeBrowserModel.h) ----------
 // The ObjC class stays the NSOutlineView view-model; the shared code operates
@@ -711,12 +716,8 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
     // Copy nodes list for use on background thread
     NSArray *nodesCopy = [nodes copy];
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        NSMutableArray<NavidromeNode *> *songs = [NSMutableArray array];
         NSError *err = nil;
-        for (NavidromeNode *node in nodesCopy) {
-            [self collectSongsDeep:node into:songs error:&err];
-            if (err) break;
-        }
+        NSMutableArray<NavidromeNode *> *songs = [self collectSelectionSongs:nodesCopy error:&err];
         dispatch_async(dispatch_get_main_queue(), ^{
             [_spinner stopAnimation:nil];
             if (err) {
@@ -777,6 +778,27 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
         [self collectSongsDeep:child into:songs error:outError];
         if (outError && *outError) return;
     }
+}
+
+// collectSongsDeep over a multi-selection — the Obj-C twin of
+// navidrome::collectSelectionSongs: a song an earlier selected node already
+// produced is dropped from later ones (artist + one of its albums selected
+// together), repeats within one node (a server playlist) are kept.
+- (NSMutableArray<NavidromeNode *> *)collectSelectionSongs:(NSArray<NavidromeNode *> *)nodes
+                                                     error:(NSError **)outError {
+    NSMutableArray<NavidromeNode *> *out = [NSMutableArray array];
+    NSMutableSet<NSString *> *fromEarlierNodes = [NSMutableSet set];
+    for (NavidromeNode *node in nodes) {
+        NSMutableArray<NavidromeNode *> *part = [NSMutableArray array];
+        [self collectSongsDeep:node into:part error:outError];
+        if (outError && *outError) break;
+        for (NavidromeNode *s in part)
+            if (s.nodeId.length == 0 || ![fromEarlierNodes containsObject:s.nodeId])
+                [out addObject:s];
+        for (NavidromeNode *s in part)
+            if (s.nodeId.length) [fromEarlierNodes addObject:s.nodeId];
+    }
+    return out;
 }
 
 - (void)enqueueNodes:(NSArray<NavidromeNode *> *)songNodes play:(BOOL)play {
@@ -1098,12 +1120,8 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
 
     NSArray *nodesCopy = [nodes copy];
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        NSMutableArray<NavidromeNode *> *songs = [NSMutableArray array];
         NSError *err = nil;
-        for (NavidromeNode *n in nodesCopy) {
-            [self collectSongsDeep:n into:songs error:&err];
-            if (err) break;
-        }
+        NSMutableArray<NavidromeNode *> *songs = [self collectSelectionSongs:nodesCopy error:&err];
         if (err) {
             dispatch_async(dispatch_get_main_queue(), ^{
                 [self->_spinner stopAnimation:nil];
@@ -1223,12 +1241,8 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
 
     NSArray *nodesCopy = [nodes copy];
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        NSMutableArray<NavidromeNode *> *songs = [NSMutableArray array];
         NSError *err = nil;
-        for (NavidromeNode *n in nodesCopy) {
-            [self collectSongsDeep:n into:songs error:&err];
-            if (err) break;
-        }
+        NSMutableArray<NavidromeNode *> *songs = [self collectSelectionSongs:nodesCopy error:&err];
         NSMutableArray<NSString *> *ids = [NSMutableArray array];
         for (NavidromeNode *s in songs)
             if (s.nodeId.length) [ids addObject:s.nodeId];
@@ -1803,7 +1817,8 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
     NavidromeNode *node = [_outlineView itemAtRow:row];
     if (!node) return;
 
-    if (node.type == NavidromeNodeTypeSong || node.type == NavidromeNodeTypeRadioStation) {
+    if (node.type == NavidromeNodeTypeSong || node.type == NavidromeNodeTypeRadioStation ||
+        node.isAllSongs) {
         [self addNodesToPlaylist:@[node] play:YES];
     } else {
         // Toggle expand/collapse

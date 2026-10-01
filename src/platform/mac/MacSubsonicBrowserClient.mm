@@ -273,6 +273,12 @@ struct MacBrowserClient final : navidrome::IBrowserClient {
         e = errString(err);
         return v;
     }
+    std::vector<navidrome::Song> getAllSongs(std::string& e) override {
+        NSError *err = nil;
+        auto v = mapArr<SubsonicSong>([client getAllSongsWithError:&err]);
+        e = errString(err);
+        return v;
+    }
     navidrome::ArtistInfo getArtistInfo(const std::string& id, std::string& e) override {
         NSError *err = nil;
         SubsonicArtistInfo *info = [client getArtistInfoForId:@(id.c_str()) error:&err];

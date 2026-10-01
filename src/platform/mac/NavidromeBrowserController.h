@@ -42,6 +42,7 @@ typedef NS_ENUM(NSInteger, NavidromeCategoryKind) {
     // NavidromeBrowserModel.h for how id/subtitle carry the parent artist.
     NavidromeCategoryArtistTopSongs,        // getTopSongs.view       → songs
     NavidromeCategoryArtistSimilarArtists,  // getArtistInfo2.view    → artists
+    NavidromeCategoryAllSongs,              // search3.view "" paged  → songs (never expanded)
 };
 
 @interface NavidromeNode : NSObject
@@ -84,6 +85,7 @@ typedef NS_ENUM(NSInteger, NavidromeCategoryKind) {
 + (instancetype)errorNodeWithMessage:(NSString *)msg;
 
 - (BOOL)isLeaf;  // Songs are leaves; artists & albums can expand
+- (BOOL)isAllSongs;  // the enqueue-only "All Songs" category row
 
 @end
 

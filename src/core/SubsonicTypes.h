@@ -724,16 +724,15 @@ inline std::vector<T> mergeFanOut(const std::vector<std::string>& folderIds,
                                   Fetch fetch, IdOf idOf) {
     if (folderIds.empty()) return fetch(std::string());
     std::vector<T> merged;
-    std::vector<std::string> seen;
+    // Hashed, not a linear scan: "All Songs" pushes whole libraries through
+    // here, where a vector lookup per item goes quadratic.
+    std::unordered_set<std::string> seen;
     for (const auto& fid : folderIds) {
         std::vector<T> part = fetch(fid);
         for (auto& item : part) {
             std::string id = idOf(item);
-            if (id.empty() ||
-                std::find(seen.begin(), seen.end(), id) == seen.end()) {
-                if (!id.empty()) seen.push_back(id);
+            if (id.empty() || seen.insert(id).second)
                 merged.push_back(std::move(item));
-            }
         }
     }
     return merged;

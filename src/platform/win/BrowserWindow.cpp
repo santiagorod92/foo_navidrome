@@ -815,6 +815,8 @@ LRESULT BrowserWindow::OnCreate(LPCREATESTRUCT) {
         TVS_LINESATROOT | TVS_HASBUTTONS | TVS_SHOWSELALWAYS,
         0, IDC_TREE);
     m_tree.SetFont(hFont);
+    ::SetWindowSubclass(m_tree, &BrowserWindow::TreeSubclassProc, 1,
+                        reinterpret_cast<DWORD_PTR>(this));
 
     // Buttons
     m_addBtn.Create(*this, CWindow::rcDefault, L"Add to Playlist",
@@ -899,6 +901,8 @@ HBRUSH BrowserWindow::OnCtlColorStatic(HDC dc, HWND) {
 
 void BrowserWindow::OnDestroy() {
     KillTimer(kSearchDebounceTimer);
+    ::RemoveWindowSubclass(m_tree, &BrowserWindow::TreeSubclassProc, 1);
+    m_selAnchor = nullptr;
     m_nodeMap.clear();
     m_rootNodes.clear();
     m_searchResultNodes.clear();
@@ -988,6 +992,8 @@ struct WinBrowserClient final : navidrome::IBrowserClient {
         return c.getSimilarSongs(id, n, e); }
     std::vector<navidrome::Song> getRandomSongs(int n, std::string& e) override {
         return c.getRandomSongs(n, e); }
+    std::vector<navidrome::Song> getAllSongs(std::string& e) override {
+        return c.getAllSongs(e); }
     navidrome::ArtistInfo getArtistInfo(const std::string& id, std::string& e) override {
         return c.getArtistInfo(id, e); }
     std::vector<navidrome::Song> getTopSongs(const std::string& name, int n,
@@ -1247,11 +1253,9 @@ HTREEITEM BrowserWindow::insertNode(HTREEITEM hParent,
     auto wlabel           = u8ToWide(label);
     tvi.item.pszText      = const_cast<LPWSTR>(wlabel.c_str());
     tvi.item.lParam       = reinterpret_cast<LPARAM>(node.get());
-    // Show expand arrow for artists and albums
-    tvi.item.cChildren    = (node->type == NavidromeNode::Song   ||
-                              node->type == NavidromeNode::Radio  ||
-                              node->type == NavidromeNode::Error  ||
-                              node->type == NavidromeNode::Loading) ? 0 : 1;
+    // Expand arrow on everything but leaves ("All Songs" included — it's
+    // enqueue-only, see navidrome::isLeaf).
+    tvi.item.cChildren    = navidrome::isLeaf(*node) ? 0 : 1;
 
     HTREEITEM hItem = m_tree.InsertItem(&tvi);
     SetNodeItem(node, hItem);
@@ -1301,6 +1305,8 @@ LRESULT BrowserWindow::OnTreeDblClick(LPNMHDR) {
     if (!node) return 0;
     if (node->type == NavidromeNode::Song || node->type == NavidromeNode::Radio)
         enqueueNodes({ node }, true);
+    else if (navidrome::isAllSongsNode(*node))
+        queueNodes({ node }, true, false);
     else if (m_tree.GetItemState(hSel, TVIS_EXPANDED) & TVIS_EXPANDED)
         m_tree.Expand(hSel, TVE_COLLAPSE);
     else
@@ -1311,34 +1317,125 @@ LRESULT BrowserWindow::OnTreeDblClick(LPNMHDR) {
 // ---------------------------------------------------------------------------
 // Button actions
 // ---------------------------------------------------------------------------
-// Gather the tree's selected, playable nodes (standard treeview is single-
-// select, but iterating TVIS_SELECTED keeps this correct if that ever changes).
+// Gather the tree's selected, playable nodes in tree order (see the
+// multi-select notes in BrowserWindow.h). Items inside a collapsed parent are
+// skipped — what isn't on screen isn't part of the selection.
 std::vector<std::shared_ptr<NavidromeNode>> BrowserWindow::selectedNodes() {
     std::vector<std::shared_ptr<NavidromeNode>> selected;
-    HTREEITEM hItem = m_tree.GetFirstVisibleItem();
-    while (hItem) {
-        if (m_tree.GetItemState(hItem, TVIS_SELECTED) & TVIS_SELECTED) {
-            auto n = nodeForItem(hItem);
-            if (n && n->type != NavidromeNode::Loading && n->type != NavidromeNode::Error)
-                selected.push_back(n);
-        }
-        hItem = m_tree.GetNextVisibleItem(hItem);
+    for (HTREEITEM hItem : visibleItems()) {
+        if (!isSelected(hItem)) continue;
+        auto n = nodeForItem(hItem);
+        if (n && n->type != NavidromeNode::Loading && n->type != NavidromeNode::Error)
+            selected.push_back(n);
     }
     return selected;
+}
+
+// ---------------------------------------------------------------------------
+// Multi-select
+// ---------------------------------------------------------------------------
+// TVGN_FIRSTVISIBLE is the first item *on screen* (scroll-dependent), so walk
+// from the root instead: TVGN_NEXTVISIBLE follows every expanded branch.
+std::vector<HTREEITEM> BrowserWindow::visibleItems() {
+    std::vector<HTREEITEM> out;
+    for (HTREEITEM h = m_tree.GetRootItem(); h; h = m_tree.GetNextVisibleItem(h))
+        out.push_back(h);
+    return out;
+}
+
+bool BrowserWindow::isSelected(HTREEITEM h) {
+    return (m_tree.GetItemState(h, TVIS_SELECTED) & TVIS_SELECTED) != 0;
+}
+
+void BrowserWindow::clearSelectionExcept(HTREEITEM keep) {
+    for (HTREEITEM h : visibleItems())
+        if (h != keep && isSelected(h)) m_tree.SetItemState(h, 0, TVIS_SELECTED);
+    if (keep) m_tree.SetItemState(keep, TVIS_SELECTED, TVIS_SELECTED);
+}
+
+void BrowserWindow::selectRange(HTREEITEM from, HTREEITEM to) {
+    auto items = visibleItems();
+    auto a = std::find(items.begin(), items.end(), from);
+    auto b = std::find(items.begin(), items.end(), to);
+    if (a == items.end()) a = b;   // anchor scrolled into a collapsed branch
+    if (b == items.end()) return;
+    if (a > b) std::swap(a, b);
+    for (auto it = items.begin(); it != items.end(); ++it) {
+        bool in = it >= a && it <= b;
+        if (in != isSelected(*it))
+            m_tree.SetItemState(*it, in ? TVIS_SELECTED : 0, TVIS_SELECTED);
+    }
+}
+
+// Mouse half of multi-select. Clicks on the expand button, or anywhere off an
+// item, keep the default behaviour.
+bool BrowserWindow::onTreeLButtonDown(LPARAM lParam) {
+    TVHITTESTINFO ht = {};
+    // Signed client coords (GET_X_LPARAM without <windowsx.h>, whose
+    // SubclassWindow macro clobbers ATL's CWindowImpl::SubclassWindow).
+    ht.pt = { static_cast<short>(LOWORD(lParam)), static_cast<short>(HIWORD(lParam)) };
+    HTREEITEM hit = m_tree.HitTest(&ht);
+    if (!hit || !(ht.flags & TVHT_ONITEM)) return false;
+
+    const bool ctrl  = (::GetKeyState(VK_CONTROL) & 0x8000) != 0;
+    const bool shift = (::GetKeyState(VK_SHIFT)   & 0x8000) != 0;
+    if (!ctrl && !shift) {
+        // Plain click: drop the extras now — clicking the caret item itself
+        // fires no TVN_SELCHANGED to do it later.
+        clearSelectionExcept(hit);
+        m_selAnchor = hit;
+        return false;
+    }
+
+    m_tree.SetFocus();
+    if (shift && m_selAnchor && m_nodeMap.count(m_selAnchor)) {
+        selectRange(m_selAnchor, hit);
+    } else {
+        m_tree.SetItemState(hit, isSelected(hit) ? 0 : TVIS_SELECTED, TVIS_SELECTED);
+        m_selAnchor = hit;
+    }
+    return true;
+}
+
+LRESULT CALLBACK BrowserWindow::TreeSubclassProc(HWND hWnd, UINT msg, WPARAM wParam,
+                                                 LPARAM lParam, UINT_PTR, DWORD_PTR ref) {
+    auto* self = reinterpret_cast<BrowserWindow*>(ref);
+    if (msg == WM_LBUTTONDOWN && self->onTreeLButtonDown(lParam)) return 0;
+    return ::DefSubclassProc(hWnd, msg, wParam, lParam);
+}
+
+// Keyboard half: the caret moved (arrows, or a plain click). Shift extends a
+// range from the anchor; anything else collapses the selection to the caret.
+LRESULT BrowserWindow::OnTreeSelChanged(LPNMHDR pnmh) {
+    auto* pnm = reinterpret_cast<LPNMTREEVIEW>(pnmh);
+    HTREEITEM now = pnm->itemNew.hItem;
+    if (!now) return 0;
+    const bool shift = (::GetKeyState(VK_SHIFT) & 0x8000) != 0;
+    if (pnm->action == TVC_BYKEYBOARD && shift && m_selAnchor && m_nodeMap.count(m_selAnchor)) {
+        selectRange(m_selAnchor, now);
+    } else {
+        clearSelectionExcept(now);
+        m_selAnchor = now;
+    }
+    return 0;
 }
 
 // Resolve the selected nodes to songs on a background thread, then enqueue on
 // the main thread. closeAfter hides the window once the tracks are queued \u2014
 // used by the Enter shortcut so "select artist + Enter" queues and dismisses.
 void BrowserWindow::queueSelected(bool play, bool closeAfter, bool clearFirst) {
-    auto selected = selectedNodes();
+    queueNodes(selectedNodes(), play, closeAfter, clearFirst);
+}
+
+void BrowserWindow::queueNodes(std::vector<std::shared_ptr<NavidromeNode>> selected,
+                               bool play, bool closeAfter, bool clearFirst) {
     if (selected.empty()) { setStatus("Select at least one item"); return; }
 
+    NAVIDROME_LOG("UI", "queueNodes: " + std::to_string(selected.size()) +
+                  " selected node(s), play=" + (play ? "1" : "0"));
     setStatus("Loading tracks\u2026");
     std::thread([this, selected, play, closeAfter, clearFirst]() {
-        std::vector<std::shared_ptr<NavidromeNode>> songs;
-        for (auto& n : selected)
-            collectSongsDeep(n, songs);
+        auto songs = navidrome::collectSelectionSongs(browserClient(), selected);
         fb2k::inMainThread([this, songs, play, closeAfter, clearFirst]() mutable {
             enqueueNodes(std::move(songs), play, clearFirst);
             if (closeAfter && !m_embedded && IsWindow()) ShowWindow(SW_HIDE);
@@ -1451,7 +1548,9 @@ void BrowserWindow::OnContextMenu(CWindow wnd, CPoint point) {
         m_tree.ScreenToClient(&client);
         UINT flags = 0;
         HTREEITEM hit = m_tree.HitTest(client, &flags);
-        if (hit) m_tree.SelectItem(hit);
+        // Right-click inside a multi-selection acts on all of it; outside, it
+        // selects just the clicked row (SelectItem -> OnTreeSelChanged clears).
+        if (hit && !isSelected(hit)) m_tree.SelectItem(hit);
     }
 
     auto selForMenu = selectedNodes();
@@ -1692,8 +1791,7 @@ void BrowserWindow::OnDownload(UINT, int, HWND) {
 
     setStatus("Resolving tracks…");
     std::thread([this, destDir, selected]() {
-        std::vector<std::shared_ptr<NavidromeNode>> songs;
-        for (auto& n : selected) collectSongsDeep(n, songs);
+        auto songs = navidrome::collectSelectionSongs(browserClient(), selected);
 
         std::size_t done = 0, failed = 0;
         for (std::size_t i = 0; i < songs.size(); ++i) {
@@ -2204,16 +2302,6 @@ void BrowserWindow::OnTimer(UINT_PTR id) {
         if (!PostMessage(WM_NAVIDROME_SEARCH, reinterpret_cast<WPARAM>(payload), 0))
             delete payload;   // window already gone
     }).detach();
-}
-
-// ---------------------------------------------------------------------------
-// Deep song collection (synchronous, call from background thread)
-// ---------------------------------------------------------------------------
-// Walks any expandable node down to songs, reusing already-expanded children
-// and fetching the rest on demand — shared with macOS.
-void BrowserWindow::collectSongsDeep(std::shared_ptr<NavidromeNode> node,
-                                     std::vector<std::shared_ptr<NavidromeNode>>& out) {
-    navidrome::collectSongsDeep(browserClient(), node, out);
 }
 
 // ---------------------------------------------------------------------------

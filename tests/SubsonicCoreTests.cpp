@@ -168,6 +168,49 @@ TEST_CASE(testSubsonicCore) {
         check(albums.size() == 1 && albums[0].id == "al1",
               "the fan-out merge dedupes results by id");
     }
+
+    // --- getAllSongs: empty-query search3, paged by songOffset ---------
+    {
+        FakeTransport tx; FakeSettings cfg; cfg.s = basicSettings();
+        tx.routes.push_back({"songOffset=0",
+            R"({"subsonic-response":{"status":"ok","searchResult3":{"song":[)"
+            R"({"id":"s1","title":"A"},{"id":"s2","title":"B"}]}}})"});
+        tx.routes.push_back({"songOffset=2",
+            R"({"subsonic-response":{"status":"ok","searchResult3":{"song":[)"
+            R"({"id":"s3","title":"C"}]}}})"});
+        SubsonicCore core(tx, cfg);
+        std::string err;
+        auto songs = core.getAllSongs(err, 2);
+        check(err.empty() && songs.size() == 3 && songs[2].id == "s3",
+              "getAllSongs concatenates pages until a short one");
+        check(tx.urls.size() == 2 &&
+              tx.urls[0].find("search3.view") != std::string::npos &&
+              tx.urls[0].find("query=&") != std::string::npos &&
+              tx.urls[0].find("songCount=2") != std::string::npos &&
+              tx.urls[0].find("artistCount=0&albumCount=0") != std::string::npos,
+              "getAllSongs pages an empty search3 query with artists/albums off");
+    }
+    {
+        // A server that ignores songOffset returns the same full page forever.
+        FakeTransport tx; FakeSettings cfg; cfg.s = basicSettings();
+        tx.routes.push_back({"search3.view",
+            R"({"subsonic-response":{"status":"ok","searchResult3":{"song":[)"
+            R"({"id":"s1","title":"A"},{"id":"s2","title":"B"}]}}})"});
+        SubsonicCore core(tx, cfg);
+        std::string err;
+        auto songs = core.getAllSongs(err, 2);
+        check(err.empty() && songs.size() == 2 && tx.urls.size() == 2,
+              "getAllSongs stops when a page brings no new ids (offset ignored)");
+    }
+    {
+        FakeTransport tx; FakeSettings cfg; cfg.s = basicSettings();
+        tx.routes.push_back({"search3.view",
+            R"({"subsonic-response":{"status":"failed","error":{"code":70,"message":"nope"}}})"});
+        SubsonicCore core(tx, cfg);
+        std::string err;
+        auto songs = core.getAllSongs(err, 2);
+        check(!err.empty() && songs.empty(), "getAllSongs surfaces a server error");
+    }
 }
 
 } // namespace

@@ -5,6 +5,8 @@
 #include "NavidromeBrowserModel.h"
 #include "NavidromePlaylistSync.h"
 
+#include <unordered_set>
+
 namespace navidrome {
 
 void syncBrowserNodesToPlaylists(const std::vector<BrowserNodePtr>& nodes) {
@@ -135,6 +137,9 @@ std::vector<BrowserNodePtr> fetchChildren(IBrowserClient& client,
                     // getTopSongs.view keys off the name, not the id.
                     for (const auto& s : client.getTopSongs(node.subtitle, 50, outError)) addSong(s);
                     break;
+                case BrowserNode::CatAllSongs:
+                    for (const auto& s : client.getAllSongs(outError)) addSong(s);
+                    break;
                 case BrowserNode::CatArtistSimilarArtists: {
                     auto info = client.getArtistInfo(node.id, outError);
                     for (const auto& a : info.similarArtists) out.push_back(makeArtistNode(a));
@@ -192,10 +197,24 @@ void collectSongsDeep(IBrowserClient& client, const BrowserNodePtr& node,
         if (!isArtistSubCategory(c)) collectSongsDeep(client, c, out);
 }
 
+std::vector<BrowserNodePtr> collectSelectionSongs(IBrowserClient& client,
+                                                  const std::vector<BrowserNodePtr>& nodes) {
+    std::vector<BrowserNodePtr> out;
+    std::unordered_set<std::string> fromEarlierNodes;
+    for (const auto& n : nodes) {
+        std::vector<BrowserNodePtr> part;
+        collectSongsDeep(client, n, part);
+        for (const auto& s : part)
+            if (s->id.empty() || !fromEarlierNodes.count(s->id)) out.push_back(s);
+        for (const auto& s : part)
+            if (!s->id.empty()) fromEarlierNodes.insert(s->id);
+    }
+    return out;
+}
+
 std::vector<std::string> collectSongIdsDeep(IBrowserClient& client,
                                             const std::vector<BrowserNodePtr>& nodes) {
-    std::vector<BrowserNodePtr> songs;
-    for (const auto& n : nodes) collectSongsDeep(client, n, songs);
+    std::vector<BrowserNodePtr> songs = collectSelectionSongs(client, nodes);
 
     std::vector<std::string> ids;
     ids.reserve(songs.size());

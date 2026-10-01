@@ -91,6 +91,11 @@ public:
     std::vector<Song>  getSongsForGenre(const std::string& genre, int count, std::string& outError);
     std::vector<Song>  getSimilarSongs(const std::string& itemId, int count, std::string& outError);
     std::vector<Song>  getRandomSongs(int count, std::string& outError);
+    // Every song in the (filtered) library: search3.view with an empty query,
+    // paged by songOffset until a short page. Backs the "All Songs" browser
+    // node. pageSize is a parameter only so the tests can page with tiny data.
+    std::vector<Song>  getAllSongs(std::string& outError, int pageSize = kAllSongsPageSize);
+    static constexpr int kAllSongsPageSize = 500;
     // Biography + last.fm-derived similar artists (getArtistInfo2.view). Backs
     // the "Artist Info" context-menu action and the artist's "Similar Artists"
     // child node — one request serves both.

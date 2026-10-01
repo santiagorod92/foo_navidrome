@@ -102,6 +102,7 @@ GUIDs for cfg vars/prefs pages/menu commands are hardcoded constants in `Navidro
 | Random Mix | `getRandomSongs.view` | Context menu item (not a category node — see Gotchas) |
 | Artist Info | `getArtistInfo2.view` | Context menu item on an artist row → modal (biography + last.fm link) |
 | Top Songs / Similar Artists | `getTopSongs.view` (by artist name), `getArtistInfo2.view` | Two synthetic child nodes under every Artist node |
+| All Songs | `search3.view` (empty query, `songOffset` paged ×500) | Enqueue-only category node (never expands) — whole library in one Add/Play |
 | Multi-library filter | `getMusicFolders.view`; `musicFolderId` on list endpoints | *Preferences › Media Library › Navidrome › Libraries*; fan-out+merge when filter active |
 
 Playlist mutations chunk **50 ids/request** (`kPlaylistChunkSize`) — Windows' URL buffer is 4096 wchars.
@@ -172,6 +173,8 @@ Single source of truth: `version.txt`. Xcode's "Generate Version Header" phase r
 
 - **Browser logic is shared C++; the platform layer is just the view.** `NavidromeBrowserModel.h/.cpp` + `NavidromeBrowserEnqueue.h` own tree model, category list, child fetch, deep-collect, row-label formatting, playlist rating push-back, star/rate mutation, Play Similar/Random Mix, enqueue/seek. `BrowserWindow`/`NavidromeBrowserController` keep only widget wiring, theming, menus, threading, and their `IBrowserClient` adapter. Add browser behaviour to the shared core, not a platform file.
   - macOS keeps ObjC `NavidromeNode` as a thin view-model bridged via `+wrapCoreNode:`/`-coreNode`; `NavidromeNodeType`/`NavidromeCategoryKind` must stay declared in the same order as the C++ enums (bridged by cast).
+
+- **"All Songs" is an enqueue-only node, and the Windows tree fakes multi-select.** Asked for on Hydrogenaudio (2026-10): no way to load a whole library on Windows except one artist at a time. `CatAllSongs` → `SubsonicCore::getAllSongs()`: empty-query `search3.view` paged by `songOffset` (Navidrome/OpenSubsonic treat `""` as match-all), fanned out per active library; stops on a short page *or* a page with no new ids (guards a server that ignores the offset). `navidrome::isLeaf()` is true for it on purpose — inserting tens of thousands of tree items stalls both views — so it's only reached via `collectSongsDeep` (Add/Play/Enter/double-click). Win32 `SysTreeView32` has no multi-select: `BrowserWindow` subclasses it (`SetWindowSubclass`) — Ctrl+click toggles `TVIS_SELECTED`, Shift+click/Shift+arrows select a range from `m_selAnchor`, any other caret change (`TVN_SELCHANGED`) collapses back to one; right-click inside the selection keeps it. `selectedNodes()` walks from `GetRootItem()` — `GetFirstVisibleItem()` is the top *on-screen* row and silently drops scrolled-off selections. macOS just uses `allowsMultipleSelection`. Both go through `collectSelectionSongs` (shared; ObjC twin on Mac) which de-dupes songs across selected roots but keeps repeats within one (server playlists can repeat a track). Don't `#include <windowsx.h>` for `GET_X_LPARAM` — its `SubclassWindow` macro breaks ATL.
 
 - **Enter in the browser tree replaces the active playlist; double-click/Add/Play still append.** `clearFirst` bool threaded through both platforms' enqueue chain, `true` only on the Enter/`NM_RETURN` path (clears the active playlist only, nothing else).
 

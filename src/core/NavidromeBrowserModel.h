@@ -51,6 +51,9 @@ struct BrowserNode {
         // parent artist's id/name (see makeArtistSubNode).
         CatArtistTopSongs,        // getTopSongs.view (by artist name) -> songs
         CatArtistSimilarArtists,  // getArtistInfo2.view similarArtist -> artists
+        // The whole library as one enqueueable row. Never expanded (see
+        // isLeaf) — tens of thousands of tree items would stall either view.
+        CatAllSongs,              // search3.view "" paged         -> songs
     };
 
     Type         type       = Loading;
@@ -83,10 +86,17 @@ struct BrowserNode {
 
 using BrowserNodePtr = std::shared_ptr<BrowserNode>;
 
-// Songs / radio stations / placeholders never expand.
+// "All Songs" is enqueue-only: Add/Play/double-click resolve it through
+// collectSongsDeep, but it never shows its children in the tree.
+inline bool isAllSongsNode(const BrowserNode& n) {
+    return n.type == BrowserNode::Category && n.category == BrowserNode::CatAllSongs;
+}
+
+// Songs / radio stations / placeholders / "All Songs" never expand.
 inline bool isLeaf(const BrowserNode& n) {
     return n.type == BrowserNode::Song || n.type == BrowserNode::Radio ||
-           n.type == BrowserNode::Loading || n.type == BrowserNode::Error;
+           n.type == BrowserNode::Loading || n.type == BrowserNode::Error ||
+           isAllSongsNode(n);
 }
 
 // ---------------------------------------------------------------------------
@@ -242,6 +252,7 @@ inline BrowserNodePtr errorNode(const std::string& msg) {
 inline std::vector<BrowserNodePtr> buildCategoryNodes() {
     struct Entry { BrowserNode::CategoryKind kind; const char* title; };
     static const Entry kCategories[] = {
+        { BrowserNode::CatAllSongs,       "All Songs"       },
         { BrowserNode::CatStarred,        "★ Starred"  },
         { BrowserNode::CatRecentlyAdded,  "Recently Added"  },
         { BrowserNode::CatMostPlayed,     "Most Played"     },
@@ -388,6 +399,8 @@ struct IBrowserClient {
     virtual std::vector<Song>         getSimilarSongs(const std::string& itemId, int count,
                                                       std::string& outError) = 0;
     virtual std::vector<Song>         getRandomSongs(int count, std::string& outError) = 0;
+    // Every song in the (filtered) library — backs the "All Songs" node.
+    virtual std::vector<Song>         getAllSongs(std::string& outError) = 0;
     // Biography + similar artists (getArtistInfo2.view) — backs "Artist Info"
     // and the "Similar Artists" child node, and top tracks (getTopSongs.view,
     // keyed by artist NAME) — backs the "Top Songs" child node.
@@ -430,7 +443,13 @@ std::vector<BrowserNodePtr> fetchChildren(IBrowserClient& client,
 // already-loaded children and fetching the rest through fetchChildren.
 void collectSongsDeep(IBrowserClient& client, const BrowserNodePtr& node,
                       std::vector<BrowserNodePtr>& out);
-// collectSongsDeep over a list, then the non-empty song ids.
+// collectSongsDeep over a multi-selection. A song an earlier selected node
+// already produced is dropped from later ones (an artist and one of its albums
+// selected together queue that album once), but repeats *within* one node are
+// kept — a server playlist may list the same track twice on purpose.
+std::vector<BrowserNodePtr> collectSelectionSongs(IBrowserClient& client,
+                                                  const std::vector<BrowserNodePtr>& nodes);
+// collectSelectionSongs, then the non-empty song ids.
 std::vector<std::string> collectSongIdsDeep(IBrowserClient& client,
                                             const std::vector<BrowserNodePtr>& nodes);
 

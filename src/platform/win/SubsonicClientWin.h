@@ -89,6 +89,8 @@ public:
     // A random batch of tracks (getRandomSongs.view). Backs the "Random Mix"
     // smart-list node.
     std::vector<Song>    getRandomSongs(int count, std::string& outError);
+    // Whole (filtered) library, paged search3 — backs the "All Songs" node.
+    std::vector<Song>    getAllSongs(std::string& outError);
 
     // Biography + last.fm-derived similar artists (getArtistInfo2.view). Backs
     // the "Artist Info" context-menu action and the "Similar Artists" child node.

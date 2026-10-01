@@ -74,6 +74,7 @@ public:
         MESSAGE_HANDLER(WM_NAVIDROME_SEARCH,     OnNavidromeSearch)
         MSG_WM_TIMER(OnTimer)
         NOTIFY_CODE_HANDLER_EX(TVN_ITEMEXPANDING, OnTreeExpanding)
+        NOTIFY_CODE_HANDLER_EX(TVN_SELCHANGED,    OnTreeSelChanged)
         NOTIFY_CODE_HANDLER_EX(NM_DBLCLK,        OnTreeDblClick)
         NOTIFY_CODE_HANDLER_EX(NM_RETURN,        OnTreeReturn)
         MSG_WM_CONTEXTMENU(OnContextMenu)
@@ -158,6 +159,7 @@ private:
     LRESULT OnNavidromeSearch(UINT, WPARAM, LPARAM, BOOL&);
     void    OnTimer(UINT_PTR id);
     LRESULT OnTreeExpanding(LPNMHDR);
+    LRESULT OnTreeSelChanged(LPNMHDR);
     LRESULT OnTreeDblClick(LPNMHDR);
     LRESULT OnTreeReturn(LPNMHDR);
     void    OnContextMenu(CWindow wnd, CPoint point);
@@ -201,8 +203,6 @@ private:
     // what a category / playlist / artist / album contains.
     std::vector<std::shared_ptr<NavidromeNode>>
             fetchChildren(const std::shared_ptr<NavidromeNode>& node, std::string& outError);
-    void    collectSongsDeep(std::shared_ptr<NavidromeNode> node,
-                             std::vector<std::shared_ptr<NavidromeNode>>& out);
     void    applyStarred(bool starred);
     // Tree label for a node: track number, favorite marker and rating stars.
     std::string labelFor(const std::shared_ptr<NavidromeNode>& node) const;
@@ -210,6 +210,23 @@ private:
     void    enqueueNodes(std::vector<std::shared_ptr<NavidromeNode>> songs, bool play, bool clearFirst = false);
     std::vector<std::shared_ptr<NavidromeNode>> selectedNodes();
     void    queueSelected(bool play, bool closeAfter, bool clearFirst = false);
+    // queueSelected over an explicit node list (double-click on "All Songs").
+    void    queueNodes(std::vector<std::shared_ptr<NavidromeNode>> nodes,
+                       bool play, bool closeAfter, bool clearFirst = false);
+
+    // Multi-select. A Win32 treeview is single-select, but TVIS_SELECTED can be
+    // set on any number of items and TVS_SHOWSELALWAYS paints them all; the
+    // tree's own "caret" item stays the one GetSelectedItem() returns. The
+    // subclass proc handles Ctrl+click (toggle) and Shift+click (range from
+    // m_selAnchor) itself; plain clicks/keys fall through and OnTreeSelChanged
+    // collapses the selection back to the caret.
+    static LRESULT CALLBACK TreeSubclassProc(HWND, UINT, WPARAM, LPARAM,
+                                             UINT_PTR, DWORD_PTR);
+    bool    onTreeLButtonDown(LPARAM lParam);   // true = handled, skip default
+    std::vector<HTREEITEM> visibleItems();     // expanded-tree order, from the root
+    void    clearSelectionExcept(HTREEITEM keep);
+    void    selectRange(HTREEITEM from, HTREEITEM to);
+    bool    isSelected(HTREEITEM h);
     void    setStatus(const std::string& msg);
 
     // Server playlist management. Selections are resolved to song ids the same
@@ -269,6 +286,8 @@ private:
         COLORREF text = 0, bg = 0;
     } m_theme;
     HBRUSH m_themeBgBrush = nullptr;
+
+    HTREEITEM     m_selAnchor = nullptr;   // Shift+click/arrow range origin
 
     // True when hosted inline in the prefs page (vs. the standalone window);
     // only the standalone window hides itself after an Enter "queue + play".

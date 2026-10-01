@@ -322,6 +322,10 @@ std::vector<navidrome::Song>
 navidrome::SubsonicClientWin::getRandomSongs(int count, std::string& outError) {
     return m_core->getRandomSongs(count, outError);
 }
+std::vector<navidrome::Song>
+navidrome::SubsonicClientWin::getAllSongs(std::string& outError) {
+    return m_core->getAllSongs(outError);
+}
 navidrome::ArtistInfo
 navidrome::SubsonicClientWin::getArtistInfo(const std::string& artistId, std::string& outError) {
     return m_core->getArtistInfo(artistId, outError);

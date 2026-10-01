@@ -12,24 +12,25 @@ TEST_CASE(testBrowserModel) {
 
     // --- category list: canonical order, titles, all Category type ---
     auto cats = navidrome::buildCategoryNodes();
-    check(cats.size() == 11, "buildCategoryNodes returns the 11 smart lists");
+    check(cats.size() == 12, "buildCategoryNodes returns All Songs + the 11 smart lists");
     const BrowserNode::CategoryKind expectedOrder[] = {
-        BrowserNode::CatStarred, BrowserNode::CatRecentlyAdded,
+        BrowserNode::CatAllSongs, BrowserNode::CatStarred, BrowserNode::CatRecentlyAdded,
         BrowserNode::CatMostPlayed, BrowserNode::CatRecentlyPlayed,
         BrowserNode::CatRandom, BrowserNode::CatGenres,
         BrowserNode::CatPlaylists, BrowserNode::CatBookmarks,
         BrowserNode::CatRadio, BrowserNode::CatPodcasts,
         BrowserNode::CatNowPlaying,
     };
-    bool orderOk = cats.size() == 11;
+    bool orderOk = cats.size() == 12;
     for (size_t i = 0; i < cats.size() && orderOk; ++i)
         orderOk = cats[i]->type == BrowserNode::Category &&
                   cats[i]->category == expectedOrder[i] &&
                   !cats[i]->displayName.empty();
     check(orderOk, "category nodes are in canonical order with non-empty titles");
-    check(cats[0]->displayName == "\xE2\x98\x85 Starred", "Starred keeps its icon prefix");
-    check(cats[7]->category == BrowserNode::CatBookmarks &&
-          cats[7]->displayName == "Bookmarks",
+    check(cats[0]->displayName == "All Songs", "All Songs heads the category list");
+    check(cats[1]->displayName == "\xE2\x98\x85 Starred", "Starred keeps its icon prefix");
+    check(cats[8]->category == BrowserNode::CatBookmarks &&
+          cats[8]->displayName == "Bookmarks",
           "Bookmarks sits between Playlists and Radio");
 
     // --- album-list category mapping ---
@@ -92,6 +93,9 @@ TEST_CASE(testBrowserModel) {
     check(navidrome::isLeaf(*sn) && navidrome::isLeaf(*rn) &&
           !navidrome::isLeaf(*an) && !navidrome::isLeaf(*arn),
           "isLeaf: songs/radio are leaves, artists/albums expand");
+    check(navidrome::isAllSongsNode(*cats[0]) && navidrome::isLeaf(*cats[0]) &&
+          !navidrome::isLeaf(*cats[1]),
+          "All Songs is an enqueue-only leaf; the other categories still expand");
 
     // --- row display ---
     navidrome::NodeDisplay d = navidrome::nodeDisplay(*sn);
@@ -109,7 +113,7 @@ TEST_CASE(testBrowserModel) {
     check(navidrome::singleColumnLabel(*sn) ==
           "\xE2\x98\x85 4. Song  \xE2\x98\x85\xE2\x98\x85\xE2\x98\x85  " + d.bookmarkText,
           "singleColumnLabel joins name + rating + bookmark with two spaces");
-    check(navidrome::nodeDisplay(*cats[0]).name == "\xE2\x98\x85 Starred",
+    check(navidrome::nodeDisplay(*cats[1]).name == "\xE2\x98\x85 Starred",
           "a starred-looking category title is not double-prefixed");
 
     navidrome::Song plain; plain.id = "s2"; plain.title = "Plain";
