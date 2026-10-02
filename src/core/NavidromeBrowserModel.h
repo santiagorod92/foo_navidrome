@@ -14,6 +14,7 @@
 #include "SubsonicTypes.h"
 
 #include <cstdio>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -508,5 +509,17 @@ std::vector<BrowserNodePtr> fetchSimilarSongs(IBrowserClient& client,
 // enqueue. Background thread only.
 std::vector<BrowserNodePtr> fetchRandomMix(IBrowserClient& client, int count,
                                            std::string& outError);
+
+// The whole library as albums, for navidrome_library_api::list_albums (both platforms): every
+// album of every artist, in artist-list order, each completed from its artist when the server
+// left a field empty (artist name/id; cover id falls back to the album id). `aborted` is polled
+// between artists. False = the artist list itself failed (`outError` set) or aborted; a single
+// artist's album request failing just skips that artist. Background thread only.
+bool listLibraryAlbums(IBrowserClient& client, const std::function<bool()>& aborted,
+                       const std::function<void(const Album&)>& onAlbum, std::string& outError);
+
+// Every song of every album of one artist, as song nodes ready to enqueue (play_artist).
+std::vector<BrowserNodePtr> collectArtistSongs(IBrowserClient& client, const std::string& artistId,
+                                               std::string& outError);
 
 } // namespace navidrome

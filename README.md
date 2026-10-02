@@ -338,7 +338,7 @@ remain the source of truth. Highlights:
 
 Targets follow an `<os>-<action>` naming scheme — `win-*` for the Linux
 cross-compile, `mac-*` for the native macOS build, `win-vm-*` for the
-Windows-on-macOS VM flow, `mac-vm-*` for the macOS-on-Linux (Docker-OSX) flow.
+Windows-on-macOS VM flow, `mac-vm-*` for the macOS-on-Linux VM flow.
 
 ```bash
 make test          # Linux: fast clang-cl+wine build/run of the unit tests
@@ -353,7 +353,7 @@ make mac-logs       # follow the colourised component debug log (macOS)
 make mac-release    # macOS: bump, build, install, package, gh release create
 make mac-ci-build VERSION=1.11.0     # hermetic macOS CI build
 make win-vm-test ARGS="--launch" # Windows-on-macOS VM: cross-build, deploy, relaunch
-make mac-vm-test ARGS="--release --launch"  # macOS-on-Linux VM (Docker-OSX): pull CI build, deploy, relaunch
+make mac-vm-release  # macOS-on-Linux VM (../macos-devbox): deploy the latest release, relaunch
 ```
 
 ### Linux — build & test the Windows component (current dev environment)
@@ -420,23 +420,22 @@ for the full walkthrough.
 | `./scripts/win-vm/win-vm.sh install` | Unattended headless Windows install into the QEMU guest |
 | `./scripts/win-vm/win-vm-test.sh --launch` | Cross-build the x64 DLL → deploy into the guest over SSH → relaunch foobar2000 |
 
-### Linux — runtime-test the *macOS* component in a Docker-OSX VM
+### Linux — runtime-test the *macOS* component in a local macOS VM
 
-No Mac needed: boot x86_64 macOS in a QEMU/KVM container
-([sickcodes/docker-osx](https://github.com/sickcodes/Docker-OSX)) and load a
-prebuilt `.fb2k-component` into it. **Run/test only — no build** (there is no
-Xcode in the container); the component comes from the `macos-14` CI release
-(universal binary, so it carries the x86_64 slice the emulated guest needs) or a
-real Mac. Needs a Linux host with writable `/dev/kvm`. Apple's macOS EULA permits
-virtualization only on Apple hardware. See
-[`scripts/mac-vm/README.md`](scripts/mac-vm/README.md).
+No Mac needed. The VM is the sibling repo `../macos-devbox` (its `mvm` CLI): x86_64 macOS
+on QEMU/KVM ([dockur/macos](https://github.com/dockur/macos)), with the disk on a host
+bind mount, instant snapshots and a browser screen. The component comes from the CI
+release (a universal binary, so it has the x86_64 slice the guest needs) or a local
+`.fb2k-component`. It can also be built in the guest once Xcode is installed there. Needs
+a Linux host with `/dev/kvm`. Apple's macOS EULA only permits virtualization on Apple
+hardware. See [`scripts/mac-vm/README.md`](scripts/mac-vm/README.md).
 
 | Command | What it does |
 |---------|--------------|
-| `./scripts/mac-vm/setup-host.sh` | One-time: host packages (`docker`, `sshpass`), kvm/docker preflight, pull the image |
-| `./scripts/mac-vm/mac-vm.sh install` | First boot: **manual** GUI macOS install (~30–45 min), then enable Remote Login + drop in `foobar2000.app` |
-| `./scripts/mac-vm/mac-vm.sh run` | Boot the installed guest (detached) |
-| `./scripts/mac-vm/mac-vm-test.sh --release --launch` | Resolve a `.fb2k-component` (release / path / repo root) → deploy over SSH → re-sign → relaunch foobar2000 |
+| `make mac-vm` | Boot the VM, deploy the latest GitHub release, launch foobar2000 |
+| `make mac-vm-test [COMPONENT=…]` | Deploy a local `.fb2k-component` (default: newest in repo root), re-sign, relaunch |
+| `make mac-vm-build[-test]` | Build in the guest with xcodebuild, pull the `.fb2k-component` back (then deploy) |
+| `make mac-vm-<cmd>` | Any `mvm` command: `-up`, `-down`, `-ssh`, `-shot`, `-snapshot ARGS=name`, … |
 
 ### CI (GitHub Actions — not run by hand)
 
@@ -455,7 +454,7 @@ The Windows CI build is driven by `.github/workflows/build-windows.yml` (MSBuild
 foo_navidrome/
 ├── src/
 │   ├── core/                               # Shared by both platforms — all logic lives here
-│   │   ├── main.cpp                        # Component version, playlist sync, browser enqueue, rating service (SDK)
+│   │   ├── main.cpp                        # Component version, playlist sync, browser enqueue, rating + library services (SDK)
 │   │   ├── stdafx.h                        # Shared precompiled/prefix header
 │   │   ├── SubsonicTypes.h                 # Data types, URI codec, JSON parser, Subsonic mappers (SDK-free)
 │   │   ├── SubsonicCore.h/.cpp             # Subsonic API core over IHttpTransport/ISettingsProvider (SDK-free)
@@ -464,6 +463,7 @@ foo_navidrome/
 │   │   ├── NavidromePlaylistSync.h         # Rating push-back to playlists (impl in main.cpp)
 │   │   ├── NavidromeDebugLog.h             # NAVIDROME_LOG/WARN/ERR file logger
 │   │   ├── MediaEnrichmentLogic.h/.cpp     # Cover-art/URL/ESLyric-config helpers (SDK-free; MD5 is the only #ifdef)
+│   │   ├── NavidromeLibraryPlatform.h      # Per-platform seams of the library service (impl in main.cpp)
 │   │   └── Navidrome{Rating,Library}Service.h # Cross-component service contracts
 │   └── platform/
 │       ├── mac/                            # macOS: ObjC++ adapters + AppKit UI
@@ -471,7 +471,7 @@ foo_navidrome/
 │       │   ├── NavidromePlugin.mm          #   registration, cfg vars, prefs, menu, library_viewer, scrobbler
 │       │   ├── NavidromeInput.mm           #   navidrome:// input handler + skipTrack
 │       │   ├── NavidromeArtExtractor.mm    #   album art extractor
-│       │   ├── MacSubsonicBrowserClient.*  #   IBrowserClient adapter
+│       │   ├── MacSubsonicBrowserClient.*  #   IBrowserClient adapter + library-service seams
 │       │   ├── NavidromeBrowserController.*     # browser NSViewController
 │       │   └── NavidromePreferencesController.* # prefs NSViewController
 │       └── win/                            # Windows: Win32/ATL adapters + UI
@@ -480,7 +480,7 @@ foo_navidrome/
 │           ├── SubsonicClientWin.h/.cpp    #   WinHTTP transport over SubsonicCore
 │           ├── NavidromePluginWin.cpp      #   registration, cfg vars, prefs, menu, art
 │           ├── NavidromeInputWin.cpp       #   navidrome:// input handler + skipTrack
-│           ├── NavidromeLibraryServiceWin.cpp # navidrome_library_api implementation
+│           ├── NavidromeLibraryServiceWin.cpp # library-service seams (configured check, cover bytes)
 │           ├── BrowserWindow.h/.cpp        #   ATL browser window
 │           └── EsLyricBridge.* / EsLyricScript.h # ESLyric config + searcher script
 ├── third_party/wtl/                # Vendored WTL headers (Windows builds)
