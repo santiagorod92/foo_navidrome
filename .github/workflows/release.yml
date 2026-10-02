@@ -1,11 +1,23 @@
 name: Release
 
+# Push to main -> version (semantic-release --dry-run: is there a release, which version?) ->
+# build-windows (x86/x64/ARM64EC of that commit, stamped with that version) -> release
+# (macOS unit tests + xcodebuild + semantic-release publishing the tag and the GitHub release)
+# -> merge-component (Windows DLLs into the release asset) -> notify-n8n. Nothing is published
+# unless both platforms built.
+#
+# main is protected (changes only through pull requests), so nothing here pushes to it: no
+# release commit, no CHANGELOG.md/version.txt write-back — only the v<version> tag and the
+# GitHub release, whose notes are the changelog. Every build stamps the version itself
+# (mac-ci-build.sh writes version.txt; build-windows.yml takes it as an input).
 on:
   push:
     branches: [main]
+  # Manual run: the gate below only looks at a push's top commit, so a release-worthy commit
+  # pushed under a docs:/test:/ci: one is only released by dispatching this workflow.
+  workflow_dispatch:
 
-# semantic-release needs to commit version.txt + CHANGELOG.md back to main
-# and create GitHub releases / tags.
+# semantic-release creates the tag and the GitHub release (and comments on released issues/PRs).
 permissions:
   contents: write
   issues: write
@@ -18,15 +30,19 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
-    runs-on: macos-14
-    # Skip the release commit semantic-release itself pushes (avoids loops), and
-    # skip commit types that .releaserc.json's commit-analyzer already treats as
-    # "no release" (chore/docs/style/test/ci) — no point burning a full macOS
-    # xcodebuild just to have semantic-release no-op at the end. Only checks the
-    # top commit of the push (head_commit), same limitation as the skip-ci guard.
+  # --------------------------------------------------------------------------
+  # Will this push cut a release, and as which version? A dry run publishes nothing; the
+  # exec plugin's verifyReleaseCmd writes next_version to $GITHUB_OUTPUT (empty: no release,
+  # so every later job is skipped).
+  # --------------------------------------------------------------------------
+  version:
+    runs-on: ubuntu-latest
+    # Skip commit types that .releaserc.json's commit-analyzer already treats as
+    # "no release" (chore/docs/style/test/ci) — no point burning a full macOS +
+    # Windows build just to have semantic-release no-op at the end. Only checks the
+    # top commit of the push (head_commit); a manual dispatch always runs.
     if: >-
-      !contains(github.event.head_commit.message, '[skip ci]') &&
+      github.event_name == 'workflow_dispatch' || (
       !startsWith(github.event.head_commit.message, 'chore:') &&
       !startsWith(github.event.head_commit.message, 'chore(') &&
       !startsWith(github.event.head_commit.message, 'docs:') &&
@@ -36,11 +52,57 @@ jobs:
       !startsWith(github.event.head_commit.message, 'test:') &&
       !startsWith(github.event.head_commit.message, 'test(') &&
       !startsWith(github.event.head_commit.message, 'ci:') &&
-      !startsWith(github.event.head_commit.message, 'ci(')
+      !startsWith(github.event.head_commit.message, 'ci(') )
+    outputs:
+      next_version: ${{ steps.dry_run.outputs.next_version }}
+    steps:
+      - name: Checkout foo_navidrome
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0           # semantic-release needs full history + tags
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Install semantic-release + plugins
+        run: |
+          npm install --no-save --no-package-lock \
+            semantic-release@22 \
+            conventional-changelog-conventionalcommits@7 \
+            @semantic-release/exec@6 \
+            @semantic-release/github@9
+
+      - name: Next version (dry run)
+        id: dry_run
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx semantic-release --dry-run
+
+  # --------------------------------------------------------------------------
+  # Windows x86 + x64 + ARM64EC of the commit being released, BEFORE anything is published:
+  # a Windows compile failure stops the release instead of shipping a mac-only one. The build
+  # lives in the reusable build-windows.yml (also dispatchable on its own for local test
+  # builds via win-test.sh).
+  # --------------------------------------------------------------------------
+  build-windows:
+    needs: version
+    if: needs.version.outputs.next_version != ''
+    uses: ./.github/workflows/build-windows.yml
+    with:
+      ref: ${{ github.sha }}
+      version: ${{ needs.version.outputs.next_version }}
+
+  release:
+    needs: [version, build-windows]
+    if: needs.version.outputs.next_version != ''
+    runs-on: macos-14
 
     # Expose the version semantic-release resolved (written to $GITHUB_OUTPUT by
-    # mac-ci-build.sh's prepareCmd) so the Windows job can attach its x64 component
-    # to the same release. Empty when no release was published this run.
+    # mac-ci-build.sh's prepareCmd) so merge-component can add the Windows DLLs to the
+    # same release. Empty when no release was published this run.
     outputs:
       released_version: ${{ steps.semantic_release.outputs.released_version }}
 
@@ -59,8 +121,9 @@ jobs:
       - name: Checkout foo_navidrome
         uses: actions/checkout@v6
         with:
+          ref: ${{ github.sha }}   # the commit version + build-windows worked on
           fetch-depth: 0           # semantic-release needs full history
-          persist-credentials: true
+          persist-credentials: true # it pushes the release tag (tags aren't branch-protected)
           path: foobar2000/foo_navidrome
 
       - name: Checkout foobar2000 SDK bundle
@@ -130,8 +193,6 @@ jobs:
           npm install --no-save --no-package-lock \
             semantic-release@22 \
             conventional-changelog-conventionalcommits@7 \
-            @semantic-release/changelog@6 \
-            @semantic-release/git@10 \
             @semantic-release/exec@6 \
             @semantic-release/github@9
 
@@ -155,32 +216,13 @@ jobs:
           retention-days: 7
 
   # --------------------------------------------------------------------------
-  # Windows x86 + x64 + ARM64EC binaries, MERGED into one multi-platform
-  # .fb2k-component.
-  #
-  # The actual build lives in the reusable build-windows.yml workflow (also
-  # dispatchable on its own for local test builds via win-test.sh). Here we
-  # call it for the tag semantic-release just created, then merge-component
-  # folds its Windows DLLs into the macOS zip semantic-release already attached,
-  # so the release ships ONE foo_navidrome_<ver>.fb2k-component that runs on
-  # macOS, Windows x86, Windows x64, and natively on Windows ARM (the layout
-  # official components use: mac/<bundle> + <x86 dll at root> + x64/<dll> +
-  # arm64ec/<dll> in the same zip; foobar picks the right binary at load time,
-  # preferring arm64ec/ on ARM and falling back to x64 emulation if absent).
-  #
-  # Both jobs are gated on released_version, so they no-op when no release was
-  # published. They are NON-GATING for the release itself: the macOS asset has
-  # already shipped by the time these run, so a Windows compile failure (the
-  # sources are still mid-port) just leaves the release with the mac-only zip.
+  # Fold the Windows DLLs build-windows produced into the macOS zip semantic-release attached,
+  # so the release ships ONE foo_navidrome_<ver>.fb2k-component that runs on macOS, Windows
+  # x86, Windows x64, and natively on Windows ARM (the layout official components use:
+  # mac/<bundle> + <x86 dll at root> + x64/<dll> + arm64ec/<dll> in the same zip; foobar picks
+  # the right binary at load time, preferring arm64ec/ on ARM and falling back to x64
+  # emulation if absent).
   # --------------------------------------------------------------------------
-  build-windows:
-    needs: release
-    if: needs.release.outputs.released_version != ''
-    uses: ./.github/workflows/build-windows.yml
-    with:
-      ref: v${{ needs.release.outputs.released_version }}
-      version: ${{ needs.release.outputs.released_version }}
-
   merge-component:
     needs: [release, build-windows]
     if: needs.release.outputs.released_version != ''
