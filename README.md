@@ -535,7 +535,7 @@ Platform folders only hold transport, widget and wiring code — a data-layer fi
 ### Commits, versioning, and PRs
 
 - Commit messages **must** follow [Conventional Commits](https://www.conventionalcommits.org/) — the release pipeline parses them to decide the version bump. See [Commit message convention](#commit-message-convention). In short: `feat:` → minor, `fix:`/`perf:`/`refactor:` → patch, `chore:`/`docs:`/`ci:`/etc. → no release, `!` or a `BREAKING CHANGE:` footer → major.
-- **Don't bump `version.txt` or edit `CHANGELOG.md` by hand** — semantic-release owns both. Your job is just well-typed commits.
+- **Don't bump `version.txt` by hand** — the release pipeline stamps it. Release notes come from the commits; your job is just well-typed commits. Changes reach `main` through pull requests.
 - Test on at least one platform and say which one in the PR. Cross-platform changes ideally get verified on both macOS and a Windows build (native, or cross-compiled + run under Wine — see the Linux section).
 - Keep PRs focused; one logical change per PR makes review and the auto-generated changelog far cleaner.
 
@@ -546,16 +546,14 @@ Platform folders only hold transport, widget and wiring code — a data-layer fi
 
 ## Releasing
 
-Releases are automated. Every push to `main` triggers `.github/workflows/release.yml`, which:
+Releases are automated. Every push to `main` triggers `.github/workflows/release.yml`, which (nothing is published unless both platforms build, and nothing is committed back to `main`):
 
 1. Lays out the sibling-directory tree the project expects (`pfc/`, `foobar2000/{SDK,helpers,helpers-mac,shared,foobar2000_component_client}`) by cloning [reupen/foobar2000-sdk-unmodified](https://github.com/reupen/foobar2000-sdk-unmodified) — an unmodified mirror of the official SDK that includes `helpers-mac/`.
-2. Runs [`semantic-release`](https://semantic-release.gitbook.io/) per `.releaserc.json`. semantic-release inspects commits since the last tag and decides whether a release is needed.
+2. Runs [`semantic-release`](https://semantic-release.gitbook.io/) per `.releaserc.json` as a dry run: it inspects commits since the last tag and decides whether a release is needed, and which version.
 3. If a release is needed:
-   - `scripts/mac-ci-build.sh <next-version>` pins `version.txt`, runs `xcodebuild -configuration Release`, ad-hoc signs, and packages the macOS `foo_navidrome_<version>.fb2k-component`.
-   - `CHANGELOG.md` is updated.
-   - A `chore(release): <version> [skip ci]` commit lands on `main` with `version.txt` + `CHANGELOG.md`.
-   - A GitHub release is created with the macOS `.fb2k-component` attached.
-   - The reusable `build-windows.yml` workflow then builds the Windows x64 DLL (MSVC/MSBuild on a `windows-latest` runner) and attaches `foo_navidrome_<version>_win-x64.fb2k-component` to the same release.
+   - The reusable `build-windows.yml` workflow builds the Windows x86/x64/ARM64EC DLLs of that commit (MSVC/MSBuild), stamped with the new version.
+   - Only then, on macOS: the unit tests run, and semantic-release for real — `scripts/mac-ci-build.sh <next-version>` pins `version.txt`, runs `xcodebuild -configuration Release`, ad-hoc signs, and packages `foo_navidrome_<version>.fb2k-component`; a `v<version>` tag and a GitHub release (notes = changelog) are created with it attached.
+   - The Windows DLLs are merged into that same `.fb2k-component` (macOS + Windows in one file). `CHANGELOG.md` holds the history up to 1.18.0; later releases are on the Releases page.
 
 ### Commit message convention
 

@@ -155,9 +155,10 @@ Single source of truth: `version.txt`. Xcode's "Generate Version Header" phase r
 `.github/workflows/release.yml` on push to `main`, via [semantic-release](https://semantic-release.gitbook.io/) reading [Conventional Commits](https://www.conventionalcommits.org/) (config `.releaserc.json`):
 - `feat:` → minor · `fix:`/`perf:`/`refactor:` → patch · `chore:`/`docs:`/`style:`/`test:`/`ci:` → no release · `!`/breaking footer → major.
 - **`commit-analyzer` and `release-notes-generator` type lists must stay in sync** — the `conventionalcommits` preset hides `refactor`/`docs`/`build` by default; any type added to `releaseRules` with `release != false` needs a matching non-hidden entry in `release-notes-generator`'s `presetConfig.types` or its notes are empty.
-- Chain: `commit-analyzer` → `release-notes-generator` → `changelog` → `exec` (`mac-ci-build.sh <version>`, xcodebuild + package `.fb2k-component`) → `git` (commits `version.txt`+`CHANGELOG.md`, `[skip ci]`) → `github` (release + asset).
+- Jobs: `version` (`semantic-release --dry-run`; exec's `verifyReleaseCmd` exports `next_version`) → `build-windows` (reusable `build-windows.yml` on that commit, stamped with that version) → `release` (macOS: `make mac-test`, then semantic-release for real) → `merge-component` → `notify-n8n`. Nothing is published unless both platforms built.
+- Plugin chain: `commit-analyzer` → `release-notes-generator` → `exec` (`mac-ci-build.sh <version>`, xcodebuild + package `.fb2k-component`) → `github` (tag + release + asset; notes = changelog). **`main` is branch-protected (PRs only)**, so no `git`/`changelog` plugins: nothing is committed back — `version.txt` in the repo stays at the last hand-committed value (dev builds report it), `CHANGELOG.md` holds history up to 1.18.0, later notes live on GitHub Releases.
 - SDK cloned from `marc2k3/foobar2000-sdk` + `marc2k3/pfc` into sibling layout at CI time.
-- **`release.yml` only checks the push's top commit type** — a `chore:` HEAD skips release even with a `feat`/`fix` underneath it.
+- **`release.yml` only checks the push's top commit type** — a `chore:` HEAD (or a PR squash-merged as `ci:`/`docs:`) skips release even with a `feat`/`fix` underneath it; dispatch the workflow by hand then.
 - First-time setup needs a starting tag (`git tag v$(cat version.txt) && git push --tags`) or semantic-release treats next release as v1.0.0.
 
 ### Manual release (bypasses CI)
@@ -281,7 +282,7 @@ Single source of truth: `version.txt`. Xcode's "Generate Version Header" phase r
 
 - **`NSViewController` multi-mount pattern:** foobar's Mac prefs pages and `ui_element_mac::instantiate()` both just take a `fb2k::wrapNSObject`-wrapped `NSViewController`. Never share one VC instance across mount points (Cocoa: one superview per view) — each mount creates its own; data sharing is at the model layer. `ui_element_mac` may call `instantiate()` more than once per session (dock/undock/split) — never cache a VC across calls.
 
-- **Release-loop prevention:** semantic-release's release commit has `[skip ci]`; `release.yml` also gates on `!contains(head_commit.message, '[skip ci]')` and uses `concurrency: { group: release-${{ github.ref }} }`. Both must stay in sync.
+- **No release loop to prevent any more:** the release pushes only a tag, never a commit to `main`; `concurrency: { group: release-${{ github.ref }} }` still serialises runs so two can't race on the same tag.
 
 - **`mac-dev-build.sh` vs `mac-ci-build.sh` — don't merge them.** Dev script bumps version + installs to `~/Library/foobar2000-v2/`; CI script takes version as an arg, builds into hermetic `build/derived/`, never touches `~/Library`.
 
