@@ -454,7 +454,7 @@ The Windows CI build is driven by `.github/workflows/build-windows.yml` (MSBuild
 foo_navidrome/
 ├── src/
 │   ├── core/                               # Shared by both platforms — all logic lives here
-│   │   ├── main.cpp                        # Component version, playlist sync, browser enqueue, rating service (SDK)
+│   │   ├── main.cpp                        # Component version, playlist sync, browser enqueue, rating + library services (SDK)
 │   │   ├── stdafx.h                        # Shared precompiled/prefix header
 │   │   ├── SubsonicTypes.h                 # Data types, URI codec, JSON parser, Subsonic mappers (SDK-free)
 │   │   ├── SubsonicCore.h/.cpp             # Subsonic API core over IHttpTransport/ISettingsProvider (SDK-free)
@@ -463,6 +463,7 @@ foo_navidrome/
 │   │   ├── NavidromePlaylistSync.h         # Rating push-back to playlists (impl in main.cpp)
 │   │   ├── NavidromeDebugLog.h             # NAVIDROME_LOG/WARN/ERR file logger
 │   │   ├── MediaEnrichmentLogic.h/.cpp     # Cover-art/URL/ESLyric-config helpers (SDK-free; MD5 is the only #ifdef)
+│   │   ├── NavidromeLibraryPlatform.h      # Per-platform seams of the library service (impl in main.cpp)
 │   │   └── Navidrome{Rating,Library}Service.h # Cross-component service contracts
 │   └── platform/
 │       ├── mac/                            # macOS: ObjC++ adapters + AppKit UI
@@ -470,7 +471,7 @@ foo_navidrome/
 │       │   ├── NavidromePlugin.mm          #   registration, cfg vars, prefs, menu, library_viewer, scrobbler
 │       │   ├── NavidromeInput.mm           #   navidrome:// input handler + skipTrack
 │       │   ├── NavidromeArtExtractor.mm    #   album art extractor
-│       │   ├── MacSubsonicBrowserClient.*  #   IBrowserClient adapter
+│       │   ├── MacSubsonicBrowserClient.*  #   IBrowserClient adapter + library-service seams
 │       │   ├── NavidromeBrowserController.*     # browser NSViewController
 │       │   └── NavidromePreferencesController.* # prefs NSViewController
 │       └── win/                            # Windows: Win32/ATL adapters + UI
@@ -479,7 +480,7 @@ foo_navidrome/
 │           ├── SubsonicClientWin.h/.cpp    #   WinHTTP transport over SubsonicCore
 │           ├── NavidromePluginWin.cpp      #   registration, cfg vars, prefs, menu, art
 │           ├── NavidromeInputWin.cpp       #   navidrome:// input handler + skipTrack
-│           ├── NavidromeLibraryServiceWin.cpp # navidrome_library_api implementation
+│           ├── NavidromeLibraryServiceWin.cpp # library-service seams (configured check, cover bytes)
 │           ├── BrowserWindow.h/.cpp        #   ATL browser window
 │           └── EsLyricBridge.* / EsLyricScript.h # ESLyric config + searcher script
 ├── third_party/wtl/                # Vendored WTL headers (Windows builds)

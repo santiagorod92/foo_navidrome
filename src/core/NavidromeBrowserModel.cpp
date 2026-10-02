@@ -281,4 +281,32 @@ std::vector<BrowserNodePtr> fetchRandomMix(IBrowserClient& client, int count,
     return songsToNodes(client.getRandomSongs(count, outError));
 }
 
+bool listLibraryAlbums(IBrowserClient& client, const std::function<bool()>& aborted,
+                       const std::function<void(const Album&)>& onAlbum, std::string& outError) {
+    std::string err;
+    const std::vector<Artist> artists = client.getArtists(err);
+    if (artists.empty() && !err.empty()) { outError = err; return false; }
+    for (const Artist& artist : artists) {
+        if (aborted && aborted()) { outError = "aborted"; return false; }
+        std::string aerr;
+        for (Album al : client.getAlbumsForArtist(artist.id, std::string(), aerr)) {
+            if (al.artist.empty()) al.artist = artist.name;
+            if (al.artistId.empty()) al.artistId = artist.id;
+            if (al.coverArtId.empty()) al.coverArtId = al.id;
+            onAlbum(al);
+        }
+    }
+    return true;
+}
+
+std::vector<BrowserNodePtr> collectArtistSongs(IBrowserClient& client, const std::string& artistId,
+                                               std::string& outError) {
+    std::vector<BrowserNodePtr> nodes;
+    for (const Album& al : client.getAlbumsForArtist(artistId, std::string(), outError)) {
+        std::string serr;
+        for (const Song& s : client.getSongsForAlbum(al.id, serr)) nodes.push_back(makeSongNode(s));
+    }
+    return nodes;
+}
+
 } // namespace navidrome

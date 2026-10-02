@@ -35,8 +35,10 @@ installed.
   `rating`" gotcha below — that's exactly why a separate read path is needed on the consumer side
   too). Vendored copy: `foo_ui_panels/src/core/navidrome_rating_api.h`.
 
-- **`navidrome_library_api`** (`NavidromeLibraryService.h`, impl `src/platform/win/NavidromeLibraryServiceWin.cpp`,
-  Windows only) — publishes the server's albums (streamed through a caller-implemented
+- **`navidrome_library_api`** (`NavidromeLibraryService.h`, both platforms: service in `main.cpp` over
+  the seams in `NavidromeLibraryPlatform.h` — `libraryIsConfigured`/`libraryClient`/`libraryFetchCover`,
+  defined in `src/platform/win/NavidromeLibraryServiceWin.cpp` and `src/platform/mac/MacSubsonicBrowserClient.mm`;
+  album walk = shared `listLibraryAlbums()`, tested in `tests/LibraryServiceTests.cpp`) — publishes the server's albums (streamed through a caller-implemented
   `library_album_sink`, plain `const char*`/`int` so nothing crosses the DLL boundary in a
   std/pfc container), cover-art bytes (`fetch_cover`, thumbnails cached under `<id>@<size>`) and a
   `play_album` action. `list_albums`/`fetch_cover` block (one request per artist) — worker thread

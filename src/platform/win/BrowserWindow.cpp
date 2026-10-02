@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "BrowserWindow.h"
+#include "../../core/NavidromeLibraryPlatform.h"
 #include "SubsonicClientWin.h"
 #include "../../core/NavidromeBrowserEnqueue.h"
 #include <SDK/playlist.h>
@@ -1015,6 +1016,9 @@ navidrome::IBrowserClient& browserClient() {
     return inst;
 }
 } // namespace
+
+// The library service's client (NavidromeLibraryPlatform.h) is the browser's own.
+navidrome::IBrowserClient& navidrome::libraryClient() { return browserClient(); }
 
 void BrowserWindow::loadArtists() {
     // Any full reload supersedes whatever search was pending/showing.

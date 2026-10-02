@@ -1,5 +1,7 @@
 #import "MacSubsonicBrowserClient.h"
 #import "SubsonicClient.h"
+#include "../../core/NavidromeLibraryPlatform.h"
+#include "../../core/NavidromeDebugLog.h"
 #import <Foundation/Foundation.h>
 #include <string>
 #include <utility>
@@ -326,4 +328,31 @@ struct MacBrowserClient final : navidrome::IBrowserClient {
 
 std::unique_ptr<navidrome::IBrowserClient> navidrome::makeMacBrowserClient() {
     return std::make_unique<MacBrowserClient>();
+}
+
+// --- macOS half of navidrome_library_api (the service itself is shared, in main.cpp) ---------
+
+bool navidrome::libraryIsConfigured() { return [SubsonicClient.sharedClient isConfigured]; }
+
+navidrome::IBrowserClient& navidrome::libraryClient() {
+    static MacBrowserClient inst; // stateless over the SubsonicClient singleton
+    return inst;
+}
+
+std::vector<uint8_t> navidrome::libraryFetchCover(const std::string& id, int size, abort_callback& abort) {
+    abort.check();
+    @autoreleasepool {
+        NSURL *url = [SubsonicClient.sharedClient coverArtURLForId:@(id.c_str()) size:size];
+        if (!url) return {};
+        NSError *err = nil;
+        // Through SubsonicClient so the configured custom headers (e.g. Cloudflare Access) apply.
+        NSData *data = [SubsonicClient.sharedClient dataForURL:url error:&err];
+        abort.check();
+        if (!data || data.length == 0) {
+            NAVIDROME_WARN("Library", "no cover for id=" + id + (err ? " (" + errString(err) + ")" : std::string()));
+            return {};
+        }
+        const auto* p = static_cast<const uint8_t*>(data.bytes);
+        return std::vector<uint8_t>(p, p + data.length);
+    }
 }
