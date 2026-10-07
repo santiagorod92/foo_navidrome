@@ -3,6 +3,7 @@
 #include "../../core/SubsonicTypes.h"
 #include "../../core/NavidromeBrowserModel.h"
 #include "../../core/NavidromeBrowserEnqueue.h"
+#include "../../core/NavidromeAudioMuse.h"
 #include "../../core/NavidromeDebugLog.h"
 #include <SDK/playlist.h>
 #include <SDK/metadb.h>
@@ -205,6 +206,9 @@ NBCWrapList(const std::vector<navidrome::BrowserNodePtr> &nodes) {
 // enqueue path resolve a station's streamUrl from just its id without a
 // network round-trip.
 @property (nonatomic, strong) NSArray<SubsonicRadioStation *> *radioStations;
+// "Song Alchemy (AudioMuse-AI)" — hidden until an AudioMuse-AI server is set
+// (toggled in -menuNeedsUpdate: when the row menu opens).
+@property (nonatomic, strong) NSMenuItem *alchemyItem;
 @end
 
 @implementation NavidromeBrowserController
@@ -272,11 +276,16 @@ NBCWrapList(const std::vector<navidrome::BrowserNodePtr> &nodes) {
                                              action:@selector(addToPlaylist:)
                                       keyEquivalent:@""];
     addItem.target = self;
-    // last.fm-derived recommendations for the selected artist/album/song.
-    NSMenuItem *similarItem = [rowMenu addItemWithTitle:@"Play Similar"
+    // Instant Mix (getSimilarSongs2) for the selected artist/album/song.
+    NSMenuItem *similarItem = [rowMenu addItemWithTitle:@"Instant Mix"
                                                  action:@selector(playSimilarSelection:)
                                           keyEquivalent:@""];
     similarItem.target = self;
+    _alchemyItem = [rowMenu addItemWithTitle:@"Song Alchemy (AudioMuse-AI)"
+                                      action:@selector(alchemySelection:)
+                               keyEquivalent:@""];
+    _alchemyItem.target = self;
+    rowMenu.delegate = self;
     // Biography + last.fm link for the selected artist.
     NSMenuItem *artistInfoItem = [rowMenu addItemWithTitle:@"Artist Info"
                                                      action:@selector(showArtistInfo:)
@@ -841,37 +850,31 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
     [self addNodesToPlaylist:[self selectedNodes] play:YES];
 }
 
-// Fetches last.fm-derived similar tracks for the first selected artist, album
-// or song and appends + plays them, mirroring "Play Now"'s enqueue semantics.
+// Instant Mix from the first selected artist, album or song — the shared run
+// in main.cpp (progress window, dedicated "Instant Mix" playlist).
 - (IBAction)playSimilarSelection:(id)sender {
     NavidromeNode *node = [self selectedNodes].firstObject;
     navidrome::BrowserNode core = node ? [node coreNode] : navidrome::BrowserNode{};
     if (!node || !navidrome::isSimilarEligible(core)) {
-        _statusLabel.stringValue = @"Play Similar needs an artist, album, or song";
+        _statusLabel.stringValue = @"Instant Mix needs an artist, album, or song";
         return;
     }
+    navidrome::startInstantMix(std::make_shared<navidrome::BrowserNode>(core));
+}
 
-    [_spinner startAnimation:nil];
-    _statusLabel.stringValue = @"Finding similar tracks…";
-    std::string itemId = core.id;
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        std::string err;
-        auto nodes = navidrome::fetchSimilarSongs(browserClient(), itemId, 50, err);
-        NSMutableArray<NavidromeNode *> *songNodes = NBCWrapList(nodes);
-        std::string errCopy = err;
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [_spinner stopAnimation:nil];
-            if (!errCopy.empty()) {
-                _statusLabel.stringValue = [NSString stringWithFormat:@"Error: %s", errCopy.c_str()];
-                return;
-            }
-            if (songNodes.count == 0) {
-                _statusLabel.stringValue = @"No similar tracks found";
-                return;
-            }
-            [self enqueueNodes:songNodes play:YES clearFirst:NO];
-        });
-    });
+// Song Alchemy over the selected songs/artists — the run itself (progress
+// window, new playlist) is the shared one in main.cpp.
+- (IBAction)alchemySelection:(id)sender {
+    std::vector<navidrome::BrowserNodePtr> core;
+    for (NavidromeNode *n in [self selectedNodes])
+        core.push_back(std::make_shared<navidrome::BrowserNode>([n coreNode]));
+    std::string label;
+    auto seeds = navidrome::audiomuse::seedsFromNodes(core, label);
+    if (seeds.empty()) {
+        _statusLabel.stringValue = @"Song Alchemy needs songs or artists";
+        return;
+    }
+    navidrome::audioMuseAlchemy(std::move(seeds), std::move(label));
 }
 
 // Fetches the selected artist's biography + last.fm link and shows it in a
@@ -1203,6 +1206,10 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
 
 // NSMenuDelegate — fills the submenu from the cache each time it opens.
 - (void)menuNeedsUpdate:(NSMenu *)menu {
+    if (menu == _alchemyItem.menu) {
+        _alchemyItem.hidden = !navidrome::audioMuseSettings().configured();
+        return;
+    }
     if (menu != _playlistsMenu) return;
     [menu removeAllItems];
 
@@ -1791,24 +1798,9 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
 - (NSString *)promptForText:(NSString *)title
                     message:(NSString *)message
                initialValue:(NSString *)initial {
-    NSAlert *alert = [[NSAlert alloc] init];
-    alert.messageText = title;
-    alert.informativeText = message;
-    [alert addButtonWithTitle:@"OK"];
-    [alert addButtonWithTitle:@"Cancel"];
-
-    NSTextField *input = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 260, 24)];
-    input.stringValue = initial ?: @"";
-    alert.accessoryView = input;
-    [alert layout];
-    [alert.window setInitialFirstResponder:input];
-
-    if ([alert runModal] != NSAlertFirstButtonReturn) return nil;
-    // Flush the field editor into stringValue — clicking OK doesn't necessarily
-    // end editing, so without this the last typed characters are lost.
-    [input validateEditing];
-    return [input.stringValue stringByTrimmingCharactersInSet:
-            [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    std::string value = initial.UTF8String ?: "";
+    if (!navidrome::promptForText(title.UTF8String ?: "", message.UTF8String ?: "", value)) return nil;
+    return @(value.c_str());
 }
 
 - (void)doubleClicked:(id)sender {
@@ -1973,4 +1965,31 @@ void NavidromeShowStandaloneBrowser(void) {
         [gStandaloneOwners addObject:owner];
         [win makeKeyAndOrderFront:nil];
     });
+}
+
+// The modal single-line prompt behind -promptForText:message:initialValue: and
+// the AudioMuse-AI prompts (NavidromeAudioMuse.h). NSAlert is the only
+// sheet-free way to ask for text that works both in the standalone window and
+// inside the prefs page. The result is trimmed.
+bool navidrome::promptForText(const char* title, const char* label, std::string& inOut) {
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @(title);
+    alert.informativeText = @(label);
+    [alert addButtonWithTitle:@"OK"];
+    [alert addButtonWithTitle:@"Cancel"];
+
+    NSTextField *input = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 320, 24)];
+    input.stringValue = @(inOut.c_str()) ?: @"";
+    alert.accessoryView = input;
+    [alert layout];
+    [alert.window setInitialFirstResponder:input];
+
+    if ([alert runModal] != NSAlertFirstButtonReturn) return false;
+    // Flush the field editor into stringValue — clicking OK doesn't necessarily
+    // end editing, so without this the last typed characters are lost.
+    [input validateEditing];
+    NSString *trimmed = [input.stringValue stringByTrimmingCharactersInSet:
+                         [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    inOut = trimmed.UTF8String ?: "";
+    return true;
 }

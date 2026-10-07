@@ -37,6 +37,12 @@ std::size_t enqueueBrowserNodes(
     const std::function<std::string(const std::string& radioId)>& radioUrl,
     std::string& statusOut);
 
+// Put song nodes in a NEW foobar2000 playlist called `name` (made unique by
+// foobar if taken), activate it and start playing (Playback > Order honored).
+// Backs the AudioMuse-AI results. Main thread only. Returns the tracks added.
+std::size_t playNodesInNewPlaylist(const std::vector<BrowserNodePtr>& nodes,
+                                   const std::string& name);
+
 // Poll playback_can_seek() briefly on a background thread, then seek on the main
 // thread — the stream isn't necessarily seekable the instant playback starts.
 // Reuse this for any future "jump to position" feature instead of calling

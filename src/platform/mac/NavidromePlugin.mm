@@ -37,6 +37,8 @@ static constexpr GUID guid_cfg_library_filter = { 0xa1b2c3d4, 0x1111, 0x2222, { 
 static constexpr GUID guid_cfg_library_ids  = { 0xa1b2c3d4, 0x1111, 0x2222, { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01, 0x11 } };
 static constexpr GUID guid_libsel_prefs_page = { 0xa1b2c3d4, 0x1111, 0x2222, { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01, 0x12 } };
 static constexpr GUID guid_ui_element_mac_lyrics = { 0xa1b2c3d4, 0x1111, 0x2222, { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01, 0x13 } };
+// Same GUID as the Windows AudioMuse-AI page.
+static constexpr GUID guid_audiomuse_prefs_page = { 0xa1b2c3d4, 0x1111, 0x2222, { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x04, 0x05 } };
 
 // ---------------------------------------------------------------------------
 // Config variables (exported so SubsonicClient.mm can access them)
@@ -854,6 +856,18 @@ public:
 };
 
 FB2K_SERVICE_FACTORY(preferences_page_navidrome_libsel);
+
+class preferences_page_navidrome_audiomuse : public preferences_page {
+public:
+    service_ptr instantiate() override {
+        return fb2k::wrapNSObject([NavidromeAudioMusePrefsController new]);
+    }
+    const char *get_name() override { return "AudioMuse-AI"; }
+    GUID get_guid() override { return guid_audiomuse_prefs_page; }
+    GUID get_parent_guid() override { return guid_prefs_page; }
+};
+
+FB2K_SERVICE_FACTORY(preferences_page_navidrome_audiomuse);
 
 // ---------------------------------------------------------------------------
 // Main menu: File > Open Navidrome Browser

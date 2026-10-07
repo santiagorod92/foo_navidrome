@@ -4,6 +4,7 @@
 #include "../../core/MediaEnrichmentLogic.h"
 #include "../../core/NavidromePlaylistSync.h"
 #include "../../core/NavidromeDebugLog.h"
+#include "../../core/NavidromeAudioMuse.h"
 #include "EsLyricBridge.h"
 #include <SDK/cfg_var.h>
 #include <SDK/album_art.h>
@@ -514,6 +515,123 @@ public:
     GUID        get_parent_guid() override { return preferences_page::guid_tools; }
 };
 FB2K_SERVICE_FACTORY(NavidromePrefsPageFactory);
+
+// ---------------------------------------------------------------------------
+// Preferences > Tools > Navidrome > AudioMuse-AI (issue #16). The settings are
+// the shared cfg vars in main.cpp (NavidromeAudioMuse.h); same fields as the
+// macOS page. Staged like the main page: Apply saves, Reset restores defaults.
+// ---------------------------------------------------------------------------
+class AudioMusePrefsInstance : public CWindowImpl<AudioMusePrefsInstance>,
+                               public preferences_page_instance {
+public:
+    DECLARE_WND_CLASS(L"foo_navidrome_AudioMusePrefsWnd")
+
+    explicit AudioMusePrefsInstance(preferences_page_callback::ptr cb) : m_cb(cb) {}
+
+    HWND     get_wnd() override { return m_hWnd; }
+    t_uint32 get_state() override {
+        return m_changed ? preferences_state::changed | preferences_state::resettable : 0;
+    }
+    void apply() override {
+        auto getText = [&](int id) -> std::string {
+            wchar_t buf[2048] = {};
+            GetDlgItemText(id, buf, 2048);
+            return pfc::stringcvt::string_utf8_from_wide(buf).get_ptr();
+        };
+        navidrome::cfg_audiomuse_url.set(getText(IDC_AM_URL).c_str());
+        navidrome::cfg_audiomuse_token.set(getText(IDC_AM_TOKEN).c_str());
+        navidrome::cfg_audiomuse_server.set(getText(IDC_AM_SERVER).c_str());
+        navidrome::cfg_audiomuse_count.set(
+            navidrome::audiomuse::clampCount(atoi(getText(IDC_AM_COUNT).c_str())));
+        NAVIDROME_LOG("UI", "AudioMuse-AI settings saved, url=" +
+                      navidrome::dbg::scrubAuth(navidrome::cfg_audiomuse_url.get().c_str()));
+        load();
+        m_changed = false;
+        notifyCb();
+    }
+    void reset() override {
+        SetDlgItemText(IDC_AM_URL, L"");
+        SetDlgItemText(IDC_AM_TOKEN, L"");
+        SetDlgItemText(IDC_AM_SERVER, L"");
+        SetDlgItemText(IDC_AM_COUNT, std::to_wstring(navidrome::audiomuse::kDefaultCount).c_str());
+        m_changed = true; notifyCb();
+    }
+
+    BEGIN_MSG_MAP(AudioMusePrefsInstance)
+        MSG_WM_CREATE(OnCreate)
+        COMMAND_HANDLER_EX(IDC_AM_URL,    EN_CHANGE, OnChanged)
+        COMMAND_HANDLER_EX(IDC_AM_TOKEN,  EN_CHANGE, OnChanged)
+        COMMAND_HANDLER_EX(IDC_AM_SERVER, EN_CHANGE, OnChanged)
+        COMMAND_HANDLER_EX(IDC_AM_COUNT,  EN_CHANGE, OnChanged)
+    END_MSG_MAP()
+
+private:
+    enum { IDC_AM_URL = 1101, IDC_AM_TOKEN = 1102, IDC_AM_SERVER = 1103, IDC_AM_COUNT = 1104 };
+
+    LRESULT OnCreate(LPCREATESTRUCT) {
+        HFONT f = reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+        auto lbl = [&](const wchar_t* t, int x, int y, int w, int h) {
+            HWND h2 = CreateWindowW(L"STATIC", t, WS_CHILD|WS_VISIBLE, x,y,w,h, *this, nullptr, nullptr, nullptr);
+            SendMessageW(h2, WM_SETFONT, reinterpret_cast<WPARAM>(f), 0);
+        };
+        auto edit = [&](int id, int x, int y, int w, int h, DWORD extra = 0) {
+            DWORD sty = WS_CHILD|WS_VISIBLE|WS_BORDER|WS_TABSTOP|ES_AUTOHSCROLL|extra;
+            HWND h2 = CreateWindowW(L"EDIT", L"", sty, x,y,w,h, *this,
+                reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), nullptr, nullptr);
+            SendMessageW(h2, WM_SETFONT, reinterpret_cast<WPARAM>(f), 0);
+        };
+        lbl(L"AudioMuse-AI analyses your Navidrome library for Text Search, Instant\n"
+            L"Playlist and Song Alchemy (File › AudioMuse-AI, track context menu).",
+            8, 8, 380, 32);
+        lbl(L"Server URL:",   8, 54, 90, 18);  edit(IDC_AM_URL,    102, 50, 280, 22);
+        lbl(L"API token:",    8, 84, 90, 18);  edit(IDC_AM_TOKEN,  102, 80, 280, 22, ES_PASSWORD);
+        lbl(L"Server name:",  8,114, 90, 18);  edit(IDC_AM_SERVER, 102,110, 280, 22);
+        lbl(L"Tracks:",       8,144, 90, 18);  edit(IDC_AM_COUNT,  102,140,  60, 22, ES_NUMBER);
+        lbl(L"e.g. http://audiomuse:8000. Token only if AudioMuse-AI has auth on;\n"
+            L"server name only if it serves several media servers. \"Tracks\" also\n"
+            L"sizes Instant Mix, which works without AudioMuse-AI settings.",
+            8, 176, 380, 48);
+        load();
+        return 0;
+    }
+
+    void load() {
+        SetDlgItemText(IDC_AM_URL,    pfc::stringcvt::string_wide_from_utf8(navidrome::cfg_audiomuse_url.get().c_str()));
+        SetDlgItemText(IDC_AM_TOKEN,  pfc::stringcvt::string_wide_from_utf8(navidrome::cfg_audiomuse_token.get().c_str()));
+        SetDlgItemText(IDC_AM_SERVER, pfc::stringcvt::string_wide_from_utf8(navidrome::cfg_audiomuse_server.get().c_str()));
+        SetDlgItemText(IDC_AM_COUNT,  std::to_wstring(navidrome::audiomuse::clampCount(
+                           static_cast<int>(navidrome::cfg_audiomuse_count.get()))).c_str());
+    }
+
+    void OnChanged(UINT, int, HWND) { m_changed = true; notifyCb(); }
+    void notifyCb() { if (m_cb.is_valid()) m_cb->on_state_changed(); }
+
+public:
+    void clearChanged() { m_changed = false; notifyCb(); }
+
+private:
+    preferences_page_callback::ptr m_cb;
+    bool m_changed = false;
+};
+
+class AudioMusePrefsPageFactory : public preferences_page_v3 {
+public:
+    preferences_page_instance::ptr instantiate(HWND parent,
+        preferences_page_callback::ptr cb) override {
+        auto inst = fb2k::service_new<AudioMusePrefsInstance>(cb);
+        inst->Create(parent);
+        // load() during WM_CREATE fires EN_CHANGE; that isn't a user edit.
+        inst->clearChanged();
+        return inst;
+    }
+    const char* get_name() override { return "AudioMuse-AI"; }
+    // Matches the macOS page's GUID.
+    GUID        get_guid() override {
+        return { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x04,0x05} };
+    }
+    GUID        get_parent_guid() override { return guid_prefs_page; }
+};
+FB2K_SERVICE_FACTORY(AudioMusePrefsPageFactory);
 
 // ---------------------------------------------------------------------------
 // Media Library preferences sub-page — makes "Navidrome" appear under

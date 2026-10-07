@@ -2,6 +2,7 @@
 #include "SubsonicClientWin.h"
 #include "../../core/MediaEnrichmentLogic.h"
 #include "../../core/NavidromeDebugLog.h"
+#include "../../core/NavidromeAudioMuse.h"
 #include <SDK/cfg_var.h>
 
 #pragma comment(lib, "winhttp.lib")
@@ -197,6 +198,87 @@ struct WinHttpTransport : navidrome::IHttpTransport {
     }
 
     void onAuthRejected() override { warnAuthOnce(); }
+};
+
+// One WinHTTP POST of a JSON body to AudioMuse-AI (NavidromeAudioMuse.h). Not
+// the Navidrome server, so none of its custom headers — just the content type
+// and the optional AudioMuse API token. The body is kept on an HTTP error so
+// AudioMuse's own error text can be shown.
+struct WinJsonPoster : navidrome::audiomuse::IJsonPoster {
+    navidrome::HttpResult postJson(const std::string& urlStr, const std::string& body,
+                                   const std::string& bearerToken, int timeoutMs) override {
+        using navidrome::ErrorKind;
+        navidrome::HttpResult out;
+
+        std::wstring wurl = toWide(urlStr);
+        URL_COMPONENTS uc = {};
+        uc.dwStructSize = sizeof(uc);
+        wchar_t host[256] = {}, path[4096] = {};
+        uc.lpszHostName = host; uc.dwHostNameLength = 256;
+        uc.lpszUrlPath  = path; uc.dwUrlPathLength  = 4096;
+        if (!WinHttpCrackUrl(wurl.c_str(), 0, 0, &uc)) {
+            out.error = { ErrorKind::Parse, 0, 0, "Invalid AudioMuse-AI URL" };
+            return out;
+        }
+
+        WinHttpHandle sess(WinHttpOpen(L"foo_navidrome/1.0",
+            WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+            WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
+        if (!sess) {
+            out.error = { ErrorKind::Network, 0, 0, "WinHttpOpen failed" };
+            return out;
+        }
+        WinHttpSetTimeouts(sess, 0, 15000, 30000, timeoutMs);
+        applySecureProtocols(sess);
+
+        WinHttpHandle conn(WinHttpConnect(sess, host, uc.nPort, 0));
+        if (!conn) {
+            out.error = { classifyWinHttpError(GetLastError()), 0, 0, "Connect failed" };
+            return out;
+        }
+        const DWORD flags = (uc.nScheme == INTERNET_SCHEME_HTTPS) ? WINHTTP_FLAG_SECURE : 0;
+        WinHttpHandle req(WinHttpOpenRequest(conn, L"POST", path, nullptr,
+            WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, flags));
+        if (!req) {
+            out.error = { ErrorKind::Network, 0, 0,
+                "WinHttpOpenRequest failed (err=" + std::to_string(GetLastError()) + ")" };
+            return out;
+        }
+        // The Instant Playlist is an LLM run that answers after tens of seconds.
+        // Set the timeouts on the request itself, including the separate
+        // wait-for-response-headers one: the session's values don't cover it,
+        // and under Wine it gave up after ~21 s (winhttp err=10060).
+        WinHttpSetTimeouts(req, 0, 15000, 30000, timeoutMs);
+        DWORD responseTimeout = static_cast<DWORD>(timeoutMs);
+        WinHttpSetOption(req, WINHTTP_OPTION_RECEIVE_RESPONSE_TIMEOUT,
+                         &responseTimeout, sizeof(responseTimeout));
+        std::wstring hdrs = L"Content-Type: application/json\r\nAccept: application/json\r\n";
+        if (!bearerToken.empty()) hdrs += L"Authorization: Bearer " + toWide(bearerToken) + L"\r\n";
+        if (!WinHttpSendRequest(req, hdrs.c_str(), (DWORD)-1,
+                                const_cast<char*>(body.data()), (DWORD)body.size(), (DWORD)body.size(), 0) ||
+            !WinHttpReceiveResponse(req, nullptr)) {
+            DWORD e = GetLastError();
+            ErrorKind kind = classifyWinHttpError(e);
+            out.error = { kind, 0, 0, std::string(navidrome::errorKindName(kind)) +
+                          " (winhttp err=" + std::to_string(e) + ")" };
+            return out;
+        }
+        DWORD status = 0, sz = sizeof(status);
+        WinHttpQueryHeaders(req,
+            WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+            nullptr, &status, &sz, nullptr);
+        DWORD avail = 0;
+        while (WinHttpQueryDataAvailable(req, &avail) && avail > 0) {
+            std::string chunk(avail, '\0');
+            DWORD read = 0;
+            WinHttpReadData(req, &chunk[0], avail, &read);
+            out.body.append(chunk, 0, read);
+        }
+        ErrorKind kind = navidrome::httpStatusToErrorKind((int)status);
+        out.error = { kind, (int)status, 0,
+                      kind == ErrorKind::None ? std::string() : "HTTP " + std::to_string(status) };
+        return out;
+    }
 };
 
 struct WinSettingsProvider : navidrome::ISettingsProvider {
@@ -715,4 +797,9 @@ navidrome::SubsonicClientWin::httpGetBinary(
                   " cls=" + std::to_string((int)result.cls) +
                   " bytes=" + std::to_string(result.body.size()));
     return result;
+}
+
+navidrome::audiomuse::IJsonPoster& navidrome::audioMusePoster() {
+    static WinJsonPoster inst;
+    return inst;
 }

@@ -1,0 +1,99 @@
+# Local AudioMuse-AI for testing foo_navidrome's AudioMuse features (issue #16).
+#
+# Runs on the dev machine only — AudioMuse is too heavy for the homelab box, and
+# it is NOT wired into Navidrome (no NV plugin): it only reads the Navidrome
+# library over the Subsonic API to analyse it. Configured entirely from .env
+# (copy .env.example), so there is no setup wizard to click through.
+#
+#   make audiomuse-up        start the stack
+#   make audiomuse-analyze   analyse the NUM_RECENT_ALBUMS newest albums
+#   make audiomuse-status    health, analysis progress, a test search
+#   make audiomuse-down      stop (data kept in volumes; -v wipes it)
+#
+# Then in foobar2000: Preferences > Tools > Navidrome > AudioMuse-AI
+#   Server URL = http://127.0.0.1:8000, API token = AUDIOMUSE_API_TOKEN.
+#
+# flask + worker use the HOST network: the host's own Ollama (Instant Playlist's
+# LLM) listens on 127.0.0.1 only, and a host firewall (ufw, default deny
+# incoming) drops bridge-network -> host traffic, so a bridged container can't
+# reach it without root changes. AudioMuse's gunicorn binds 0.0.0.0:8000 (fixed
+# in the image) — the firewall keeps that off the LAN.
+name: foo-navidrome-audiomuse
+
+x-audiomuse-env: &audiomuse-env
+  TZ: ${TZ:-UTC}
+  POSTGRES_USER: audiomuse
+  POSTGRES_PASSWORD: audiomusepassword
+  POSTGRES_DB: audiomusedb
+  POSTGRES_HOST: 127.0.0.1
+  POSTGRES_PORT: ${POSTGRES_HOST_PORT:-5433}
+  TEMP_DIR: /app/temp_audio
+  # Media server — the real Navidrome, read-only use.
+  MEDIASERVER_TYPE: navidrome
+  NAVIDROME_URL: ${NAVIDROME_URL:?set NAVIDROME_URL in dev/audiomuse/.env}
+  NAVIDROME_USER: ${NAVIDROME_USER:?set NAVIDROME_USER in dev/audiomuse/.env}
+  NAVIDROME_PASSWORD: ${NAVIDROME_PASSWORD:?set NAVIDROME_PASSWORD in dev/audiomuse/.env}
+  NUM_RECENT_ALBUMS: ${NUM_RECENT_ALBUMS:-10}
+  # Auth on, so foo_navidrome's Bearer-token path is exercised for real.
+  AUTH_ENABLED: "true"
+  AUDIOMUSE_USER: ${AUDIOMUSE_USER:-admin}
+  AUDIOMUSE_PASSWORD: ${AUDIOMUSE_PASSWORD:-admin-dev-password}
+  API_TOKEN: ${AUDIOMUSE_API_TOKEN:-foo-navidrome-dev-token}
+  JWT_SECRET: ${AUDIOMUSE_JWT_SECRET:-foo-navidrome-dev-jwt-secret-change-me}
+  CLAP_ENABLED: "true"
+  # Instant Playlist's LLM: the host's own Ollama (OLLAMA_URL to use another).
+  AI_MODEL_PROVIDER: OLLAMA
+  OLLAMA_SERVER_URL: ${OLLAMA_URL:-http://127.0.0.1:11434/api/generate}
+  OLLAMA_MODEL_NAME: ${OLLAMA_MODEL:-qwen3.5:9b}
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: audiomuse
+      POSTGRES_PASSWORD: audiomusepassword
+      POSTGRES_DB: audiomusedb
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U audiomuse -d audiomusedb"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+
+  flask:
+    image: ghcr.io/neptunehub/audiomuse-ai:${AUDIOMUSE_TAG:-latest}
+    environment:
+      <<: *audiomuse-env
+      SERVICE_TYPE: flask
+    network_mode: host
+    volumes:
+      - temp-audio-flask:/app/temp_audio
+      - plugins-flask:/app/plugin/installed
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    image: ghcr.io/neptunehub/audiomuse-ai:${AUDIOMUSE_TAG:-latest}
+    environment:
+      <<: *audiomuse-env
+      SERVICE_TYPE: worker
+    network_mode: host
+    volumes:
+      - temp-audio-worker:/app/temp_audio
+      - plugins-worker:/app/plugin/installed
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  temp-audio-flask:
+  temp-audio-worker:
+  plugins-flask:
+  plugins-worker:
