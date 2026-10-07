@@ -336,6 +336,12 @@ navidrome::SubsonicClientWin::getTopSongs(const std::string& artistName, int cou
     return m_core->getTopSongs(artistName, count, outError);
 }
 
+navidrome::Lyrics
+navidrome::SubsonicClientWin::getLyrics(const std::string& songId, const std::string& artist,
+                                         const std::string& title, std::string& outError) {
+    return m_core->getLyrics(songId, artist, title, outError);
+}
+
 bool navidrome::SubsonicClientWin::setStarred(bool starred, const std::string& itemId,
                                                StarKind kind, std::string& outError) {
     return m_core->setStarred(starred, itemId, kind, outError);

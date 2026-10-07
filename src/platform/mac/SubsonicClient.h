@@ -230,6 +230,14 @@ typedef NS_ENUM(NSInteger, SubsonicStarKind) {
                                              count:(NSInteger)count
                                              error:(NSError **)error;
 
+// One song's lyrics (getLyricsBySongId.view, legacy getLyrics.view by artist +
+// title as fallback). Returned as the shared C++ type — its only callers are
+// C++ (the IBrowserClient adapter feeding the lyrics panel / navidrome_lyrics_api).
+- (navidrome::Lyrics)getLyricsForSongId:(NSString *)songId
+                                 artist:(NSString *)artist
+                                  title:(NSString *)title
+                                  error:(NSError **)error;
+
 // Favorites + ratings. Both are per-user server-side state, so they show up in
 // the Navidrome web UI and every other Subsonic client.
 - (BOOL)setStarred:(BOOL)starred

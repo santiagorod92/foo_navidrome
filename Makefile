@@ -1,8 +1,8 @@
 .PHONY: help test test-clean mac-test mac-test-clean \
-	win-build win-build-patch win-build-minor win-build-major win-build-launch win-install win-test win-logs \
+	win-build win-build-patch win-build-minor win-build-major win-build-launch win-install win-test win-logs win-ui-smoke win-ui \
 	mac-build mac-build-patch mac-build-minor mac-build-major mac-build-no-install mac-install mac-release mac-ci-build mac-logs \
 	win-vm-setup win-vm-fetch win-vm-install win-vm-test \
-	mac-vm mac-vm-test mac-vm-release mac-vm-build mac-vm-build-test clean
+	mac-vm mac-vm-vnc mac-vm-open mac-vm-smoke mac-vm-ui mac-vm-test mac-vm-release mac-vm-build mac-vm-build-test clean
 
 XWIN_SDK ?= $(HOME)/.local/share/xwin/sdk
 BUILD_WIN := build-win
@@ -31,6 +31,8 @@ help:
 	@echo "  win-build-launch      same as win-build, then relaunch local Wine foobar2000 to load it"
 	@echo "  win-install           install built DLL into local Wine foobar2000 + package"
 	@echo "  win-logs              follow the local Wine debug log, colourised (run beside win-build-launch)"
+	@echo "  win-ui-smoke          UI smoke test in the local Wine foobar2000: open browser, expand, play, assert log (needs win-build-launch'd DLL)"
+	@echo "  win-ui                drive the Wine browser: ARGS='key 0x28' / 'click X Y' / 'shot' / 'wait REGEX' (scripts/ui-test.sh)"
 	@echo "  win-test              dispatch build-windows.yml on GH runner, install, [ARGS=--launch]"
 	@echo "                        (win-logs / mac-logs share scripts/navidrome-logs.sh — pass ARGS=-a for the whole file)"
 	@echo ""
@@ -49,7 +51,11 @@ help:
 	@echo "  win-vm-install        unattended-install the QEMU guest"
 	@echo "  win-vm-test           cross-build x64 DLL, deploy over SSH, relaunch in guest [ARGS=--launch]"
 	@echo ""
-	@echo "  mac-vm                boot the macOS VM (../macos-devbox), deploy the latest release, launch"
+	@echo "  mac-vm                boot the macOS VM (../macos-devbox), open its screen (VNC) in the browser, deploy the latest release, launch [VNC=0: no browser]"
+	@echo "  mac-vm-vnc            boot the macOS VM and open its screen (noVNC) in the browser — nothing deployed"
+	@echo "  mac-vm-open           open the VM screen (noVNC) in the browser once macOS has booted"
+	@echo "  mac-vm-smoke          build in the guest with the debug log, deploy, run the UI smoke test (scripts/mac-vm/mac-ui-test.sh)"
+	@echo "  mac-vm-ui             mac-ui-test.sh ARGS='smoke [COMPONENT]' / 'browser' / 'log 50' — no build"
 	@echo "  mac-vm-test           deploy COMPONENT=x.fb2k-component (default: newest in repo root), relaunch"
 	@echo "  mac-vm-release        deploy a GitHub release [TAG=v1.12.0, default latest], relaunch"
 	@echo "  mac-vm-build          build the macOS component INSIDE the guest (xcodebuild), pull the .fb2k-component here [ARGS=--clean]"
@@ -99,6 +105,14 @@ win-install:
 
 win-logs:
 	./scripts/navidrome-logs.sh $(ARGS)
+
+# UI smoke tests: scripts/ui-test.sh (Wine, input posted by tools/wclick.c) and
+# scripts/mac-vm/mac-ui-test.sh (macOS VM, mvm VNC input) — same scenario, log assertions.
+win-ui-smoke:
+	./scripts/ui-test.sh smoke
+
+win-ui:
+	./scripts/ui-test.sh $(ARGS)
 
 win-test:
 	./scripts/win-test.sh $(ARGS)
@@ -152,9 +166,38 @@ win-vm-test:
 MVM ?= $(abspath ../macos-devbox/mvm)
 COMPONENT ?= $(firstword $(shell ls -t foo_navidrome*.fb2k-component 2>/dev/null))
 
+# mac-vm opens the guest's screen (the container's noVNC page) in the browser once the guest has
+# booted, then waits for its session and deploys. VNC=0 skips the browser tab. Same flow as
+# foo_ui_panels' Makefile (both drive the one ../macos-devbox VM).
+VNC ?= 1
+MVM_ENV = $(dir $(MVM))mvm.env
+
 mac-vm:
+	$(MVM) up
+	@if [ "$(VNC)" != 0 ]; then $(MAKE) --no-print-directory mac-vm-open; fi
 	$(MVM) up --wait
 	$(MAKE) mac-vm-release
+
+# Just the VM + its screen: boot (no-op if already up), open noVNC, wait for the desktop session.
+mac-vm-vnc:
+	$(MVM) up
+	$(MAKE) --no-print-directory mac-vm-open
+	$(MVM) up --wait
+
+# The guest's screen in the browser. Not before the guest is past OpenCore's boot picker: the
+# picker boots the default disk after a short timeout, but any input cancels that timeout and a
+# freshly connected noVNC tab sends pointer events — the VM would then sit at the picker. So wait
+# for the guest's sshd (macOS is up), then open. Ports: mvm.env / environment, else the defaults.
+mac-vm-open:
+	@eval "$$( [ -f "$(MVM_ENV)" ] && grep -E '^MVM_(WEB|SSH)_PORT=' "$(MVM_ENV)" )"; \
+	  web=http://127.0.0.1:$${MVM_WEB_PORT:-8006}; ssh=$${MVM_SSH_PORT:-50922}; \
+	  echo "waiting for macOS to boot (sshd on :$$ssh) before opening $$web ..."; \
+	  for i in $$(seq 1 180); do \
+	    timeout 6 bash -c "exec 3<>/dev/tcp/127.0.0.1/$$ssh && head -c4 <&3" 2>/dev/null | grep -q '^SSH-' && break; \
+	    sleep 5; \
+	  done; \
+	  curl -fs -o /dev/null "$$web" || { echo "VM screen not answering at $$web (make mac-vm-logs)"; exit 1; }; \
+	  $(MVM) web
 
 mac-vm-test:
 	@test -n "$(COMPONENT)" || { echo "no foo_navidrome*.fb2k-component here — pass COMPONENT=path, or: make mac-vm-release"; exit 1; }
@@ -167,6 +210,13 @@ mac-vm-release:
 # .fb2k-component back to the repo root. No version bump. Needs Xcode in the
 # guest once (`mvm xcode Xcode_15.x.xip`, then `mvm snapshot xcode`).
 # ARGS=--clean wipes the guest build tree first.
+mac-vm-smoke:
+	./scripts/mac-vm/mac-vm-build.sh --debug-log --no-unit-tests
+	./scripts/mac-vm/mac-ui-test.sh smoke
+
+mac-vm-ui:
+	./scripts/mac-vm/mac-ui-test.sh $(ARGS)
+
 mac-vm-build:
 	./scripts/mac-vm/mac-vm-build.sh $(ARGS)
 

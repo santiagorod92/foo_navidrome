@@ -99,6 +99,10 @@ public:
     // the "Top Songs" child node.
     std::vector<Song>    getTopSongs(const std::string& artistName, int count,
                                      std::string& outError);
+    // One song's lyrics (by id, legacy artist/title fallback). Backs
+    // navidrome_lyrics_api; ESLyric fetches its own through the searcher script.
+    Lyrics               getLyrics(const std::string& songId, const std::string& artist,
+                                   const std::string& title, std::string& outError);
 
     // Favorites + ratings. Per-user server-side state, so it shows up in the
     // Navidrome web UI and every other Subsonic client.

@@ -1000,6 +1000,9 @@ struct WinBrowserClient final : navidrome::IBrowserClient {
     std::vector<navidrome::Song> getTopSongs(const std::string& name, int n,
                                              std::string& e) override {
         return c.getTopSongs(name, n, e); }
+    navidrome::Lyrics getLyrics(const std::string& id, const std::string& artist,
+                                const std::string& title, std::string& e) override {
+        return c.getLyrics(id, artist, title, e); }
     std::vector<std::string> groupingLibraryIds() override {
         return c.libraryGroupingIds(); }
     std::vector<navidrome::MusicFolder> musicFolders() override {

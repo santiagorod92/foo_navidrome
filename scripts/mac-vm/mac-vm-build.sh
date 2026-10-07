@@ -28,6 +28,7 @@
 #   ./mac-vm-build.sh --test          # ... then deploy + launch it in the guest
 #   ./mac-vm-build.sh --clean --test  # wipe guest ~/build first, then build + test
 #   ./mac-vm-build.sh --no-unit-tests
+#   ./mac-vm-build.sh --debug-log     # compile in the NAVIDROME_DEBUG_LOG tracer (guest /tmp log)
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
@@ -36,12 +37,13 @@ MVM="${MVM:-$PARENT/macos-devbox/mvm}"
 [ -x "$MVM" ] || { echo "mvm not found at $MVM — clone macos-devbox next to this repo, or set MVM="; exit 1; }
 sshg() { "$MVM" ssh "$@"; }
 
-CLEAN=0; RUN_UNIT=1; TEST=0
+CLEAN=0; RUN_UNIT=1; TEST=0; DEBUG_LOG=0
 for a in "$@"; do
   case "$a" in
     --clean)          CLEAN=1 ;;
     --no-unit-tests)  RUN_UNIT=0 ;;
     --test|--launch)  TEST=1 ;;
+    --debug-log)      DEBUG_LOG=1 ;;
     *) echo "unknown arg: $a"; exit 1 ;;
   esac
 done
@@ -92,7 +94,9 @@ if [ "$RUN_UNIT" = 1 ]; then
 fi
 
 echo "==> guest xcodebuild Release (no version bump) ..."
-sshg "cd $GDIR && ./scripts/mac-ci-build.sh \"\$(cat version.txt)\""
+EXTRA_ENV=""
+[ "$DEBUG_LOG" = 1 ] && EXTRA_ENV="MAC_EXTRA_CFLAGS=-DNAVIDROME_DEBUG_LOG=1"
+sshg "cd $GDIR && $EXTRA_ENV ./scripts/mac-ci-build.sh \"\$(cat version.txt)\""
 
 # --- pull the packaged component back -----------------------------------
 echo "==> pulling .fb2k-component to $REPO ..."

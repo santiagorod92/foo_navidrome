@@ -1,6 +1,7 @@
 #import "../../core/stdafx.h"
 #import "SubsonicClient.h"
 #import "NavidromeBrowserController.h"
+#import "NavidromeLyricsController.h"
 #import "NavidromePreferencesController.h"
 #include <helpers/advconfig_impl.h>
 #include <SDK/cfg_var.h>
@@ -35,6 +36,7 @@ static constexpr GUID guid_radio_prefs_page = { 0xa1b2c3d4, 0x1111, 0x2222, { 0x
 static constexpr GUID guid_cfg_library_filter = { 0xa1b2c3d4, 0x1111, 0x2222, { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01, 0x10 } };
 static constexpr GUID guid_cfg_library_ids  = { 0xa1b2c3d4, 0x1111, 0x2222, { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01, 0x11 } };
 static constexpr GUID guid_libsel_prefs_page = { 0xa1b2c3d4, 0x1111, 0x2222, { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01, 0x12 } };
+static constexpr GUID guid_ui_element_mac_lyrics = { 0xa1b2c3d4, 0x1111, 0x2222, { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01, 0x13 } };
 
 // ---------------------------------------------------------------------------
 // Config variables (exported so SubsonicClient.mm can access them)
@@ -961,5 +963,21 @@ public:
 };
 
 FB2K_SERVICE_FACTORY(ui_element_mac_navidrome);
+
+// "Navidrome Lyrics" layout panel — the Mac's lyrics display (no ESLyric on macOS). Fresh
+// controller per instantiate(), same rule as the browser panel above.
+class ui_element_mac_navidrome_lyrics : public ui_element_mac {
+public:
+    service_ptr instantiate(service_ptr /*arg*/) override {
+        return fb2k::wrapNSObject([NavidromeLyricsController new]);
+    }
+    bool match_name(const char *name) override {
+        return name != nullptr && !strcmp(name, "Navidrome Lyrics");
+    }
+    fb2k::stringRef get_name() override { return fb2k::makeString("Navidrome Lyrics"); }
+    GUID get_guid() override { return guid_ui_element_mac_lyrics; }
+};
+
+FB2K_SERVICE_FACTORY(ui_element_mac_navidrome_lyrics);
 
 } // namespace

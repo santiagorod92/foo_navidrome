@@ -11,6 +11,7 @@
 		FE0BAD210000000000000001 /* SubsonicClient.mm in Sources */ = {isa = PBXBuildFile; fileRef = FE0BAD050000000000000001 /* SubsonicClient.mm */; };
 		FE0BAD220000000000000001 /* NavidromePlugin.mm in Sources */ = {isa = PBXBuildFile; fileRef = FE0BAD060000000000000001 /* NavidromePlugin.mm */; };
 		FE0BAD230000000000000001 /* NavidromeBrowserController.mm in Sources */ = {isa = PBXBuildFile; fileRef = FE0BAD080000000000000001 /* NavidromeBrowserController.mm */; };
+		FE0BADB10000000000000001 /* NavidromeLyricsController.mm in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADB00000000000000001 /* NavidromeLyricsController.mm */; };
 		FE0BAD240000000000000001 /* NavidromePreferencesController.mm in Sources */ = {isa = PBXBuildFile; fileRef = FE0BAD0A0000000000000001 /* NavidromePreferencesController.mm */; };
 		FE0BAD250000000000000001 /* NSView+embed.m in Sources */ = {isa = PBXBuildFile; fileRef = FE0BAD0C0000000000000001 /* NSView+embed.m */; };
 		FE0BAD260000000000000001 /* NavidromeArtExtractor.mm in Sources */ = {isa = PBXBuildFile; fileRef = FE0BAD0E0000000000000001 /* NavidromeArtExtractor.mm */; };
@@ -35,6 +36,8 @@
 		FE0BAD060000000000000001 /* NavidromePlugin.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = NavidromePlugin.mm; sourceTree = "<group>"; };
 		FE0BAD070000000000000001 /* NavidromeBrowserController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = NavidromeBrowserController.h; sourceTree = "<group>"; };
 		FE0BAD080000000000000001 /* NavidromeBrowserController.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = NavidromeBrowserController.mm; sourceTree = "<group>"; };
+		FE0BADB00000000000000001 /* NavidromeLyricsController.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = NavidromeLyricsController.mm; sourceTree = "<group>"; };
+		FE0BADB20000000000000001 /* NavidromeLyricsController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = NavidromeLyricsController.h; sourceTree = "<group>"; };
 		FE0BAD090000000000000001 /* NavidromePreferencesController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = NavidromePreferencesController.h; sourceTree = "<group>"; };
 		FE0BAD0A0000000000000001 /* NavidromePreferencesController.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = NavidromePreferencesController.mm; sourceTree = "<group>"; };
 		FE0BAD0B0000000000000001 /* NSView+embed.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSView+embed.h"; sourceTree = "<group>"; };
@@ -157,6 +160,8 @@
 				FE0BAD160000000000000001 /* NavidromeInput.mm */,
 				FE0BAD070000000000000001 /* NavidromeBrowserController.h */,
 				FE0BAD080000000000000001 /* NavidromeBrowserController.mm */,
+				FE0BADB20000000000000001 /* NavidromeLyricsController.h */,
+				FE0BADB00000000000000001 /* NavidromeLyricsController.mm */,
 				FE0BAD940000000000000001 /* MacSubsonicBrowserClient.h */,
 				FE0BAD920000000000000001 /* MacSubsonicBrowserClient.mm */,
 				FE0BAD090000000000000001 /* NavidromePreferencesController.h */,
@@ -248,6 +253,7 @@
 				FE0BAD210000000000000001 /* SubsonicClient.mm in Sources */,
 				FE0BAD220000000000000001 /* NavidromePlugin.mm in Sources */,
 				FE0BAD230000000000000001 /* NavidromeBrowserController.mm in Sources */,
+				FE0BADB10000000000000001 /* NavidromeLyricsController.mm in Sources */,
 				FE0BAD240000000000000001 /* NavidromePreferencesController.mm in Sources */,
 				FE0BAD250000000000000001 /* NSView+embed.m in Sources */,
 				FE0BAD260000000000000001 /* NavidromeArtExtractor.mm in Sources */,
