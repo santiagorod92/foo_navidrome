@@ -9,6 +9,7 @@
 // the tests/ host, where it is exercised with a fake transport (testSubsonicCore).
 #include "SubsonicTypes.h"
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -102,6 +103,12 @@ public:
     ArtistInfo         getArtistInfo(const std::string& artistId, std::string& outError);
     // getTopSongs.view keys off the artist NAME, not the id (Subsonic quirk).
     std::vector<Song>  getTopSongs(const std::string& artistName, int count, std::string& outError);
+    // Lyrics for one song: getLyricsBySongId.view (OpenSubsonic, synced when
+    // the server has timings) first; on a server without that endpoint (HTTP
+    // 404, remembered per server URL) falls back to legacy getLyrics.view by
+    // artist + title. An empty result with empty outError = no lyrics.
+    Lyrics             getLyrics(const std::string& songId, const std::string& artist,
+                                 const std::string& title, std::string& outError);
     bool setStarred(bool starred, const std::string& itemId, StarKind kind, std::string& outError);
     bool setRating(int rating, const std::string& songId, std::string& outError);
     bool getSong(const std::string& songId, Song& out, std::string& outError);
@@ -181,6 +188,10 @@ private:
     Error                    m_lastError;
     std::vector<MusicFolder> m_folderCache;
     bool                     m_folderFetched = false;
+    // Server URL that answered getLyricsBySongId.view with HTTP 404 (keyed so a
+    // server switch in Preferences re-probes).
+    std::mutex               m_lyricsMutex;
+    std::string              m_lyricsByIdUnsupportedOn;
 };
 
 }  // namespace navidrome

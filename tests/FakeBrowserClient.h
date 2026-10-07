@@ -12,6 +12,7 @@ struct FakeBrowserClient : navidrome::IBrowserClient {
     std::vector<std::string> calls;
     std::string error;                 // set non-empty to simulate a failure
     std::vector<std::string> groupIds; // set 2+ to exercise the library grouping
+    navidrome::Lyrics lyrics;          // what getLyrics returns on success
 
     template <class T> std::vector<T> one(const char* name, std::string& e, T v) {
         calls.push_back(name);
@@ -133,6 +134,13 @@ struct FakeBrowserClient : navidrome::IBrowserClient {
         e = error;
         if (!error.empty()) return {};
         navidrome::Song s; s.id = "s-top"; s.title = "Top"; return { s };
+    }
+    navidrome::Lyrics getLyrics(const std::string& id, const std::string& artist,
+                                const std::string& title, std::string& e) override {
+        calls.push_back("getLyrics:" + id + ":" + artist + ":" + title);
+        e = error;
+        if (!error.empty()) return {};
+        return lyrics;
     }
     std::vector<std::string> groupingLibraryIds() override {
         calls.push_back("groupingLibraryIds");

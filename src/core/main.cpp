@@ -3,6 +3,7 @@
 #include "NavidromeBrowserEnqueue.h"
 #include "NavidromeRatingService.h"
 #include "NavidromeLibraryService.h"
+#include "NavidromeLyricsService.h"
 #include "NavidromeLibraryPlatform.h"
 #include "NavidromeDebugLog.h"
 #include "SubsonicTypes.h"
@@ -489,5 +490,36 @@ private:
 };
 
 static service_factory_single_t<navidrome_library_api_impl> g_navidrome_library_api_factory;
+
+// Publishes a track's lyrics to other components (foo_ui_panels' skins) — same cached lookup
+// as the macOS lyrics panel (navidrome::lyricsForTrackURI over the platform browser client).
+class navidrome_lyrics_api_impl : public navidrome::navidrome_lyrics_api {
+public:
+    bool is_navidrome_track(const metadb_handle_ptr& track) override {
+        return track.is_valid() && !navidrome::trackIdFromURI(track->get_path()).empty();
+    }
+
+    bool get_lyrics(const metadb_handle_ptr& track, navidrome::lyrics_sink& sink,
+                    abort_callback& abort, pfc::string_base& errorOut) override {
+        if (!is_navidrome_track(track) || !navidrome::libraryIsConfigured()) return false;
+        abort.check();
+        std::string err;
+        const navidrome::Lyrics l =
+            navidrome::lyricsForTrackURI(navidrome::libraryClient(), track->get_path(), err);
+        abort.check();
+        if (!err.empty()) {
+            NAVIDROME_WARN("Lyrics", "get_lyrics failed: " + err);
+            errorOut = err.c_str();
+            return false;
+        }
+        if (l.empty()) return false;
+        sink.on_begin(l.synced, static_cast<unsigned>(l.lines.size()));
+        for (const auto& line : l.lines)
+            sink.on_line(static_cast<int>(line.startMs), line.text.c_str());
+        return true;
+    }
+};
+
+static service_factory_single_t<navidrome_lyrics_api_impl> g_navidrome_lyrics_api_factory;
 
 } // namespace

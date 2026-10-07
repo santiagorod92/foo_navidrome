@@ -409,6 +409,11 @@ struct IBrowserClient {
                                                       std::string& outError) = 0;
     virtual std::vector<Song>         getTopSongs(const std::string& artistName, int count,
                                                   std::string& outError) = 0;
+    // One song's lyrics (getLyricsBySongId.view, legacy getLyrics.view by
+    // artist + title as fallback) — backs the macOS lyrics panel and
+    // navidrome_lyrics_api. Go through lyricsForTrackURI() for the cache.
+    virtual Lyrics                     getLyrics(const std::string& songId, const std::string& artist,
+                                                 const std::string& title, std::string& outError) = 0;
 
     // Multi-library grouping. groupingLibraryIds() returns 2+ ids only when the
     // tree should show a Library level (see the Decisions note in CLAUDE.md);
@@ -430,6 +435,13 @@ struct IBrowserClient {
 // error, `outError` is set and no category nodes are returned (the view shows
 // the error) — matching the previous behaviour.
 std::vector<BrowserNodePtr> buildRootNodes(IBrowserClient& client, std::string& outError);
+
+// Lyrics for a navidrome://track/<id>?... URI (title/artist come from the URI,
+// for the legacy fallback), through the session-wide lyricsCache(). A URI that
+// isn't ours returns empty with no request. A failed request sets outError and
+// is NOT cached, so the next attempt retries. Background thread only.
+Lyrics lyricsForTrackURI(IBrowserClient& client, const std::string& uri, std::string& outError);
+LyricsCache& lyricsCache();
 
 // Children of one expandable node (artist -> albums, album -> songs, category ->
 // its smart list, library -> its artists, ...). On success the fetched song

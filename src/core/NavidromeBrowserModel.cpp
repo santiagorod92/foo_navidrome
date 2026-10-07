@@ -309,4 +309,24 @@ std::vector<BrowserNodePtr> collectArtistSongs(IBrowserClient& client, const std
     return nodes;
 }
 
+LyricsCache& lyricsCache() {
+    static LyricsCache cache;
+    return cache;
+}
+
+Lyrics lyricsForTrackURI(IBrowserClient& client, const std::string& uri, std::string& outError) {
+    const TrackURI t = parseTrackURI(uri);
+    if (t.id.empty()) return {};
+    Lyrics l;
+    if (lyricsCache().get(t.id, l)) return l;
+    std::string err;
+    l = client.getLyrics(t.id, t.artist, t.title, err);
+    if (!err.empty()) {
+        outError = err;
+        return {};
+    }
+    lyricsCache().put(t.id, l);
+    return l;
+}
+
 } // namespace navidrome

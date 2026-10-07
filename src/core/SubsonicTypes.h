@@ -143,6 +143,23 @@ struct ArtistInfo {
     std::vector<Artist> similarArtists;
 };
 
+// One song's lyrics (getLyricsBySongId.view / legacy getLyrics.view). When
+// `synced`, every line carries its start time in ms (offset already applied)
+// and the lines are in time order; otherwise startMs is -1 throughout. Empty
+// `lines` means the server has no lyrics for the song.
+struct LyricLine {
+    long long   startMs = -1;
+    std::string text;
+};
+
+struct Lyrics {
+    bool                   synced = false;
+    std::string            lang;
+    std::vector<LyricLine> lines;
+
+    bool empty() const { return lines.empty(); }
+};
+
 // Library scan progress (startScan.view / getScanStatus.view). count is the
 // number of items processed so far; only meaningful while scanning is true —
 // Subsonic doesn't report a total, so this can only show "N processed", not
@@ -1420,6 +1437,157 @@ inline std::string formatArtistBiography(const ArtistInfo& info) {
     if (!info.lastFmUrl.empty()) text += "\n\n" + info.lastFmUrl;
     return text;
 }
+
+// Splits text into lines on \n, dropping a trailing \r (CRLF lyrics files).
+inline std::vector<std::string> splitLyricText(const std::string& text) {
+    std::vector<std::string> out;
+    std::size_t pos = 0;
+    while (pos <= text.size()) {
+        std::size_t nl = text.find('\n', pos);
+        std::string line = text.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos);
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        out.push_back(std::move(line));
+        if (nl == std::string::npos) break;
+        pos = nl + 1;
+    }
+    while (!out.empty() && out.back().empty()) out.pop_back();
+    return out;
+}
+
+// Parses one LRC time tag "[mm:ss]", "[mm:ss.x]", "[mm:ss.xx]" or "[mm:ss.xxx]"
+// at the start of `s`. Returns the tag length (0 = not a time tag) and the
+// time in `ms`. Metadata tags like "[ar:Artist]" aren't time tags.
+inline std::size_t parseLrcTimeTag(const std::string& s, long long& ms) {
+    if (s.size() < 7 || s[0] != '[') return 0;
+    std::size_t i = 1;
+    long long minutes = 0, seconds = 0, frac = 0, fracDigits = 0;
+    auto digit = [&](std::size_t k) { return k < s.size() && s[k] >= '0' && s[k] <= '9'; };
+    if (!digit(i)) return 0;
+    while (digit(i)) minutes = minutes * 10 + (s[i++] - '0');
+    if (i >= s.size() || s[i] != ':') return 0;
+    ++i;
+    if (!digit(i) || !digit(i + 1)) return 0;
+    seconds = (s[i] - '0') * 10 + (s[i + 1] - '0');
+    i += 2;
+    if (i < s.size() && (s[i] == '.' || s[i] == ':')) {
+        ++i;
+        while (digit(i) && fracDigits < 3) { frac = frac * 10 + (s[i++] - '0'); ++fracDigits; }
+        while (digit(i)) ++i;
+    }
+    if (i >= s.size() || s[i] != ']') return 0;
+    while (fracDigits < 3) { frac *= 10; ++fracDigits; }
+    ms = (minutes * 60 + seconds) * 1000 + frac;
+    return i + 1;
+}
+
+// Plain or LRC text (what legacy getLyrics.view returns) → Lyrics. Synced when
+// at least one line carries a time tag; untagged lines are then dropped (LRC
+// metadata like [ar:...]), and a line with several tags ("[00:10][00:50]chorus")
+// is emitted once per tag. Result is sorted by start time.
+inline Lyrics parseLyricsText(const std::string& text) {
+    Lyrics out;
+    const auto rawLines = splitLyricText(text);
+    std::vector<LyricLine> timed;
+    for (const auto& raw : rawLines) {
+        std::vector<long long> stamps;
+        std::size_t pos = 0;
+        long long ms = 0;
+        while (std::size_t n = parseLrcTimeTag(raw.substr(pos), ms)) {
+            stamps.push_back(ms);
+            pos += n;
+        }
+        for (long long t : stamps) timed.push_back({ t, raw.substr(pos) });
+    }
+    if (!timed.empty()) {
+        std::stable_sort(timed.begin(), timed.end(),
+                         [](const LyricLine& a, const LyricLine& b) { return a.startMs < b.startMs; });
+        out.synced = true;
+        out.lines  = std::move(timed);
+        return out;
+    }
+    for (const auto& raw : rawLines) out.lines.push_back({ -1, raw });
+    return out;
+}
+
+// getLyricsBySongId.view (OpenSubsonic): inner["lyricsList"]["structuredLyrics"]
+// is a list of { synced, lang, offset, line: [{ start, value }] }. Synced
+// entries are ordered first (stable), and `offset` (ms) is subtracted from
+// every start — the same rule the ESLyric searcher script applies.
+inline std::vector<Lyrics> parseLyricsList(const json::Value& inner) {
+    std::vector<Lyrics> all;
+    for (auto* e : inner["lyricsList"]["structuredLyrics"].items()) {
+        Lyrics l;
+        l.synced = (*e)["synced"].asBool();
+        l.lang   = jStr(*e, "lang");
+        const long long offset = jLong(*e, "offset");
+        for (auto* ln : (*e)["line"].items()) {
+            LyricLine line;
+            line.text = jStr(*ln, "value");
+            if (l.synced) {
+                if (!ln->has("start")) continue;
+                line.startMs = (std::max)(0LL, jLong(*ln, "start") - offset);
+            }
+            l.lines.push_back(std::move(line));
+        }
+        if (l.synced)
+            std::stable_sort(l.lines.begin(), l.lines.end(),
+                             [](const LyricLine& a, const LyricLine& b) { return a.startMs < b.startMs; });
+        if (!l.empty()) all.push_back(std::move(l));
+    }
+    std::stable_sort(all.begin(), all.end(),
+                     [](const Lyrics& a, const Lyrics& b) { return a.synced && !b.synced; });
+    return all;
+}
+
+// Legacy getLyrics.view: inner["lyrics"]["value"] is one text blob (may be LRC).
+inline Lyrics parseLegacyLyrics(const json::Value& inner) {
+    auto items = inner["lyrics"].items();
+    if (items.empty()) return {};
+    return parseLyricsText(jStr(*items[0], "value"));
+}
+
+// Index of the line playing at `positionMs` — the last line whose start is at
+// or before it. -1 when the lyrics aren't synced or playback is before the
+// first line.
+inline int activeLyricLine(const Lyrics& l, long long positionMs) {
+    if (!l.synced || l.lines.empty()) return -1;
+    auto it = std::upper_bound(l.lines.begin(), l.lines.end(), positionMs,
+                               [](long long pos, const LyricLine& line) { return pos < line.startMs; });
+    return static_cast<int>(it - l.lines.begin()) - 1;
+}
+
+// Session-scoped songId → Lyrics cache, so the panel re-showing a track and
+// other components polling navidrome_lyrics_api don't refetch. Bounded FIFO
+// eviction; caches "no lyrics" too (an empty Lyrics) — the server won't grow
+// lyrics mid-session often enough to be worth a request per track change.
+class LyricsCache {
+public:
+    explicit LyricsCache(std::size_t capacity = 128) : m_capacity(capacity) {}
+
+    bool get(const std::string& songId, Lyrics& out) const {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        for (const auto& kv : m_items)
+            if (kv.first == songId) { out = kv.second; return true; }
+        return false;
+    }
+    void put(const std::string& songId, const Lyrics& l) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        for (auto& kv : m_items)
+            if (kv.first == songId) { kv.second = l; return; }
+        if (m_capacity == 0) return;
+        if (m_items.size() >= m_capacity) m_items.erase(m_items.begin());
+        m_items.emplace_back(songId, l);
+    }
+    void clear() {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_items.clear();
+    }
+
+private:
+    std::size_t m_capacity;
+    mutable std::mutex m_mutex;
+    std::vector<std::pair<std::string, Lyrics>> m_items;
+};
 
 // startScan.view / getScanStatus.view: the inner response object carries a
 // "scanStatus" object (Subsonic may array-collapse it).

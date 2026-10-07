@@ -646,6 +646,17 @@ struct MacSettingsProvider : navidrome::ISettingsProvider {
     return SongsFromCore(v);
 }
 
+- (navidrome::Lyrics)getLyricsForSongId:(NSString *)songId
+                                 artist:(NSString *)artist
+                                  title:(NSString *)title
+                                  error:(NSError **)error {
+    std::string err;
+    auto l = _core->getLyrics(songId.UTF8String ?: "", artist.UTF8String ?: "",
+                              title.UTF8String ?: "", err);
+    if (!err.empty() && error) *error = NavidromeMakeError(err, -2);
+    return l;
+}
+
 - (BOOL)setStarred:(BOOL)starred
              forId:(NSString *)itemId
               kind:(SubsonicStarKind)kind

@@ -41,6 +41,7 @@ A [foobar2000](https://www.foobar2000.org/) component that lets you browse and s
 - **Auto-skips tracks deleted from the server**: once a track 404s during playback (e.g. a stale playlist entry after a library reorg), it's skipped automatically for the rest of the session on any later shuffle/repeat/Random Mix — no more retrying the same dead stream over and over
 - Appears under **Preferences › Media Library › Library viewers** alongside Album List / Artist View, and (macOS) can also be docked as a panel in the main window layout via **Preferences › Display › Layout › Edit Layout**
 - **Lyrics on Windows** via [ESLyric](https://github.com/ESLyric/release) — see [Lyrics (ESLyric)](#lyrics-eslyric-windows)
+- **Lyrics on macOS** in a native **Navidrome Lyrics** layout panel — see [Lyrics (macOS)](#lyrics-macos)
 
 ## Lyrics (ESLyric, Windows)
 
@@ -59,6 +60,17 @@ Generated files live under your foobar2000 profile:
 ```
 
 Don't hand-edit them — they're overwritten on the next config save/startup. If ESLyric isn't installed, foo_navidrome silently skips this step (check **View › Console** for a one-line "not detected" note on startup).
+
+## Lyrics (macOS)
+
+ESLyric doesn't exist on macOS, so foo_navidrome ships its own lyrics panel:
+
+1. **Preferences › Display › Layout › Edit Layout** → add the **Navidrome Lyrics** element wherever you want it.
+2. Play a track that foo_navidrome added (a `navidrome://track/<id>` URI). The panel follows the now-playing track.
+
+Lyrics come from Navidrome's `getLyricsBySongId.view` (embedded or sidecar `.lrc` lyrics on the server). When the server has timings, the current line is highlighted and kept centred as the song plays; otherwise the lyrics show as plain text. On servers without that endpoint it falls back to the classic artist/title `getLyrics.view` lookup. Lyrics are cached for the session, so replaying a track doesn't refetch.
+
+Other components can read the same lyrics through the `navidrome_lyrics_api` service (both platforms). foo_ui_panels is the intended first consumer.
 
 ## Platform Support
 
@@ -364,6 +376,7 @@ make mac-vm-release  # macOS-on-Linux VM (../macos-devbox): deploy the latest re
 | `./scripts/win-build-local.sh` | Cross-compile the x64 DLL and install it into the Wine foobar2000 |
 | `./scripts/win-build-local.sh --launch` | …same, then relaunch foobar2000 |
 | `./scripts/win-build-local.sh --clean` | Wipe the object cache and rebuild from scratch |
+| `./scripts/ui-test.sh smoke` | Scripted UI smoke test in the Wine foobar2000 (`make win-ui-smoke`): opens the browser, expands an artist, plays an album, then checks the debug log, the process and a screenshot in `build/ui-test/`. Other subcommands drive it by hand: `click`, `key`, `wait`, `shot` |
 | `./scripts/navidrome-logs.sh` | Follow the local debug log, colourised by level/tag (run in a second pane; also `make win-logs` / `make mac-logs`) |
 | `./scripts/install-windows.sh` | Install an already-built DLL + package the `.fb2k-component` (called by `win-build-local.sh`; `--new-release` to publish) |
 | `./scripts/win-test.sh` | Build the DLL on a GitHub Actions Windows runner (real MSVC/MSBuild), download the artifact, install it locally |
@@ -432,8 +445,12 @@ hardware. See [`scripts/mac-vm/README.md`](scripts/mac-vm/README.md).
 
 | Command | What it does |
 |---------|--------------|
-| `make mac-vm` | Boot the VM, deploy the latest GitHub release, launch foobar2000 |
+| `make mac-vm [VNC=0]` | Boot the VM, open its screen (noVNC) in the browser, deploy the latest GitHub release, launch foobar2000 |
+| `make mac-vm-vnc` | Boot the VM (no-op if it's already up) and open its screen in the browser. Deploys nothing |
+| `make mac-vm-open` | Open the VM screen once macOS has booted (waits for the guest's sshd first) |
 | `make mac-vm-test [COMPONENT=…]` | Deploy a local `.fb2k-component` (default: newest in repo root), re-sign, relaunch |
+| `make mac-vm-smoke` | Build in the guest with the debug log, deploy, then run the scripted UI smoke test (open browser → expand artist → play album) with log/crash assertions and screenshots |
+| `make mac-vm-ui ARGS=…` | Same driver without the build: `smoke [COMPONENT]`, `browser`, `log 50` |
 | `make mac-vm-build[-test]` | Build in the guest with xcodebuild, pull the `.fb2k-component` back (then deploy) |
 | `make mac-vm-<cmd>` | Any `mvm` command: `-up`, `-down`, `-ssh`, `-shot`, `-snapshot ARGS=name`, … |
 

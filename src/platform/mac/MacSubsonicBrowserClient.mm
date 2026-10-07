@@ -296,6 +296,16 @@ struct MacBrowserClient final : navidrome::IBrowserClient {
         e = errString(err);
         return v;
     }
+    navidrome::Lyrics getLyrics(const std::string& id, const std::string& artist,
+                                const std::string& title, std::string& e) override {
+        NSError *err = nil;
+        auto l = [client getLyricsForSongId:@(id.c_str())
+                                     artist:@(artist.c_str())
+                                      title:@(title.c_str())
+                                      error:&err];
+        e = errString(err);
+        return l;
+    }
     std::vector<std::string> groupingLibraryIds() override {
         std::vector<std::string> out;
         for (NSString *x in [client libraryGroupingIds]) out.push_back(str(x));

@@ -519,6 +519,45 @@ std::vector<Song> SubsonicCore::getTopSongs(const std::string& artistName, int c
     return result;
 }
 
+Lyrics SubsonicCore::getLyrics(const std::string& songId, const std::string& artist,
+                              const std::string& title, std::string& outError) {
+    const std::string server = m_settings.load().serverUrl;
+    bool byIdSupported;
+    {
+        std::lock_guard<std::mutex> lock(m_lyricsMutex);
+        byIdSupported = m_lyricsByIdUnsupportedOn != server;
+    }
+    if (!songId.empty() && byIdSupported) {
+        std::string err;
+        std::string body = httpGet(buildURL("getLyricsBySongId.view", "id=" + enc(songId)), err);
+        if (!body.empty()) {
+            auto root = checkResponse(body, outError);
+            if (root.isNull()) return {};
+            auto all = parseLyricsList(root);
+            NAVIDROME_LOG("Lyrics", "song " + songId + ": " + std::to_string(all.size()) +
+                          " lyric set(s)" + (all.empty() ? "" : all[0].synced ? ", synced" : ", plain"));
+            return all.empty() ? Lyrics{} : std::move(all[0]);
+        }
+        if (m_lastError.http != 404) { outError = err; return {}; }
+        {
+            std::lock_guard<std::mutex> lock(m_lyricsMutex);
+            m_lyricsByIdUnsupportedOn = server;
+        }
+        NAVIDROME_WARN("Lyrics", "getLyricsBySongId.view not supported by this server — "
+                       "using getLyrics.view (artist/title) for the rest of the session");
+    }
+    if (artist.empty() || title.empty()) return {};
+    std::string body = httpGet(
+        buildURL("getLyrics.view", "artist=" + enc(artist) + "&title=" + enc(title)), outError);
+    if (body.empty()) return {};
+    auto root = checkResponse(body, outError);
+    if (root.isNull()) return {};
+    Lyrics l = parseLegacyLyrics(root);
+    NAVIDROME_LOG("Lyrics", "legacy lookup '" + artist + " - " + title + "': " +
+                  std::to_string(l.lines.size()) + " line(s)");
+    return l;
+}
+
 std::vector<Song> SubsonicCore::getRandomSongs(int count, std::string& outError) {
     const auto folderIds = activeMusicFolderIds();
     // Split the requested size across the fanned-out libraries so the merged
