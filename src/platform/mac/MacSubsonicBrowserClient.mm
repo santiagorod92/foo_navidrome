@@ -332,6 +332,14 @@ struct MacBrowserClient final : navidrome::IBrowserClient {
         e = errString(err);
         return ok;
     }
+    bool getSong(const std::string& id, navidrome::Song& out, std::string& e) override {
+        NSError *err = nil;
+        SubsonicSong *s = [client getSongWithId:@(id.c_str()) error:&err];
+        e = errString(err);
+        if (!s) { if (e.empty()) e = "song not found"; return false; }
+        out = conv(s);
+        return true;
+    }
 };
 
 } // namespace

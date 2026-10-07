@@ -3,6 +3,7 @@
 #include "../../core/NavidromeLibraryPlatform.h"
 #include "SubsonicClientWin.h"
 #include "../../core/NavidromeBrowserEnqueue.h"
+#include "../../core/NavidromeAudioMuse.h"
 #include <SDK/playlist.h>
 #include <SDK/metadb.h>
 #include <SDK/playable_location.h>
@@ -1012,6 +1013,8 @@ struct WinBrowserClient final : navidrome::IBrowserClient {
         return c.setStarred(starred, id, kind, e); }
     bool setRating(int stars, const std::string& id, std::string& e) override {
         return c.setRating(stars, id, e); }
+    bool getSong(const std::string& id, navidrome::Song& out, std::string& e) override {
+        return c.getSong(id, out, e); }
 };
 
 navidrome::IBrowserClient& browserClient() {
@@ -1022,6 +1025,16 @@ navidrome::IBrowserClient& browserClient() {
 
 // The library service's client (NavidromeLibraryPlatform.h) is the browser's own.
 navidrome::IBrowserClient& navidrome::libraryClient() { return browserClient(); }
+
+// The AudioMuse-AI prompts (NavidromeAudioMuse.h) reuse the browser's text prompt.
+bool navidrome::promptForText(const char* title, const char* label, std::string& inOut) {
+    std::wstring value;
+    if (!TextPromptWindow::run(core_api::get_main_window(), u8ToWide(title).c_str(),
+                               u8ToWide(label).c_str(), u8ToWide(inOut), value))
+        return false;
+    inOut = wToU8(value);
+    return true;
+}
 
 void BrowserWindow::loadArtists() {
     // Any full reload supersedes whatever search was pending/showing.
@@ -1453,29 +1466,27 @@ void BrowserWindow::queueNodes(std::vector<std::shared_ptr<NavidromeNode>> selec
 void BrowserWindow::OnAdd(UINT, int, HWND)  { dbgLog("OnAdd fired"); queueSelected(false, false); }
 void BrowserWindow::OnPlay(UINT, int, HWND) { dbgLog("OnPlay fired"); queueSelected(true,  false); }
 
-// Fetches last.fm-derived similar tracks for the first selected artist, album
-// or song and appends + plays them, mirroring OnPlay's enqueue semantics.
+// Instant Mix from the first selected artist, album or song — the shared run
+// in main.cpp (progress window, dedicated "Instant Mix" playlist).
 void BrowserWindow::OnPlaySimilar(UINT, int, HWND) {
-    dbgLog("OnPlaySimilar fired");
+    dbgLog("OnPlaySimilar (Instant Mix) fired");
     auto selected = selectedNodes();
     auto node = selected.empty() ? nullptr : selected.front();
     if (!node || !navidrome::isSimilarEligible(*node)) {
-        setStatus("Play Similar needs an artist, album, or song");
+        setStatus("Instant Mix needs an artist, album, or song");
         return;
     }
+    navidrome::startInstantMix(node);
+}
 
-    setStatus("Finding similar tracks…");
-    std::string itemId = node->id;
-    std::thread([this, itemId]() {
-        std::string err;
-        auto nodes = navidrome::fetchSimilarSongs(browserClient(), itemId, 50, err);
-        fb2k::inMainThread([this, nodes, err]() mutable {
-            if (!IsWindow()) return;
-            if (!err.empty()) { setStatus("Error: " + err); return; }
-            if (nodes.empty()) { setStatus("No similar tracks found"); return; }
-            enqueueNodes(std::move(nodes), true, false);
-        });
-    }).detach();
+// Song Alchemy over the selected songs/artists — the run itself (progress
+// window, new playlist) is the shared one in main.cpp.
+void BrowserWindow::OnAlchemy(UINT, int, HWND) {
+    dbgLog("OnAlchemy fired");
+    std::string label;
+    auto seeds = navidrome::audiomuse::seedsFromNodes(selectedNodes(), label);
+    if (seeds.empty()) { setStatus("Song Alchemy needs songs or artists"); return; }
+    navidrome::audioMuseAlchemy(std::move(seeds), std::move(label));
 }
 
 // Fetches the selected artist's biography + last.fm link and shows it in a
@@ -1568,7 +1579,9 @@ void BrowserWindow::OnContextMenu(CWindow wnd, CPoint point) {
     menu.CreatePopupMenu();
     menu.AppendMenu(MF_STRING, IDC_PLAY, L"Play Now");
     menu.AppendMenu(MF_STRING, IDC_ADD,  L"Add to Playlist");
-    menu.AppendMenu(MF_STRING, IDC_PLAY_SIMILAR, L"Play Similar");
+    menu.AppendMenu(MF_STRING, IDC_PLAY_SIMILAR, L"Instant Mix");
+    if (navidrome::audioMuseSettings().configured())
+        menu.AppendMenu(MF_STRING, IDC_ALCHEMY, L"Song Alchemy (AudioMuse-AI)");
     menu.AppendMenu(MF_STRING, IDC_ARTIST_INFO,  L"Artist Info");
 
     // Server-side favorites + ratings. Both are per-user state on Navidrome, so

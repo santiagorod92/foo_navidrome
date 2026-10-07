@@ -49,3 +49,5 @@ build-win-mac/
 build-mac/
 
 Xcode_*.xip
+
+**/.env

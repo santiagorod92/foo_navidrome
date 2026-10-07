@@ -168,4 +168,12 @@ struct FakeBrowserClient : navidrome::IBrowserClient {
         e.clear();
         return true;
     }
+    bool getSong(const std::string& id, navidrome::Song& out, std::string& e) override {
+        calls.push_back("getSong:" + id);
+        if (failIds.count(id)) { e = "song " + id + " not found"; return false; }
+        e.clear();
+        out = {};
+        out.id = id; out.title = "Song " + id; out.artist = "Artist"; out.suffix = "flac";
+        return true;
+    }
 };

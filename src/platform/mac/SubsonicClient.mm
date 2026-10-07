@@ -2,6 +2,7 @@
 #import "../../core/SubsonicTypes.h"
 #import "../../core/SubsonicCore.h"
 #import "../../core/NavidromeDebugLog.h"
+#import "../../core/NavidromeAudioMuse.h"
 
 #import <memory>
 
@@ -1013,3 +1014,70 @@ struct MacSettingsProvider : navidrome::ISettingsProvider {
 }
 
 @end
+
+// ---------------------------------------------------------------------------
+// AudioMuse-AI POST (NavidromeAudioMuse.h). Its own session: the Navidrome one
+// caps a request at 30 s, and an Instant Playlist (an LLM run) takes longer.
+// None of the Navidrome custom headers — AudioMuse is a different server. The
+// body is kept on an HTTP error so AudioMuse's own error text can be shown.
+// ---------------------------------------------------------------------------
+namespace {
+struct MacJsonPoster : navidrome::audiomuse::IJsonPoster {
+    navidrome::HttpResult postJson(const std::string &url, const std::string &body,
+                                   const std::string &bearerToken, int timeoutMs) override {
+        navidrome::HttpResult out;
+        @autoreleasepool {
+            NSURL *nsurl = [NSURL URLWithString:@(url.c_str())];
+            if (!nsurl) {
+                out.error = { navidrome::ErrorKind::Parse, 0, 0, "invalid AudioMuse-AI URL" };
+                return out;
+            }
+            static NSURLSession *session = [] {
+                NSURLSessionConfiguration *config = [NSURLSessionConfiguration ephemeralSessionConfiguration];
+                config.timeoutIntervalForResource = navidrome::audiomuse::kPlaylistTimeoutMs / 1000.0;
+                return [NSURLSession sessionWithConfiguration:config];
+            }();
+            NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:nsurl];
+            request.HTTPMethod = @"POST";
+            request.timeoutInterval = timeoutMs / 1000.0;
+            request.HTTPBody = [NSData dataWithBytes:body.data() length:body.size()];
+            [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+            [request setValue:@"application/json" forHTTPHeaderField:@"Accept"];
+            if (!bearerToken.empty())
+                [request setValue:[@"Bearer " stringByAppendingString:@(bearerToken.c_str())]
+                    forHTTPHeaderField:@"Authorization"];
+
+            __block NSData *data = nil;
+            __block NSError *taskError = nil;
+            __block NSHTTPURLResponse *httpResponse = nil;
+            dispatch_semaphore_t sema = dispatch_semaphore_create(0);
+            [[session dataTaskWithRequest:request
+                        completionHandler:^(NSData *d, NSURLResponse *response, NSError *error) {
+                data = d;
+                taskError = error;
+                httpResponse = (NSHTTPURLResponse *)response;
+                dispatch_semaphore_signal(sema);
+            }] resume];
+            dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+
+            if (taskError) {
+                navidrome::ErrorKind kind = NavidromeClassifyURLError(taskError.code);
+                out.error = { kind, 0, 0, std::string(navidrome::errorKindName(kind)) + ": " +
+                              (taskError.localizedDescription.UTF8String ?: "?") };
+                return out;
+            }
+            if (data) out.body.assign(static_cast<const char *>(data.bytes), data.length);
+            const int status = (int)httpResponse.statusCode;
+            const navidrome::ErrorKind kind = navidrome::httpStatusToErrorKind(status);
+            out.error = { kind, status, 0,
+                          kind == navidrome::ErrorKind::None ? std::string() : "HTTP " + std::to_string(status) };
+        }
+        return out;
+    }
+};
+} // namespace
+
+navidrome::audiomuse::IJsonPoster &navidrome::audioMusePoster() {
+    static MacJsonPoster inst;
+    return inst;
+}

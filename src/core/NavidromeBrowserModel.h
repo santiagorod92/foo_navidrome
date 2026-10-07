@@ -13,6 +13,7 @@
 
 #include "SubsonicTypes.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <functional>
 #include <memory>
@@ -394,7 +395,7 @@ struct IBrowserClient {
     virtual std::vector<PodcastEpisode> getPodcastEpisodes(const std::string& channelId,
                                                             std::string& outError) = 0;
     virtual std::vector<NowPlayingEntry> getNowPlaying(std::string& outError) = 0;
-    // "Play Similar" (last.fm-derived) and "Random Mix" — both back a
+    // "Instant Mix" (getSimilarSongs2) and "Random Mix" — both back a
     // context-menu action, not a browsable node (see CLAUDE.md gotcha on why
     // Random Mix isn't a category).
     virtual std::vector<Song>         getSimilarSongs(const std::string& itemId, int count,
@@ -427,6 +428,10 @@ struct IBrowserClient {
                             std::string& outError) = 0;
     virtual bool setRating(int stars, const std::string& songId,
                            std::string& outError) = 0;
+
+    // One song by id (getSong.view) — turns AudioMuse-AI result ids into
+    // playable song nodes (audiomuse::resolveTracks).
+    virtual bool getSong(const std::string& songId, Song& out, std::string& outError) = 0;
 };
 
 // The tree's root list: category nodes always, then either one Library node per
@@ -475,7 +480,7 @@ std::vector<std::string> collectSongIdsDeep(IBrowserClient& client,
 void syncBrowserNodesToPlaylists(const std::vector<BrowserNodePtr>& nodes);
 
 // ---------------------------------------------------------------------------
-// Favorites, ratings, Play Similar and Random Mix
+// Favorites, ratings, Instant Mix and Random Mix
 // ---------------------------------------------------------------------------
 // Star/rate a batch of nodes and report how many succeeded. `done` counts
 // individual successes even when `error` is set (the first failure's message
@@ -504,15 +509,26 @@ StarRatingResult applyRatingToNodes(IBrowserClient& client,
                                     const std::vector<BrowserNodePtr>& targets,
                                     int stars);
 
-// True for the node types the "Play Similar" context-menu item accepts.
+// True for the node types Instant Mix accepts as a seed.
 inline bool isSimilarEligible(const BrowserNode& n) {
     return !n.id.empty() &&
            (n.type == BrowserNode::Artist || n.type == BrowserNode::Album ||
             n.type == BrowserNode::Song);
 }
 
-// Fetches last.fm-derived similar tracks for one artist/album/song id and maps
-// them to song nodes, ready to enqueue. Background thread only.
+// `nodes` without any song whose id is `songId` — Instant Mix drops its seed
+// song from getSimilarSongs2's answer, since the seed already heads the mix.
+inline std::vector<BrowserNodePtr> withoutSongId(std::vector<BrowserNodePtr> nodes,
+                                                 const std::string& songId) {
+    nodes.erase(std::remove_if(nodes.begin(), nodes.end(),
+                               [&](const BrowserNodePtr& n) { return n && n->id == songId; }),
+                nodes.end());
+    return nodes;
+}
+
+// Fetches similar tracks (getSimilarSongs2.view) for one artist/album/song id —
+// last.fm-derived, or AudioMuse-AI's with its Navidrome plugin — and maps them
+// to song nodes, ready to enqueue. Background thread only.
 std::vector<BrowserNodePtr> fetchSimilarSongs(IBrowserClient& client,
                                               const std::string& itemId, int count,
                                               std::string& outError);

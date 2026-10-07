@@ -82,7 +82,7 @@ public:
                                           std::string& outError);
 
     // Similar songs (getSimilarSongs2.view) for an artist, album or song id —
-    // last.fm-derived recommendations, used by the "Play Similar" context menu.
+    // getSimilarSongs2 recommendations, used by Instant Mix.
     std::vector<Song>    getSimilarSongs(const std::string& itemId, int count,
                                          std::string& outError);
 

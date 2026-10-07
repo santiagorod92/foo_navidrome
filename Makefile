@@ -2,7 +2,8 @@
 	win-build win-build-patch win-build-minor win-build-major win-build-launch win-install win-test win-logs win-ui-smoke win-ui \
 	mac-build mac-build-patch mac-build-minor mac-build-major mac-build-no-install mac-install mac-release mac-ci-build mac-logs \
 	win-vm-setup win-vm-fetch win-vm-install win-vm-test \
-	mac-vm mac-vm-vnc mac-vm-open mac-vm-smoke mac-vm-ui mac-vm-test mac-vm-release mac-vm-build mac-vm-build-test clean
+	mac-vm mac-vm-vnc mac-vm-open mac-vm-smoke mac-vm-ui mac-vm-test mac-vm-release mac-vm-build mac-vm-build-test \
+	audiomuse-up audiomuse-analyze audiomuse-status audiomuse-search audiomuse-logs audiomuse-down clean
 
 XWIN_SDK ?= $(HOME)/.local/share/xwin/sdk
 BUILD_WIN := build-win
@@ -62,6 +63,12 @@ help:
 	@echo "  mac-vm-build-test     mac-vm-build, then deploy + launch it in the guest"
 	@echo "  mac-vm-<cmd>          any mvm command: mac-vm-up, -down, -ssh, -shot, -snapshot, -restore ARGS=name, ..."
 	@echo "                        (see ../macos-devbox/README.md; one-time: mvm setup, up, provision, snapshot base)"
+	@echo ""
+	@echo "  audiomuse-up          start the local AudioMuse-AI test stack (dev/audiomuse/, needs dev/audiomuse/.env)"
+	@echo "  audiomuse-analyze     analyse the newest albums of the Navidrome in .env [ARGS=N albums]"
+	@echo "  audiomuse-status      health, tasks and a sample text search; audiomuse-search ARGS='calm piano'"
+	@echo "  audiomuse-logs        follow AudioMuse flask + worker logs"
+	@echo "  audiomuse-down        stop it [ARGS=-v also deletes analysis + Ollama models]"
 	@echo ""
 	@echo "  clean                 remove local build-win/ artifacts"
 
@@ -225,6 +232,25 @@ mac-vm-build-test:
 
 mac-vm-%:
 	$(MVM) $* $(ARGS)
+
+# --- Local AudioMuse-AI test stack (dev/audiomuse/, scripts/audiomuse-dev.sh) ---
+audiomuse-up:
+	./scripts/audiomuse-dev.sh up
+
+audiomuse-analyze:
+	./scripts/audiomuse-dev.sh analyze $(ARGS)
+
+audiomuse-status:
+	./scripts/audiomuse-dev.sh status
+
+audiomuse-search:
+	./scripts/audiomuse-dev.sh search $(ARGS)
+
+audiomuse-logs:
+	./scripts/audiomuse-dev.sh logs
+
+audiomuse-down:
+	./scripts/audiomuse-dev.sh down $(ARGS)
 
 clean:
 	rm -rf $(BUILD_WIN) $(BUILD_MAC)

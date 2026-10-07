@@ -205,7 +205,7 @@ typedef NS_ENUM(NSInteger, SubsonicStarKind) {
                                         error:(NSError **)error;
 
 // Similar songs (getSimilarSongs2.view) for an artist, album or song id —
-// last.fm-derived recommendations, used by the "Play Similar" context menu.
+// getSimilarSongs2 recommendations, used by Instant Mix.
 - (NSArray<SubsonicSong *> *)getSimilarSongsForId:(NSString *)itemId
                                              count:(NSInteger)count
                                              error:(NSError **)error;

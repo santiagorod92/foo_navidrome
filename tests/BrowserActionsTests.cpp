@@ -101,4 +101,19 @@ TEST_CASE(testStarRatingSimilarRandom) {
     }
 }
 
+TEST_CASE(testInstantMixDropsSeed) {
+    std::vector<navidrome::BrowserNodePtr> nodes;
+    for (const char* id : { "a", "seed", "b", "seed" }) {
+        auto n = std::make_shared<navidrome::BrowserNode>();
+        n->type = navidrome::BrowserNode::Song; n->id = id;
+        nodes.push_back(n);
+    }
+    nodes.push_back(nullptr);
+    auto out = navidrome::withoutSongId(nodes, "seed");
+    check(out.size() == 3 && out[0]->id == "a" && out[1]->id == "b" && !out[2],
+          "withoutSongId drops every copy of the seed, keeps order and other entries");
+    check(navidrome::withoutSongId(nodes, "zzz").size() == nodes.size(),
+          "withoutSongId leaves the list alone when the seed isn't in it");
+}
+
 } // namespace

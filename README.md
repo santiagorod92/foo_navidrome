@@ -28,7 +28,6 @@ A [foobar2000](https://www.foobar2000.org/) component that lets you browse and s
 - **Download Original Files…** from the right-click menu — saves the selected tracks to a folder, always in their stored format regardless of the streaming setting
 - Add albums or artists to playlist in one click (loads all songs automatically)
 - Right-click any row for a **Play Now / Add to Playlist** context menu
-- **Play Similar** from the right-click menu — queues and plays last.fm-derived recommendations for the selected artist, album, or song (`getSimilarSongs2.view`)
 - **Artist Info** from the right-click menu on an artist row — shows the last.fm biography and a link to the full page (`getArtistInfo2.view`)
 - Every artist has **Top Songs** and **Similar Artists** child nodes, so you can browse an artist's most popular tracks or jump straight to related artists without leaving the tree (`getTopSongs.view`, `getArtistInfo2.view`)
 - Double-click a song to play immediately
@@ -42,6 +41,7 @@ A [foobar2000](https://www.foobar2000.org/) component that lets you browse and s
 - Appears under **Preferences › Media Library › Library viewers** alongside Album List / Artist View, and (macOS) can also be docked as a panel in the main window layout via **Preferences › Display › Layout › Edit Layout**
 - **Lyrics on Windows** via [ESLyric](https://github.com/ESLyric/release) — see [Lyrics (ESLyric)](#lyrics-eslyric-windows)
 - **Lyrics on macOS** in a native **Navidrome Lyrics** layout panel — see [Lyrics (macOS)](#lyrics-macos)
+- **Instant Mix** from any playlist track (right-click › Navidrome › Instant Mix) or any song, album or artist in the browser — plays similar songs in a dedicated *Instant Mix* playlist — plus **AudioMuse-AI** Text Search, Instant Playlist and Song Alchemy — see [Instant Mix and AudioMuse-AI](#instant-mix-and-audiomuse-ai)
 
 ## Lyrics (ESLyric, Windows)
 
@@ -71,6 +71,43 @@ ESLyric doesn't exist on macOS, so foo_navidrome ships its own lyrics panel:
 Lyrics come from Navidrome's `getLyricsBySongId.view` (embedded or sidecar `.lrc` lyrics on the server). When the server has timings, the current line is highlighted and kept centred as the song plays; otherwise the lyrics show as plain text. On servers without that endpoint it falls back to the classic artist/title `getLyrics.view` lookup. Lyrics are cached for the session, so replaying a track doesn't refetch.
 
 Other components can read the same lyrics through the `navidrome_lyrics_api` service (both platforms). foo_ui_panels is the intended first consumer.
+
+## Instant Mix and AudioMuse-AI
+
+[AudioMuse-AI](https://github.com/NeptuneHub/AudioMuse-AI) analyses your Navidrome library's audio and answers "songs like this" questions. foo_navidrome uses it two ways.
+
+**Instant Mix** (right-click a playlist track › **Navidrome › Instant Mix**, or a song, album or artist in the Navidrome browser) asks Navidrome for similar songs (`getSimilarSongs2.view`) and plays them in a playlist called *Instant Mix*: the song you picked first, then the similar ones. Each new mix replaces that playlist, so your own playlists are never touched. If the song you picked is already playing, it keeps playing and the mix follows it. It needs no extra setup. With the [AudioMuse-AI Navidrome plugin](https://github.com/NeptuneHub/AudioMuse-AI-NV-plugin) installed (and `audiomuseai` listed first in `ND_AGENTS`), Navidrome answers from AudioMuse's sonic similarity. Otherwise it answers from last.fm, if configured.
+
+The other three features talk to the AudioMuse-AI server directly. Set it up under **Preferences › Tools › Navidrome › AudioMuse-AI**:
+
+| Field | What to enter |
+|---|---|
+| Server URL | AudioMuse-AI's address, e.g. `http://audiomuse:8000` |
+| API token | Only if AudioMuse-AI has authentication enabled: an API token created in AudioMuse-AI |
+| Server name | Only if AudioMuse-AI serves several media servers: the name it uses for this Navidrome |
+| Tracks | How many songs each mix or playlist gets (default 50). It also sizes Instant Mix. |
+
+Then:
+
+- **File › AudioMuse-AI › Text Search…**: describe the sound ("calm piano with rain"). Uses AudioMuse's CLAP search (`/api/clap/search`), which must be enabled on the AudioMuse side.
+- **File › AudioMuse-AI › Instant Playlist…**: ask AudioMuse's AI assistant for a playlist ("90s road trip rock"). Uses `/chat/api/chatPlaylist` and the AI provider configured in AudioMuse-AI. Expect this one to take a minute.
+- **Song Alchemy**: right-click tracks in a playlist (**Navidrome › Song Alchemy (AudioMuse-AI)**), or songs/artists in the Navidrome browser. AudioMuse blends them (`/api/alchemy`) into songs that sit between them.
+
+Each result opens in a new foobar2000 playlist named after the request (e.g. *AudioMuse: rainy jazz*) and starts playing. A progress window with **Abort** shows while it runs. Songs AudioMuse knows about but Navidrome no longer has are skipped; the console says how many. The playlist is an ordinary foobar2000 playlist and stays until you delete it. To also have it on the server, use the browser's **Send Active Playlist to Navidrome**.
+
+### Testing against a local AudioMuse-AI (developers)
+
+`dev/audiomuse/` holds a Docker Compose stack (AudioMuse-AI flask + worker + PostgreSQL) for testing these features on a dev machine. It analyses your Navidrome over the Subsonic API and installs nothing on the Navidrome side. Instant Playlist uses the Ollama already running on the host.
+
+```bash
+cp dev/audiomuse/.env.example dev/audiomuse/.env   # Navidrome URL/user/password, API token (gitignored)
+ollama pull qwen3.5:9b                            # Instant Playlist's model, on the host Ollama
+make audiomuse-up                                 # start, wait for the API, check the model
+make audiomuse-analyze                            # analyse the NUM_RECENT_ALBUMS newest albums
+make audiomuse-status                             # task progress + a sample text search
+```
+
+Then point foobar2000 at `http://127.0.0.1:8000` with the `AUDIOMUSE_API_TOKEN` from `.env`. `make audiomuse-down` stops it; `ARGS=-v` also deletes the analysis.
 
 ## Platform Support
 
