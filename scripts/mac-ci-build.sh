@@ -56,12 +56,20 @@ set +e
 # upstream content re-cloned each run, so it can't be patched in place. Setting it here keeps
 # the build working when the runner image moves past macos-14. Keep it in step with
 # MACOSX_DEPLOYMENT_TARGET in foo_navidrome.xcodeproj and scripts/mac-dev-build.sh.
+# MAC_EXTRA_CFLAGS (unset in CI) adds compile flags, e.g. -DNAVIDROME_DEBUG_LOG=1 from
+# `mac-vm-build.sh --debug-log` so the VM UI smoke test can assert on the debug log.
+EXTRA=()
+if [ -n "${MAC_EXTRA_CFLAGS:-}" ]; then
+    EXTRA=(OTHER_CFLAGS="\$(inherited) $MAC_EXTRA_CFLAGS")
+    echo "mac-ci-build: extra CFLAGS: $MAC_EXTRA_CFLAGS"
+fi
 xcodebuild \
     -workspace foo_navidrome.xcworkspace \
     -scheme foo_navidrome \
     -configuration Release \
     -derivedDataPath build/derived \
     MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-12.0}" \
+    ${EXTRA[@]+"${EXTRA[@]}"} \
     build > "$LOG" 2>&1
 XCB_RC=$?
 set -e
