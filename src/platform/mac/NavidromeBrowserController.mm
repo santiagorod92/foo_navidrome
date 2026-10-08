@@ -514,9 +514,9 @@ NBCWrapList(const std::vector<navidrome::BrowserNodePtr> &nodes) {
             NBCWrapList(navidrome::buildRootNodes(browserClient(), err));
         std::string errCopy = err;
         dispatch_async(dispatch_get_main_queue(), ^{
-            [_spinner stopAnimation:nil];
+            [self->_spinner stopAnimation:nil];
             if (!errCopy.empty()) {
-                _statusLabel.stringValue = [NSString stringWithFormat:@"Error: %s", errCopy.c_str()];
+                self->_statusLabel.stringValue = [NSString stringWithFormat:@"Error: %s", errCopy.c_str()];
                 return;
             }
             NSUInteger artists = 0, libraries = 0;
@@ -524,11 +524,11 @@ NBCWrapList(const std::vector<navidrome::BrowserNodePtr> &nodes) {
                 if (n.type == NavidromeNodeTypeArtist)  ++artists;
                 if (n.type == NavidromeNodeTypeLibrary) ++libraries;
             }
-            [_rootNodes addObjectsFromArray:roots];
-            _statusLabel.stringValue = libraries
+            [self->_rootNodes addObjectsFromArray:roots];
+            self->_statusLabel.stringValue = libraries
                 ? [NSString stringWithFormat:@"%lu libraries", (unsigned long)libraries]
                 : [NSString stringWithFormat:@"%lu artists", (unsigned long)artists];
-            [_outlineView reloadData];
+            [self->_outlineView reloadData];
         });
     });
 }
@@ -645,24 +645,24 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
             // in flight — drop it instead of clobbering newer results.
             if (generation != self->_searchGeneration) return;
 
-            [_spinner stopAnimation:nil];
-            [_filteredNodes removeAllObjects];
+            [self->_spinner stopAnimation:nil];
+            [self->_filteredNodes removeAllObjects];
 
             if (err || !results) {
-                _statusLabel.stringValue = [NSString stringWithFormat:@"Search error: %@", err.localizedDescription];
-                [_outlineView reloadData];
+                self->_statusLabel.stringValue = [NSString stringWithFormat:@"Search error: %@", err.localizedDescription];
+                [self->_outlineView reloadData];
                 return;
             }
 
             // Build flat list of song nodes matching the search
             NSArray<SubsonicSong *> *songs = results[@"songs"];
             for (SubsonicSong *s in songs)
-                [_filteredNodes addObject:[NavidromeNode songNode:s]];
-            syncSongNodesToPlaylists(_filteredNodes);
+                [self->_filteredNodes addObject:[NavidromeNode songNode:s]];
+            syncSongNodesToPlaylists(self->_filteredNodes);
 
-            _statusLabel.stringValue = [NSString stringWithFormat:@"%lu songs found", (unsigned long)songs.count];
+            self->_statusLabel.stringValue = [NSString stringWithFormat:@"%lu songs found", (unsigned long)songs.count];
 
-            [_outlineView reloadData];
+            [self->_outlineView reloadData];
         });
     });
 }
@@ -728,9 +728,9 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
         NSError *err = nil;
         NSMutableArray<NavidromeNode *> *songs = [self collectSelectionSongs:nodesCopy error:&err];
         dispatch_async(dispatch_get_main_queue(), ^{
-            [_spinner stopAnimation:nil];
+            [self->_spinner stopAnimation:nil];
             if (err) {
-                _statusLabel.stringValue = [NSString stringWithFormat:@"Error: %@",
+                self->_statusLabel.stringValue = [NSString stringWithFormat:@"Error: %@",
                                             err.localizedDescription];
             } else {
                 [self enqueueNodes:songs play:play clearFirst:clearFirst];
@@ -898,12 +898,12 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
         NSString *lastFmUrl = info.lastFmUrl.empty() ? nil : @(info.lastFmUrl.c_str());
         std::string errCopy = err;
         dispatch_async(dispatch_get_main_queue(), ^{
-            [_spinner stopAnimation:nil];
+            [self->_spinner stopAnimation:nil];
             if (!errCopy.empty()) {
-                _statusLabel.stringValue = [NSString stringWithFormat:@"Error: %s", errCopy.c_str()];
+                self->_statusLabel.stringValue = [NSString stringWithFormat:@"Error: %s", errCopy.c_str()];
                 return;
             }
-            _statusLabel.stringValue = @"";
+            self->_statusLabel.stringValue = @"";
             NSAlert *alert = [[NSAlert alloc] init];
             alert.messageText = artistName;
             alert.informativeText = text;
@@ -927,13 +927,13 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
         NSMutableArray<NavidromeNode *> *songNodes = NBCWrapList(nodes);
         std::string errCopy = err;
         dispatch_async(dispatch_get_main_queue(), ^{
-            [_spinner stopAnimation:nil];
+            [self->_spinner stopAnimation:nil];
             if (!errCopy.empty()) {
-                _statusLabel.stringValue = [NSString stringWithFormat:@"Error: %s", errCopy.c_str()];
+                self->_statusLabel.stringValue = [NSString stringWithFormat:@"Error: %s", errCopy.c_str()];
                 return;
             }
             if (songNodes.count == 0) {
-                _statusLabel.stringValue = @"No tracks found";
+                self->_statusLabel.stringValue = @"No tracks found";
                 return;
             }
             [self enqueueNodes:songNodes play:YES clearFirst:NO];
@@ -984,17 +984,17 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
             NAVIDROME_WARN("UI", std::string(starred ? "star" : "unstar") +
                 " failed: " + result.error);
         dispatch_async(dispatch_get_main_queue(), ^{
-            [_spinner stopAnimation:nil];
+            [self->_spinner stopAnimation:nil];
             for (NSUInteger i = 0; i < targets.count; i++)
                 targets[i].starred = core[i]->starred;
             if (!result.error.empty()) {
-                _statusLabel.stringValue =
+                self->_statusLabel.stringValue =
                     [NSString stringWithFormat:@"Error: %s", result.error.c_str()];
             } else {
-                _statusLabel.stringValue = [NSString stringWithFormat:@"%@ %lu item(s)",
+                self->_statusLabel.stringValue = [NSString stringWithFormat:@"%@ %lu item(s)",
                     starred ? @"Starred" : @"Unstarred", (unsigned long)result.done];
             }
-            [_outlineView reloadData];
+            [self->_outlineView reloadData];
         });
     });
 }
@@ -1024,13 +1024,13 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
             NAVIDROME_WARN("UI", "setRatingFromMenu: rating=" + std::to_string((long)rating) +
                 " failed: " + result.error);
         dispatch_async(dispatch_get_main_queue(), ^{
-            [_spinner stopAnimation:nil];
+            [self->_spinner stopAnimation:nil];
             for (NSUInteger i = 0; i < songs.count; i++)
                 songs[i].rating = core[i]->rating;
-            _statusLabel.stringValue = !result.error.empty()
+            self->_statusLabel.stringValue = !result.error.empty()
                 ? [NSString stringWithFormat:@"Error: %s", result.error.c_str()]
                 : [NSString stringWithFormat:@"Rated %lu song(s)", (unsigned long)songs.count];
-            [_outlineView reloadData];
+            [self->_outlineView reloadData];
         });
     });
 }
@@ -1079,14 +1079,14 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
             NAVIDROME_WARN("UI", "sendActivePlaylist \"" + NBCStr(name) + "\" failed: " +
                 NBCStr(err.localizedDescription));
         dispatch_async(dispatch_get_main_queue(), ^{
-            [_spinner stopAnimation:nil];
+            [self->_spinner stopAnimation:nil];
             if (!ok) {
-                _statusLabel.stringValue =
+                self->_statusLabel.stringValue =
                     [NSString stringWithFormat:@"Upload failed: %@",
                      err.localizedDescription ?: @"Unknown error"];
                 return;
             }
-            _statusLabel.stringValue = skippedCount > 0
+            self->_statusLabel.stringValue = skippedCount > 0
                 ? [NSString stringWithFormat:@"Sent “%@” (%lu tracks, %lu non-Navidrome skipped)",
                    name, (unsigned long)songIds.count, (unsigned long)skippedCount]
                 : [NSString stringWithFormat:@"Sent “%@” (%lu tracks)",
@@ -1198,8 +1198,8 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
         NSArray<SubsonicPlaylist *> *lists =
             [SubsonicClient.sharedClient getPlaylistsWithError:&err];
         dispatch_async(dispatch_get_main_queue(), ^{
-            _playlistsLoading = NO;
-            if (!err && lists) _serverPlaylists = lists;
+            self->_playlistsLoading = NO;
+            if (!err && lists) self->_serverPlaylists = lists;
         });
     });
 }
@@ -1255,7 +1255,7 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
             if (s.nodeId.length) [ids addObject:s.nodeId];
 
         dispatch_async(dispatch_get_main_queue(), ^{
-            [_spinner stopAnimation:nil];
+            [self->_spinner stopAnimation:nil];
             done(ids, err);
         });
     });
@@ -1502,7 +1502,7 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
         NSArray<SubsonicRadioStation *> *stations =
             [SubsonicClient.sharedClient getRadioStationsWithError:&err];
         dispatch_async(dispatch_get_main_queue(), ^{
-            if (!err && stations) _radioStations = stations;
+            if (!err && stations) self->_radioStations = stations;
         });
     });
 }

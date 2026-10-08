@@ -50,6 +50,9 @@ echo "mac-ci-build: xcodebuild Release ..."
 # message would otherwise scroll off-screen, hidden behind thousands of lines).
 LOG=/tmp/xcodebuild.log
 set +e
+# mac-workspace.xcconfig silences SDK-side warnings (NDEBUG, SDK header/source noise) for every
+# target in the workspace; read it before adding anything there. The explicit destination
+# avoids "Using the first of multiple matching destinations" and always builds universal.
 # MACOSX_DEPLOYMENT_TARGET on the command line applies to every target in the workspace, ours
 # and the SDK's own projects alike. Those still declare 11.0, and Xcode 26+ rejects it outright
 # ("the range of supported deployment target versions is 12.0 to ..."); the SDK tree is
@@ -68,6 +71,8 @@ xcodebuild \
     -scheme foo_navidrome \
     -configuration Release \
     -derivedDataPath build/derived \
+    -destination "generic/platform=macOS" \
+    -xcconfig "$SCRIPT_DIR/mac-workspace.xcconfig" \
     MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-12.0}" \
     ${EXTRA[@]+"${EXTRA[@]}"} \
     build > "$LOG" 2>&1
