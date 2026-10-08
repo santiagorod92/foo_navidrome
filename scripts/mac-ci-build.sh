@@ -3,8 +3,8 @@
 #
 # Usage: ./mac-ci-build.sh <new-version>
 #
-# 1. Writes the new version to version.txt (single source of truth read by the
-#    Xcode "Generate Version Header" build phase).
+# 1. Pins the version: passed to xcodebuild as the NAVIDROME_VERSION build setting, which
+#    the "Generate Version Header" phase (scripts/version.sh) prefers over git describe.
 # 2. Builds the Release configuration with xcodebuild.
 # 3. Packages the built .component into a .fb2k-component zip in the repo root.
 #
@@ -19,7 +19,7 @@ fi
 
 VERSION="$1"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"   # scripts/
-ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"          # repo root (xcodeproj, version.txt)
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"          # repo root (xcodeproj)
 COMPONENT_NAME="foo_navidrome"
 
 cd "$ROOT"
@@ -27,7 +27,7 @@ cd "$ROOT"
 # ---------------------------------------------------------------------------
 # 1. Pin version
 # ---------------------------------------------------------------------------
-echo "$VERSION" > version.txt
+export NAVIDROME_VERSION="$VERSION"
 echo "mac-ci-build: version = $VERSION"
 
 # Expose the resolved version to the GitHub Actions step that invoked
@@ -74,6 +74,7 @@ xcodebuild \
     -destination "generic/platform=macOS" \
     -xcconfig "$SCRIPT_DIR/mac-workspace.xcconfig" \
     MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-12.0}" \
+    NAVIDROME_VERSION="$VERSION" \
     ${EXTRA[@]+"${EXTRA[@]}"} \
     build > "$LOG" 2>&1
 XCB_RC=$?

@@ -56,8 +56,7 @@ cat > "$PREFIX_H" <<'EOF'
 #include <winioctl.h>
 EOF
 
-[ -f "$REPO/version.txt" ] && \
-  printf '#pragma once\n#define COMPONENT_VERSION "%s"\n' "$(cat "$REPO/version.txt")" > "$REPO/version_generated.h"
+"$REPO/scripts/version.sh" --header "$REPO/version_generated.h" >/dev/null
 
 SYS_INC=(-imsvc "$WTL" -imsvc "$XWIN/crt/include" -imsvc "$XWIN/sdk/include/um"
          -imsvc "$XWIN/sdk/include/shared" -imsvc "$XWIN/sdk/include/ucrt" -imsvc "$XWIN/sdk/include/winrt")

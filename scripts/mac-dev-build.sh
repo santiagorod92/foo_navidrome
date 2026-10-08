@@ -1,11 +1,15 @@
 #!/bin/bash
-# macOS developer build script: bump version, build, install.
+# macOS developer build script: build, install (optionally stamp a bumped version).
+#
+# The component version comes from scripts/version.sh (git describe, e.g.
+# 1.21.1-dev.3+2a46400 between releases), so a plain build needs no bump.
 #
 # Usage:
-#   ./mac-dev-build.sh                  — bump patch, build, install locally
+#   ./mac-dev-build.sh                  — build, install locally (no bump)
+#   ./mac-dev-build.sh --patch          — stamp the last release tag's patch + 1
 #   ./mac-dev-build.sh --minor          — bump minor (resets patch to 0)
 #   ./mac-dev-build.sh --major          — bump major (resets minor + patch to 0)
-#   ./mac-dev-build.sh --no-bump        — skip the version bump (just build + install)
+#   ./mac-dev-build.sh --no-bump        — no bump (the default; kept for old muscle memory)
 #   ./mac-dev-build.sh --no-install     — build only (skip install-macos.sh)
 #   ./mac-dev-build.sh --no-test        — skip the unit tests that otherwise gate the build
 #   ./mac-dev-build.sh --new-release    — bump, build, install, then create a GitHub release
@@ -14,9 +18,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"   # scripts/
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"          # repo root
-VERSION_FILE="${ROOT}/version.txt"
 
-BUMP="patch"
+BUMP="none"
 DO_INSTALL=true
 DO_RELEASE=false
 RUN_TESTS=true
@@ -44,29 +47,30 @@ if [ "$RUN_TESTS" = true ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 1. Bump version.txt
+# 1. Version: git describe, or the last release tag + an explicit bump
+#    (scripts/version.sh --base). Nothing is written to the tree.
 # ---------------------------------------------------------------------------
-if [ ! -f "$VERSION_FILE" ]; then
-    echo "1.0.0" > "$VERSION_FILE"
-fi
-
-CURRENT=$(tr -d '[:space:]' < "$VERSION_FILE")
-IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
-MAJOR="${MAJOR:-1}"; MINOR="${MINOR:-0}"; PATCH="${PATCH:-0}"
-
-case "$BUMP" in
-    major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
-    minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
-    patch) PATCH=$((PATCH + 1)) ;;
-    none)  ;;
-esac
-
-NEW="${MAJOR}.${MINOR}.${PATCH}"
 if [ "$BUMP" != "none" ]; then
-    echo "$NEW" > "$VERSION_FILE"
-    echo "Version: ${CURRENT} -> ${NEW}"
-else
-    echo "Version: ${CURRENT} (no bump)"
+    CURRENT="$("$SCRIPT_DIR/version.sh" --base)"
+    IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+    MAJOR="${MAJOR:-0}"; MINOR="${MINOR:-0}"; PATCH="${PATCH:-0}"
+    case "$BUMP" in
+        major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+        minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+        patch) PATCH=$((PATCH + 1)) ;;
+    esac
+    echo "Bump: ${CURRENT} -> ${MAJOR}.${MINOR}.${PATCH}"
+    export NAVIDROME_VERSION="${MAJOR}.${MINOR}.${PATCH}"   # an explicit bump is what gets stamped
+fi
+# Resolved here, in the real checkout: the SDK-tree copy below is rsynced without .git, so
+# git describe can't run there. Passed to xcodebuild as a build setting, which the
+# "Generate Version Header" phase reads; the root header is what install-macos.sh names
+# the package and tags a --new-release after.
+VERSION="$("$SCRIPT_DIR/version.sh" --header "$ROOT/version_generated.h")"
+echo "Version: ${VERSION}"
+if [ "$DO_RELEASE" = true ] && [ "$BUMP" = "none" ]; then
+    echo "--new-release needs --patch/--minor/--major: ${VERSION} is a dev or already-released version." >&2
+    exit 1
 fi
 
 # ---------------------------------------------------------------------------
@@ -149,6 +153,7 @@ if xcodebuild \
     -destination "generic/platform=macOS" \
     -xcconfig "$SCRIPT_DIR/mac-workspace.xcconfig" \
     MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-12.0}" \
+    NAVIDROME_VERSION="$VERSION" \
     ${XCB_EXTRA[@]+"${XCB_EXTRA[@]}"} \
     build > "$LOG" 2>&1; then
     grep -E "warning:|\*\* BUILD" "$LOG" | grep -v "iOSSimulator" | tail -n 10 || true
@@ -173,12 +178,12 @@ if [ "$DO_INSTALL" = true ]; then
         DBG_LOG=/tmp/foo_navidrome_debug.log
         : > "$DBG_LOG" 2>/dev/null || true
         printf '==== build %s installed %s ====\n' \
-            "$NEW" "$(date '+%Y-%m-%d %H:%M:%S')" >> "$DBG_LOG" 2>/dev/null || true
+            "$VERSION" "$(date '+%Y-%m-%d %H:%M:%S')" >> "$DBG_LOG" 2>/dev/null || true
     fi
 fi
 
 echo ""
-echo "Done. Restart foobar2000 to load v${NEW}."
+echo "Done. Restart foobar2000 to load v${VERSION}."
 if [ "$DO_INSTALL" = true ] && [ "$DO_RELEASE" = false ]; then
     echo "Then follow component traces with:  make mac-logs"
 fi
