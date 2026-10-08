@@ -51,3 +51,6 @@ build-mac/
 Xcode_*.xip
 
 **/.env
+
+# Graphify
+graphify-out/
