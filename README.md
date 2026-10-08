@@ -387,7 +387,8 @@ remain the source of truth. Highlights:
 
 Targets follow an `<os>-<action>` naming scheme — `win-*` for the Linux
 cross-compile, `mac-*` for the native macOS build, `win-vm-*` for the
-Windows-on-macOS VM flow, `mac-vm-*` for the macOS-on-Linux VM flow.
+Windows-on-macOS VM flow, `mac-vm-*` for the macOS-on-Linux VM flow, `win11-*` for the
+Windows-11-on-Linux VM flow.
 
 ```bash
 make test          # Linux: fast clang-cl+wine build/run of the unit tests
@@ -403,6 +404,7 @@ make mac-release    # macOS: bump, build, install, package, gh release create
 make mac-ci-build VERSION=1.11.0     # hermetic macOS CI build
 make win-vm-test ARGS="--launch" # Windows-on-macOS VM: cross-build, deploy, relaunch
 make mac-vm-release  # macOS-on-Linux VM (../macos-devbox): deploy the latest release, relaunch
+make win11-smoke     # Windows 11 VM on Linux (../windows-devbox): build, deploy, UI smoke test
 ```
 
 ### Linux — build & test the Windows component (current dev environment)
@@ -490,6 +492,28 @@ hardware. See [`scripts/mac-vm/README.md`](scripts/mac-vm/README.md).
 | `make mac-vm-ui ARGS=…` | Same driver without the build: `smoke [COMPONENT]`, `browser`, `log 50` |
 | `make mac-vm-build[-test]` | Build in the guest with xcodebuild, pull the `.fb2k-component` back (then deploy) |
 | `make mac-vm-<cmd>` | Any `mvm` command: `-up`, `-down`, `-ssh`, `-shot`, `-snapshot ARGS=name`, … |
+
+### Linux — runtime-test the *Windows* component on real Windows 11
+
+Wine runs the component fine, but its GUI isn't Windows: it reports Dark Mode as unsupported,
+draws some controls differently and needs workarounds for DPI scaling. For those cases there's
+a real Windows 11 VM, the sibling repo `../windows-devbox` (its `wvm` CLI):
+[dockur/windows](https://github.com/dockur/windows) on QEMU/KVM, installed unattended (no
+clicks), with SSH, snapshots, a browser screen, VNC input and foobar2000 x64. The Wine targets
+above stay the fast loop. The guest's `Z:` is a host folder, so the debug build's log
+(`Z:\tmp\foo_navidrome_debug.log`) is read on the host as-is.
+
+| Command | What it does |
+|---------|--------------|
+| `make win11 [VNC=0]` | Boot the VM, open its screen (noVNC) in the browser, wait for the desktop, deploy the latest GitHub release |
+| `make win11-vnc` | Boot the VM (no-op if it's already up) and open its screen in the browser. Deploys nothing |
+| `make win11-open` | Open the VM screen once the container's web viewer answers |
+| `make win11-seed` | Copy foo_navidrome's settings (server, account, AudioMuse…) from the Wine profile into the VM's foobar2000 |
+| `make win11-test` | Cross-build the x64 DLL (debug log on), deploy it into the VM, relaunch |
+| `make win11-smoke` | Build, deploy, then run the scripted UI smoke test (open browser → expand artist → play album) with log/crash assertions and screenshots |
+| `make win11-ui ARGS=…` | Same driver without the build: `smoke [DLL]`, `browser`, `prefs radio`, `log 50` |
+| `make win11-logs` | Follow the guest's debug log |
+| `make win11-<cmd>` | Any `wvm` command: `-up`, `-down`, `-shot`, `-snapshot ARGS=name`, `-dpi ARGS=144`, `-theme ARGS=dark`, … |
 
 ### CI (GitHub Actions — not run by hand)
 

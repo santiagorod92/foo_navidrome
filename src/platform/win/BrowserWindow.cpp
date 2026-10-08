@@ -4,6 +4,9 @@
 #include "SubsonicClientWin.h"
 #include "../../core/NavidromeBrowserEnqueue.h"
 #include "../../core/NavidromeAudioMuse.h"
+#include "WinUi.h"
+#include <uxtheme.h>
+#pragma comment(lib, "uxtheme.lib")
 #include <SDK/playlist.h>
 #include <SDK/metadb.h>
 #include <SDK/playable_location.h>
@@ -57,6 +60,42 @@ static std::string wToU8(const std::wstring& w) {
 // ---------------------------------------------------------------------------
 namespace {
 
+// Sizes a prompt popup to its laid-out client area and centers it on the owner
+// (or leaves it where Windows put it when there isn't one).
+void placePrompt(CWindow& w, HWND owner, SIZE client) {
+    RECT rc{ 0, 0, client.cx, client.cy };
+    ::AdjustWindowRectEx(&rc, static_cast<DWORD>(w.GetWindowLongPtr(GWL_STYLE)), FALSE,
+                         static_cast<DWORD>(w.GetWindowLongPtr(GWL_EXSTYLE)));
+    const int ww = rc.right - rc.left, wh = rc.bottom - rc.top;
+    RECT rcOwner{};
+    if (owner && ::GetWindowRect(owner, &rcOwner)) {
+        int x = rcOwner.left + ((rcOwner.right - rcOwner.left) - ww) / 2;
+        int y = rcOwner.top + ((rcOwner.bottom - rcOwner.top) - wh) / 2;
+        w.SetWindowPos(nullptr, x, y, ww, wh, SWP_NOZORDER);
+    } else {
+        w.SetWindowPos(nullptr, 0, 0, ww, wh, SWP_NOMOVE | SWP_NOZORDER);
+    }
+}
+
+// Creates the OK (default) + Cancel pair right-aligned to `right` at row `y`;
+// returns the client size that fits everything above plus the buttons.
+SIZE layoutOkCancel(HWND parent, HFONT f, const navidrome::win::UiScale& s,
+                    int right, int y, int btnH) {
+    using namespace navidrome::win;
+    auto mk = [&](const wchar_t* text, DWORD style, int id) {
+        HWND b = CreateWindowW(L"BUTTON", text, WS_CHILD | WS_VISIBLE | WS_TABSTOP | style,
+            0, 0, 0, 0, parent, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), nullptr, nullptr);
+        setFont(b, f);
+        return b;
+    };
+    HWND ok = mk(L"OK", BS_DEFPUSHBUTTON, IDOK);
+    HWND cancel = mk(L"Cancel", BS_PUSHBUTTON, IDCANCEL);
+    const int okW = fitWidth(ok, s, 24, 76), cancelW = fitWidth(cancel, s, 24, 76);
+    ::SetWindowPos(cancel, nullptr, right - cancelW, y, cancelW, btnH, SWP_NOZORDER);
+    ::SetWindowPos(ok, nullptr, right - cancelW - s(8) - okW, y, okW, btnH, SWP_NOZORDER);
+    return SIZE{ right + s(12), y + btnH + s(12) };
+}
+
 class TextPromptWindow : public CWindowImpl<TextPromptWindow> {
 public:
     DECLARE_WND_CLASS(L"foo_navidrome_PromptWnd")
@@ -72,15 +111,7 @@ public:
                  WS_POPUP | WS_CAPTION | WS_SYSMENU, WS_EX_DLGMODALFRAME);
         if (!w.IsWindow()) return false;
 
-        // Center on the owner (or the screen when there isn't one).
-        RECT rcOwner{};
-        if (owner && ::GetWindowRect(owner, &rcOwner)) {
-            int x = rcOwner.left + ((rcOwner.right - rcOwner.left) - 360) / 2;
-            int y = rcOwner.top + ((rcOwner.bottom - rcOwner.top) - 140) / 2;
-            w.SetWindowPos(nullptr, x, y, 360, 140, SWP_NOZORDER);
-        } else {
-            w.SetWindowPos(nullptr, 0, 0, 360, 140, SWP_NOMOVE | SWP_NOZORDER);
-        }
+        placePrompt(w, owner, w.m_clientSize);
 
         if (owner) ::EnableWindow(owner, FALSE);
         w.ShowWindow(SW_SHOW);
@@ -109,40 +140,43 @@ public:
     }
 
     BEGIN_MSG_MAP(TextPromptWindow)
+        MSG_WM_ERASEBKGND(OnEraseBkgnd)
         MSG_WM_CREATE(OnCreate)
         MSG_WM_CLOSE(OnClose)
         COMMAND_ID_HANDLER_EX(IDOK,     OnOk)
         COMMAND_ID_HANDLER_EX(IDCANCEL, OnCancel)
     END_MSG_MAP()
 
+    BOOL OnEraseBkgnd(CDCHandle dc) { navidrome::win::eraseLikeDialog(*this, dc); return TRUE; }
+
 private:
     enum { IDC_PROMPT_LABEL = 4001, IDC_PROMPT_EDIT = 4002 };
 
     LRESULT OnCreate(LPCREATESTRUCT) {
-        HFONT f = reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
-        auto setFont = [&](HWND h) { SendMessageW(h, WM_SETFONT, reinterpret_cast<WPARAM>(f), 0); };
+        using namespace navidrome::win;
+        const UiScale s(*this);
+        const HFONT f = uiFont(*this);
+        const int pad = s(12), fieldW = s(330), lineH = lineHeight(*this, f);
+        const int rowH = (std::max)(s(22), lineH + s(8));
 
-        setFont(CreateWindowW(L"STATIC", m_label.c_str(), WS_CHILD | WS_VISIBLE,
-            12, 12, 330, 18, *this,
-            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_PROMPT_LABEL)), nullptr, nullptr));
+        HWND label = CreateWindowW(L"STATIC", m_label.c_str(), WS_CHILD | WS_VISIBLE,
+            pad, pad, fieldW, lineH, *this,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_PROMPT_LABEL)), nullptr, nullptr);
+        setFont(label, f);
 
+        int y = pad + lineH + s(4);
         m_edit.Create(*this, CWindow::rcDefault, nullptr,
             WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL,
             0, IDC_PROMPT_EDIT);
-        m_edit.SetWindowPos(nullptr, 12, 34, 330, 22, SWP_NOZORDER);
+        m_edit.SetWindowPos(nullptr, pad, y, fieldW, rowH, SWP_NOZORDER);
         m_edit.SetFont(f);
         m_edit.SetWindowText(m_value.c_str());
         m_edit.SetSel(0, -1);
+        y += rowH + s(12);
 
         // BS_DEFPUSHBUTTON is what makes IsDialogMessage translate Enter to IDOK.
-        setFont(CreateWindowW(L"BUTTON", L"OK",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
-            180, 68, 76, 26, *this,
-            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDOK)), nullptr, nullptr));
-        setFont(CreateWindowW(L"BUTTON", L"Cancel",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-            264, 68, 76, 26, *this,
-            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDCANCEL)), nullptr, nullptr));
+        m_clientSize = layoutOkCancel(*this, f, s, pad + fieldW, y, rowH + s(4));
+        m_darkMode.AddDialogWithControls(*this);
         return 0;
     }
 
@@ -162,8 +196,10 @@ private:
     CEdit        m_edit;
     std::wstring m_label;
     std::wstring m_value;
+    SIZE         m_clientSize{};
     bool         m_accepted = false;
     bool         m_done     = false;
+    fb2k::CCoreDarkModeHooks m_darkMode;
 };
 
 // ---------------------------------------------------------------------------
@@ -190,14 +226,7 @@ public:
                  WS_POPUP | WS_CAPTION | WS_SYSMENU, WS_EX_DLGMODALFRAME);
         if (!w.IsWindow()) return false;
 
-        RECT rcOwner{};
-        if (owner && ::GetWindowRect(owner, &rcOwner)) {
-            int x = rcOwner.left + ((rcOwner.right - rcOwner.left) - 360) / 2;
-            int y = rcOwner.top + ((rcOwner.bottom - rcOwner.top) - 220) / 2;
-            w.SetWindowPos(nullptr, x, y, 360, 220, SWP_NOZORDER);
-        } else {
-            w.SetWindowPos(nullptr, 0, 0, 360, 220, SWP_NOMOVE | SWP_NOZORDER);
-        }
+        placePrompt(w, owner, w.m_clientSize);
 
         if (owner) ::EnableWindow(owner, FALSE);
         w.ShowWindow(SW_SHOW);
@@ -226,11 +255,14 @@ public:
     }
 
     BEGIN_MSG_MAP(RadioStationPromptWindow)
+        MSG_WM_ERASEBKGND(OnEraseBkgnd)
         MSG_WM_CREATE(OnCreate)
         MSG_WM_CLOSE(OnClose)
         COMMAND_ID_HANDLER_EX(IDOK,     OnOk)
         COMMAND_ID_HANDLER_EX(IDCANCEL, OnCancel)
     END_MSG_MAP()
+
+    BOOL OnEraseBkgnd(CDCHandle dc) { navidrome::win::eraseLikeDialog(*this, dc); return TRUE; }
 
 private:
     enum {
@@ -240,48 +272,33 @@ private:
     };
 
     LRESULT OnCreate(LPCREATESTRUCT) {
-        HFONT f = reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
-        auto setFont = [&](HWND h) { SendMessageW(h, WM_SETFONT, reinterpret_cast<WPARAM>(f), 0); };
+        using namespace navidrome::win;
+        const UiScale s(*this);
+        const HFONT f = uiFont(*this);
+        const int pad = s(12), fieldW = s(330), lineH = lineHeight(*this, f);
+        const int rowH = (std::max)(s(22), lineH + s(8));
 
-        setFont(CreateWindowW(L"STATIC", L"Name:", WS_CHILD | WS_VISIBLE,
-            12, 12, 330, 18, *this,
-            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_NAME_LABEL)), nullptr, nullptr));
-        m_nameEdit.Create(*this, CWindow::rcDefault, nullptr,
-            WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL,
-            0, IDC_NAME_EDIT);
-        m_nameEdit.SetWindowPos(nullptr, 12, 34, 330, 22, SWP_NOZORDER);
-        m_nameEdit.SetFont(f);
-        m_nameEdit.SetWindowText(m_name.c_str());
+        int y = pad;
+        auto field = [&](int labelId, const wchar_t* text, CEdit& edit, int editId,
+                         const std::wstring& value) {
+            setFont(CreateWindowW(L"STATIC", text, WS_CHILD | WS_VISIBLE,
+                pad, y, fieldW, lineH, *this,
+                reinterpret_cast<HMENU>(static_cast<INT_PTR>(labelId)), nullptr, nullptr), f);
+            y += lineH + s(4);
+            edit.Create(*this, CWindow::rcDefault, nullptr,
+                WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL, 0, editId);
+            edit.SetWindowPos(nullptr, pad, y, fieldW, rowH, SWP_NOZORDER);
+            edit.SetFont(f);
+            edit.SetWindowText(value.c_str());
+            y += rowH + s(10);
+        };
+        field(IDC_NAME_LABEL, L"Name:", m_nameEdit, IDC_NAME_EDIT, m_name);
         m_nameEdit.SetSel(0, -1);
+        field(IDC_URL_LABEL, L"Stream URL:", m_urlEdit, IDC_URL_EDIT, m_streamURL);
+        field(IDC_HOME_LABEL, L"Home page URL (optional):", m_homeEdit, IDC_HOME_EDIT, m_homePageURL);
 
-        setFont(CreateWindowW(L"STATIC", L"Stream URL:", WS_CHILD | WS_VISIBLE,
-            12, 66, 330, 18, *this,
-            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_URL_LABEL)), nullptr, nullptr));
-        m_urlEdit.Create(*this, CWindow::rcDefault, nullptr,
-            WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL,
-            0, IDC_URL_EDIT);
-        m_urlEdit.SetWindowPos(nullptr, 12, 88, 330, 22, SWP_NOZORDER);
-        m_urlEdit.SetFont(f);
-        m_urlEdit.SetWindowText(m_streamURL.c_str());
-
-        setFont(CreateWindowW(L"STATIC", L"Home page URL (optional):", WS_CHILD | WS_VISIBLE,
-            12, 120, 330, 18, *this,
-            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_HOME_LABEL)), nullptr, nullptr));
-        m_homeEdit.Create(*this, CWindow::rcDefault, nullptr,
-            WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL,
-            0, IDC_HOME_EDIT);
-        m_homeEdit.SetWindowPos(nullptr, 12, 142, 330, 22, SWP_NOZORDER);
-        m_homeEdit.SetFont(f);
-        m_homeEdit.SetWindowText(m_homePageURL.c_str());
-
-        setFont(CreateWindowW(L"BUTTON", L"OK",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
-            180, 178, 76, 26, *this,
-            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDOK)), nullptr, nullptr));
-        setFont(CreateWindowW(L"BUTTON", L"Cancel",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-            264, 178, 76, 26, *this,
-            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDCANCEL)), nullptr, nullptr));
+        m_clientSize = layoutOkCancel(*this, f, s, pad + fieldW, y + s(2), rowH + s(4));
+        m_darkMode.AddDialogWithControls(*this);
         return 0;
     }
 
@@ -306,8 +323,10 @@ private:
 
     CEdit        m_nameEdit, m_urlEdit, m_homeEdit;
     std::wstring m_name, m_streamURL, m_homePageURL;
+    SIZE         m_clientSize{};
     bool         m_accepted = false;
     bool         m_done     = false;
+    fb2k::CCoreDarkModeHooks m_darkMode;
 };
 
 // Folder chooser for "Download Original Files". SHBrowseForFolder keeps this to
@@ -334,6 +353,27 @@ bool pickFolder(HWND owner, std::wstring& outPath) {
     return ok;
 }
 
+// Dark Mode for a prefs page holding a SysListView32. coreDarkMode's hook for
+// a list view left it unpainted (blank, under Wine at least — issue #18), so
+// the page and every other child go through the hooks and a list view is
+// themed by hand, only when foobar is dark.
+void addDarkModeHooksKeepingLists(fb2k::CCoreDarkModeHooks& dark, HWND page) {
+    dark.AddDialog(page);
+    for (HWND c = ::GetWindow(page, GW_CHILD); c; c = ::GetWindow(c, GW_HWNDNEXT)) {
+        wchar_t cls[64] = {};
+        ::GetClassNameW(c, cls, 64);
+        if (::lstrcmpiW(cls, WC_LISTVIEWW) != 0) { dark.AddCtrlAuto(c); continue; }
+        if (!dark) continue;
+        const COLORREF bg = RGB(0x20, 0x20, 0x20), text = RGB(0xDE, 0xDE, 0xDE);
+        ListView_SetBkColor(c, bg);
+        ListView_SetTextBkColor(c, bg);
+        ListView_SetTextColor(c, text);
+        ::SetWindowTheme(c, L"DarkMode_Explorer", nullptr);       // scrollbars
+        if (HWND header = ListView_GetHeader(c))
+            ::SetWindowTheme(header, L"DarkMode_ItemsView", nullptr);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Preferences > Media Library > Navidrome > Radio Stations — dedicated
 // sub-page nested under the main Navidrome credentials page (guid_prefs_page)
@@ -352,13 +392,14 @@ public:
     // Read-only management view — nothing here is "applied", every action is
     // a live server request, so this page never reports itself as changed.
     HWND     get_wnd() override { return m_hWnd; }
-    t_uint32 get_state() override { return 0; }
+    t_uint32 get_state() override { return preferences_state::dark_mode_supported; }
     void     apply() override {}
     void     reset() override {}
 
     enum { WM_RADIO_LOADED = WM_USER + 200 };
 
     BEGIN_MSG_MAP(NavidromeRadioPrefsInstance)
+        MSG_WM_ERASEBKGND(OnEraseBkgnd)
         MSG_WM_CREATE(OnCreate)
         MSG_WM_SIZE(OnSize)
         MESSAGE_HANDLER_EX(WM_RADIO_LOADED, OnRadioLoaded)
@@ -366,6 +407,8 @@ public:
         COMMAND_ID_HANDLER_EX(IDC_EDIT,   OnEdit)
         COMMAND_ID_HANDLER_EX(IDC_DELETE, OnDelete)
     END_MSG_MAP()
+
+    BOOL OnEraseBkgnd(CDCHandle dc) { navidrome::win::eraseLikeDialog(*this, dc); return TRUE; }
 
 private:
     enum { IDC_LIST = 5001, IDC_NEW = 5002, IDC_EDIT = 5003, IDC_DELETE = 5004, IDC_STATUS = 5005 };
@@ -375,41 +418,48 @@ private:
             WS_CHILD | WS_VISIBLE | WS_BORDER | LVS_REPORT | LVS_SINGLESEL | WS_TABSTOP,
             WS_EX_CLIENTEDGE, IDC_LIST);
         m_list.SetExtendedListViewStyle(LVS_EX_FULLROWSELECT);
-        m_list.InsertColumn(0, L"Name", LVCFMT_LEFT, 150);
-        m_list.InsertColumn(1, L"Stream URL", LVCFMT_LEFT, 260);
-        m_list.InsertColumn(2, L"Home Page", LVCFMT_LEFT, 180);
+        const navidrome::win::UiScale s(*this);
+        m_list.InsertColumn(0, L"Name", LVCFMT_LEFT, s(150));
+        m_list.InsertColumn(1, L"Stream URL", LVCFMT_LEFT, s(260));
+        m_list.InsertColumn(2, L"Home Page", LVCFMT_LEFT, s(180));
 
-        HFONT f = reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+        HFONT f = navidrome::win::uiFont(*this);
+        m_list.SetFont(f);
+        m_lineH = navidrome::win::lineHeight(*this, f);
         auto mkButton = [&](int id, const wchar_t* text) {
             HWND h = CreateWindowW(L"BUTTON", text, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-                0, 0, 90, 26, *this, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), nullptr, nullptr);
-            SendMessageW(h, WM_SETFONT, reinterpret_cast<WPARAM>(f), 0);
+                0, 0, 0, 0, *this, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), nullptr, nullptr);
+            navidrome::win::setFont(h, f);
             return h;
         };
-        m_newBtn    = mkButton(IDC_NEW, L"New…");
-        m_editBtn   = mkButton(IDC_EDIT, L"Edit…");
-        m_deleteBtn = mkButton(IDC_DELETE, L"Delete…");
+        m_newBtn    = mkButton(IDC_NEW, L"New\u2026");
+        m_editBtn   = mkButton(IDC_EDIT, L"Edit\u2026");
+        m_deleteBtn = mkButton(IDC_DELETE, L"Delete\u2026");
 
-        m_status = CreateWindowW(L"STATIC", L"", WS_CHILD | WS_VISIBLE,
+        m_status = CreateWindowW(L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_ENDELLIPSIS,
             0, 0, 0, 0, *this, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_STATUS)), nullptr, nullptr);
-        SendMessageW(m_status, WM_SETFONT, reinterpret_cast<WPARAM>(f), 0);
+        navidrome::win::setFont(m_status, f);
 
+        addDarkModeHooksKeepingLists(m_darkMode, *this);
         refresh();
         return 0;
     }
 
     void OnSize(UINT, CSize sz) {
-        const int btnW = 90, btnH = 26, gap = 8, pad = 8;
+        const navidrome::win::UiScale s(*this);
+        const int btnH = (std::max)(s(26), m_lineH + s(10)), gap = s(8), pad = s(8);
         int listH = sz.cy - btnH - pad * 3;
         if (listH < 0) listH = 0;
         m_list.SetWindowPos(nullptr, pad, pad, sz.cx - pad * 2, listH, SWP_NOZORDER);
         int y = pad * 2 + listH;
-        ::SetWindowPos(m_newBtn,    nullptr, pad,                   y, btnW, btnH, SWP_NOZORDER);
-        ::SetWindowPos(m_editBtn,   nullptr, pad + btnW + gap,      y, btnW, btnH, SWP_NOZORDER);
-        ::SetWindowPos(m_deleteBtn, nullptr, pad + 2 * (btnW + gap),y, btnW, btnH, SWP_NOZORDER);
-        int statusX = pad + 3 * (btnW + gap);
-        ::SetWindowPos(m_status, nullptr, statusX, y + 5,
-            (sz.cx - statusX - pad) > 0 ? sz.cx - statusX - pad : 0, btnH, SWP_NOZORDER);
+        int x = pad;
+        for (HWND b : { m_newBtn, m_editBtn, m_deleteBtn }) {
+            int w = navidrome::win::fitWidth(b, s, 24, 90);
+            ::SetWindowPos(b, nullptr, x, y, w, btnH, SWP_NOZORDER);
+            x += w + gap;
+        }
+        ::SetWindowPos(m_status, nullptr, x, y + (btnH - m_lineH) / 2,
+            (sz.cx - x - pad) > 0 ? sz.cx - x - pad : 0, m_lineH, SWP_NOZORDER);
     }
 
     void setStatus(const std::string& s) { ::SetWindowTextW(m_status, u8ToWide(s).c_str()); }
@@ -533,7 +583,9 @@ private:
 
     CListViewCtrl m_list;
     HWND m_newBtn = nullptr, m_editBtn = nullptr, m_deleteBtn = nullptr, m_status = nullptr;
+    int  m_lineH = 16;
     std::vector<navidrome::RadioStation> m_stations;
+    fb2k::CCoreDarkModeHooks m_darkMode;
     preferences_page_callback::ptr m_cb;
 };
 
@@ -577,7 +629,8 @@ public:
 
     HWND     get_wnd() override { return m_hWnd; }
     t_uint32 get_state() override {
-        return m_changed ? preferences_state::changed | preferences_state::resettable : 0;
+        return preferences_state::dark_mode_supported |
+               (m_changed ? preferences_state::changed | preferences_state::resettable : 0);
     }
     void apply() override {
         navidrome::cfg_library_filter.set(m_stagedEnabled);
@@ -601,12 +654,15 @@ public:
     enum { WM_FOLDERS_LOADED = WM_USER + 210 };
 
     BEGIN_MSG_MAP(NavidromeLibSelPrefsInstance)
+        MSG_WM_ERASEBKGND(OnEraseBkgnd)
         MSG_WM_CREATE(OnCreate)
         MSG_WM_SIZE(OnSize)
         MESSAGE_HANDLER_EX(WM_FOLDERS_LOADED, OnFoldersLoaded)
         COMMAND_ID_HANDLER_EX(IDC_ENABLE, OnToggleEnable)
         NOTIFY_HANDLER_EX(IDC_LIST, LVN_ITEMCHANGED, OnListItemChanged)
     END_MSG_MAP()
+
+    BOOL OnEraseBkgnd(CDCHandle dc) { navidrome::win::eraseLikeDialog(*this, dc); return TRUE; }
 
 private:
     enum { IDC_ENABLE = 5101, IDC_LIST = 5102, IDC_STATUS = 5103 };
@@ -619,7 +675,9 @@ private:
     }
 
     LRESULT OnCreate(LPCREATESTRUCT) {
-        HFONT f = reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+        const navidrome::win::UiScale s(*this);
+        HFONT f = navidrome::win::uiFont(*this);
+        m_lineH = navidrome::win::lineHeight(*this, f);
 
         m_savedEnabled  = navidrome::cfg_library_filter.get();
         m_stagedEnabled = m_savedEnabled;
@@ -629,25 +687,28 @@ private:
         m_enable = CreateWindowW(L"BUTTON", L"Only include selected libraries",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
             0, 0, 0, 0, *this, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_ENABLE)), nullptr, nullptr);
-        SendMessageW(m_enable, WM_SETFONT, reinterpret_cast<WPARAM>(f), 0);
+        navidrome::win::setFont(m_enable, f);
         CheckDlgButton(IDC_ENABLE, m_stagedEnabled ? BST_CHECKED : BST_UNCHECKED);
 
         m_list.Create(*this, CWindow::rcDefault, nullptr,
             WS_CHILD | WS_VISIBLE | WS_BORDER | LVS_REPORT | LVS_SINGLESEL | WS_TABSTOP | LVS_NOSORTHEADER,
             WS_EX_CLIENTEDGE, IDC_LIST);
         m_list.SetExtendedListViewStyle(LVS_EX_CHECKBOXES | LVS_EX_FULLROWSELECT);
-        m_list.InsertColumn(0, L"Library", LVCFMT_LEFT, 320);
+        m_list.InsertColumn(0, L"Library", LVCFMT_LEFT, s(320));
+        m_list.SetFont(f);
 
-        m_status = CreateWindowW(L"STATIC", L"", WS_CHILD | WS_VISIBLE,
+        m_status = CreateWindowW(L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_ENDELLIPSIS,
             0, 0, 0, 0, *this, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_STATUS)), nullptr, nullptr);
-        SendMessageW(m_status, WM_SETFONT, reinterpret_cast<WPARAM>(f), 0);
+        navidrome::win::setFont(m_status, f);
 
+        addDarkModeHooksKeepingLists(m_darkMode, *this);
         refresh();
         return 0;
     }
 
     void OnSize(UINT, CSize sz) {
-        const int pad = 8, chkH = 20, statusH = 18;
+        const navidrome::win::UiScale s(*this);
+        const int pad = s(8), chkH = (std::max)(s(20), m_lineH + s(4)), statusH = m_lineH;
         ::SetWindowPos(m_enable, nullptr, pad, pad, sz.cx - pad * 2, chkH, SWP_NOZORDER);
         int listY = pad * 2 + chkH;
         int listH = sz.cy - listY - pad * 2 - statusH;
@@ -738,6 +799,8 @@ private:
 
     CListViewCtrl m_list;
     HWND m_enable = nullptr, m_status = nullptr;
+    int  m_lineH = 16;
+    fb2k::CCoreDarkModeHooks m_darkMode;
     std::vector<navidrome::MusicFolder> m_folders;
     std::vector<std::string> m_selected;    // staged selection
     std::vector<std::string> m_savedIds;    // cfg value at page open / last apply
@@ -780,7 +843,8 @@ void BrowserWindow::show() {
     if (!IsWindow()) {
         Create(nullptr, CWindow::rcDefault, L"Navidrome Browser",
                WS_OVERLAPPEDWINDOW, 0);
-        SetWindowPos(nullptr, 0, 0, 580, 660,
+        const navidrome::win::UiScale s(*this);
+        SetWindowPos(nullptr, 0, 0, s(580), s(660),
                      SWP_NOMOVE | SWP_NOZORDER | SWP_SHOWWINDOW);
         loadArtists();
     } else {
@@ -803,7 +867,8 @@ void BrowserWindow::createEmbedded(HWND parent) {
 // Window messages
 // ---------------------------------------------------------------------------
 LRESULT BrowserWindow::OnCreate(LPCREATESTRUCT) {
-    HFONT hFont = reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+    HFONT hFont = navidrome::win::uiFont(*this);
+    m_lineH = navidrome::win::lineHeight(*this, hFont);
 
     // Search field
     m_search.Create(*this, CWindow::rcDefault, nullptr,
@@ -912,7 +977,10 @@ void BrowserWindow::OnDestroy() {
 }
 
 LRESULT BrowserWindow::OnSize(UINT, CSize sz) {
-    const int pad = 6, btnH = 26, searchH = 22, statusW = 200;
+    using navidrome::win::fitWidth;
+    const navidrome::win::UiScale s(*this);
+    const int pad = s(6), btnH = (std::max)(s(26), m_lineH + s(10));
+    const int searchH = (std::max)(s(22), m_lineH + s(8));
     int w = sz.cx, h = sz.cy;
 
     m_search.SetWindowPos(nullptr,
@@ -924,15 +992,16 @@ LRESULT BrowserWindow::OnSize(UINT, CSize sz) {
         SWP_NOZORDER);
 
     int btnY = h - pad - btnH;
-    int btnW = 110;
-    m_refreshBtn.SetWindowPos(nullptr, pad, btnY, 80, btnH, SWP_NOZORDER);
+    const int refreshW = fitWidth(m_refreshBtn, s, 24, 80);
+    const int playW = fitWidth(m_playBtn, s, 24, 110), addW = fitWidth(m_addBtn, s, 24, 110);
+    m_refreshBtn.SetWindowPos(nullptr, pad, btnY, refreshW, btnH, SWP_NOZORDER);
     m_status.SetWindowPos(nullptr,
-        pad + 80 + pad, btnY + 4,
-        w - 80 - 2*btnW - 4*pad, btnH, SWP_NOZORDER);
+        pad + refreshW + pad, btnY + (btnH - m_lineH) / 2,
+        (std::max)(0, w - refreshW - playW - addW - 5*pad), m_lineH, SWP_NOZORDER);
     m_playBtn.SetWindowPos(nullptr,
-        w - pad - btnW, btnY, btnW, btnH, SWP_NOZORDER);
+        w - pad - playW, btnY, playW, btnH, SWP_NOZORDER);
     m_addBtn.SetWindowPos(nullptr,
-        w - pad - 2*btnW - pad, btnY, btnW, btnH, SWP_NOZORDER);
+        w - pad - playW - pad - addW, btnY, addW, btnH, SWP_NOZORDER);
     return 0;
 }
 

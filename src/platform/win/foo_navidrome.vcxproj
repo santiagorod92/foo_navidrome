@@ -90,6 +90,10 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <!-- Sources are UTF-8 without BOM; without this MSVC reads them as the
+           ANSI code page and every non-ASCII wide literal turns to mojibake
+           (the ellipsis in "Custom Headers...", issue #18). clang-cl assumes UTF-8 already. -->
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <AdditionalIncludeDirectories>
         .;
         ../../..;
@@ -176,6 +180,7 @@
     <ClInclude Include="..\..\core\NavidromeDebugLog.h" />
     <ClInclude Include="SubsonicClientWin.h" />
     <ClInclude Include="BrowserWindow.h" />
+    <ClInclude Include="WinUi.h" />
     <ClInclude Include="..\..\core\MediaEnrichmentLogic.h" />
     <ClInclude Include="EsLyricBridge.h" />
     <ClInclude Include="EsLyricScript.h" />

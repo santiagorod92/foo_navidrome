@@ -279,6 +279,7 @@ private:
     CEdit         m_search;
     CButton       m_addBtn, m_playBtn, m_refreshBtn;
     CStatic       m_status;
+    int           m_lineH = 16;   // text line height in the window's font (OnCreate)
     fb2k::CCoreDarkModeHooks m_darkMode;
 
     // Populated by refreshThemeColors(); *_set is false when that GUID isn't

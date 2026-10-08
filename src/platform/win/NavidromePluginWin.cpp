@@ -6,6 +6,7 @@
 #include "../../core/NavidromeDebugLog.h"
 #include "../../core/NavidromeAudioMuse.h"
 #include "EsLyricBridge.h"
+#include "WinUi.h"
 #include <SDK/cfg_var.h>
 #include <SDK/album_art.h>
 #include <SDK/album_art_helpers.h>
@@ -118,9 +119,10 @@ public:
 
     void show() {
         if (!IsWindow()) {
-            Create(nullptr, CWindow::rcDefault, L"Navidrome — Custom HTTP Headers",
+            Create(nullptr, CWindow::rcDefault, L"Navidrome \u2014 Custom HTTP Headers",
                    WS_OVERLAPPEDWINDOW, 0);
-            SetWindowPos(nullptr, 0, 0, 520, 360,
+            const navidrome::win::UiScale s(*this);
+            SetWindowPos(nullptr, 0, 0, s(520), s(360),
                          SWP_NOMOVE | SWP_NOZORDER | SWP_SHOWWINDOW);
         } else {
             ShowWindow(SW_SHOW);
@@ -130,6 +132,7 @@ public:
     }
 
     BEGIN_MSG_MAP(NavidromeHeadersWindow)
+        MSG_WM_ERASEBKGND(OnEraseBkgnd)
         MSG_WM_CREATE(OnCreate)
         MSG_WM_SIZE(OnSize)
         COMMAND_ID_HANDLER_EX(IDC_CF,     OnCloudflare)
@@ -137,13 +140,18 @@ public:
         COMMAND_ID_HANDLER_EX(IDC_CANCEL, OnCancel)
     END_MSG_MAP()
 
+    BOOL OnEraseBkgnd(CDCHandle dc) { navidrome::win::eraseLikeDialog(*this, dc); return TRUE; }
+
 private:
     enum { IDC_EDIT = 3001, IDC_CF = 3002, IDC_SAVE = 3003, IDC_CANCEL = 3004, IDC_HINT = 3005 };
     CEdit m_edit;
+    int   m_lineH = 16;
+    fb2k::CCoreDarkModeHooks m_darkMode;
 
     LRESULT OnCreate(LPCREATESTRUCT) {
-        HFONT f = reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
-        auto setFont = [&](HWND h) { SendMessageW(h, WM_SETFONT, reinterpret_cast<WPARAM>(f), 0); };
+        HFONT f = navidrome::win::uiFont(*this);
+        m_lineH = navidrome::win::lineHeight(*this, f);
+        auto setFont = [&](HWND h) { navidrome::win::setFont(h, f); };
 
         HWND hint = CreateWindowW(L"STATIC",
             L"One header per line, as  Name: Value  (e.g. for a Cloudflare Zero Trust tunnel).",
@@ -165,20 +173,26 @@ private:
         mkBtn(IDC_CF,     L"Cloudflare headers");
         mkBtn(IDC_SAVE,   L"Save");
         mkBtn(IDC_CANCEL, L"Cancel");
+        m_darkMode.AddDialogWithControls(*this);
         return 0;
     }
 
     LRESULT OnSize(UINT, CSize sz) {
-        const int pad = 10, btnH = 26, btnW = 130, hintH = 18;
+        using navidrome::win::fitWidth;
+        const navidrome::win::UiScale s(*this);
+        const int pad = s(10), btnH = (std::max)(s(26), m_lineH + s(10)), hintH = m_lineH;
         int w = sz.cx, h = sz.cy;
         ::SetWindowPos(GetDlgItem(IDC_HINT), nullptr, pad, pad, w - 2 * pad, hintH,
                        SWP_NOZORDER);
-        m_edit.SetWindowPos(nullptr, pad, pad + hintH + 4, w - 2 * pad,
-                            h - hintH - btnH - 3 * pad - 4, SWP_NOZORDER);
+        m_edit.SetWindowPos(nullptr, pad, pad + hintH + s(4), w - 2 * pad,
+                            h - hintH - btnH - 3 * pad - s(4), SWP_NOZORDER);
         int by = h - btnH - pad;
-        ::SetWindowPos(GetDlgItem(IDC_CF),     nullptr, pad, by, btnW, btnH, SWP_NOZORDER);
-        ::SetWindowPos(GetDlgItem(IDC_CANCEL), nullptr, w - pad - 80, by, 80, btnH, SWP_NOZORDER);
-        ::SetWindowPos(GetDlgItem(IDC_SAVE),   nullptr, w - 2 * pad - 80 - 80, by, 80, btnH, SWP_NOZORDER);
+        HWND cf = GetDlgItem(IDC_CF), save = GetDlgItem(IDC_SAVE), cancel = GetDlgItem(IDC_CANCEL);
+        int cfW = fitWidth(cf, s, 24, 130), saveW = fitWidth(save, s, 24, 80),
+            cancelW = fitWidth(cancel, s, 24, 80);
+        ::SetWindowPos(cf,     nullptr, pad, by, cfW, btnH, SWP_NOZORDER);
+        ::SetWindowPos(cancel, nullptr, w - pad - cancelW, by, cancelW, btnH, SWP_NOZORDER);
+        ::SetWindowPos(save,   nullptr, w - 2 * pad - cancelW - saveW, by, saveW, btnH, SWP_NOZORDER);
         return 0;
     }
 
@@ -241,9 +255,10 @@ public:
     // preferences_page_instance
     HWND      get_wnd() override { return m_hWnd; }
     t_uint32  get_state() override {
-        // preferences_state has no "unchanged" constant — the unchanged state is 0.
-        return m_changed ? preferences_state::changed | preferences_state::resettable
-                         : 0;
+        // Without dark_mode_supported foobar2000 draws the whole Preferences dialog light while
+        // this page is shown, even in Dark Mode (issue #18). No "unchanged" constant: that's 0.
+        return preferences_state::dark_mode_supported |
+               (m_changed ? preferences_state::changed | preferences_state::resettable : 0);
     }
     void apply()  override {
         saveSettings();
@@ -264,6 +279,7 @@ public:
     }
 
     BEGIN_MSG_MAP(NavidromePrefsInstance)
+        MSG_WM_ERASEBKGND(OnEraseBkgnd)
         MSG_WM_CREATE(OnCreate)
         MESSAGE_HANDLER_EX(WM_TEST_RESULT, OnTestResult)
         MESSAGE_HANDLER_EX(WM_SCAN_STATUS, OnScanStatus)
@@ -277,6 +293,8 @@ public:
         COMMAND_HANDLER_EX(IDC_BITRATE, CBN_SELCHANGE, OnChanged)
         COMMAND_HANDLER_EX(IDC_RESCAN, BN_CLICKED, OnRescan)
     END_MSG_MAP()
+
+    BOOL OnEraseBkgnd(CDCHandle dc) { navidrome::win::eraseLikeDialog(*this, dc); return TRUE; }
 
 private:
     enum { IDC_URL=1001, IDC_USER=1002, IDC_PASS=1003, IDC_TEST=1004, IDC_STATUS=1005,
@@ -303,55 +321,43 @@ private:
     };
 
     LRESULT OnCreate(LPCREATESTRUCT) {
-        HFONT f = reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
-        auto lbl = [&](const wchar_t* t, int x, int y, int w, int h) {
-            HWND h2 = CreateWindowW(L"STATIC", t, WS_CHILD|WS_VISIBLE, x,y,w,h, *this, nullptr, nullptr, nullptr);
-            SendMessageW(h2, WM_SETFONT, reinterpret_cast<WPARAM>(f), 0);
+        using namespace navidrome::win;
+        const UiScale s(*this);
+        const HFONT f = uiFont(*this);
+        auto make = [&](const wchar_t* cls, const wchar_t* text, DWORD style, int id = 0) {
+            HWND h = CreateWindowW(cls, text, WS_CHILD|WS_VISIBLE|style, 0,0,0,0, *this,
+                reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), nullptr, nullptr);
+            setFont(h, f);
+            return h;
         };
-        auto edit = [&](int id, int x, int y, int w, int h, bool pass=false) {
-            DWORD sty = WS_CHILD|WS_VISIBLE|WS_BORDER|ES_AUTOHSCROLL|(pass?ES_PASSWORD:0);
-            HWND h2 = CreateWindowW(L"EDIT", L"", sty, x,y,w,h, *this, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), nullptr, nullptr);
-            SendMessageW(h2, WM_SETFONT, reinterpret_cast<WPARAM>(f), 0);
-        };
-        lbl(L"Server URL:",  8, 14, 80, 18);  edit(IDC_URL,  92, 10, 290, 22);
-        lbl(L"Username:",    8, 44, 80, 18);  edit(IDC_USER, 92, 40, 290, 22);
-        lbl(L"Password:",    8, 74, 80, 18);  edit(IDC_PASS, 92, 70, 290, 22, true);
 
-        HWND btn = CreateWindowW(L"BUTTON", L"Test Connection",
-            WS_CHILD|WS_VISIBLE|BS_PUSHBUTTON, 92,100, 110,24, *this,
-            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_TEST)), nullptr, nullptr);
-        SendMessageW(btn, WM_SETFONT, reinterpret_cast<WPARAM>(f), 0);
-
-        HWND st = CreateWindowW(L"STATIC", L"", WS_CHILD|WS_VISIBLE|SS_LEFT, 210,105, 170,18, *this,
-            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_STATUS)), nullptr, nullptr);
-        SendMessageW(st, WM_SETFONT, reinterpret_cast<WPARAM>(f), 0);
-
-        HWND hdr = CreateWindowW(L"BUTTON", L"Custom Headers…",
-            WS_CHILD|WS_VISIBLE|BS_PUSHBUTTON, 92,134, 130,24, *this,
-            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_HEADERS)), nullptr, nullptr);
-        SendMessageW(hdr, WM_SETFONT, reinterpret_cast<WPARAM>(f), 0);
-
-        HWND scr = CreateWindowW(L"BUTTON", L"Report plays to Navidrome (scrobbling)",
-            WS_CHILD|WS_VISIBLE|BS_AUTOCHECKBOX, 92,166, 290,20, *this,
-            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_SCROBBLE)), nullptr, nullptr);
-        SendMessageW(scr, WM_SETFONT, reinterpret_cast<WPARAM>(f), 0);
-
+        HWND lblUrl  = make(L"STATIC", L"Server URL:",  0);
+        HWND lblUser = make(L"STATIC", L"Username:",    0);
+        HWND lblPass = make(L"STATIC", L"Password:",    0);
         // Streaming transcode controls. Both are per-request stream.view params,
         // so a change takes effect on the next track without reconnecting.
-        lbl(L"Stream as:",   8, 198, 80, 18);
-        lbl(L"Max bitrate:", 8, 228, 80, 18);
+        HWND lblFmt  = make(L"STATIC", L"Stream as:",   0);
+        HWND lblRate = make(L"STATIC", L"Max bitrate:", 0);
 
-        // CBS_DROPDOWNLIST height is the *dropped* height, not the closed one.
+        const DWORD editSty = WS_BORDER|WS_TABSTOP|ES_AUTOHSCROLL;
+        HWND url  = make(L"EDIT", L"", editSty, IDC_URL);
+        HWND user = make(L"EDIT", L"", editSty, IDC_USER);
+        HWND pass = make(L"EDIT", L"", editSty|ES_PASSWORD, IDC_PASS);
+
+        HWND test   = make(L"BUTTON", L"Test Connection", WS_TABSTOP|BS_PUSHBUTTON, IDC_TEST);
+        HWND status = make(L"STATIC", L"", SS_LEFT|SS_ENDELLIPSIS, IDC_STATUS);
+        HWND hdr    = make(L"BUTTON", L"Custom Headers…", WS_TABSTOP|BS_PUSHBUTTON, IDC_HEADERS);
+        HWND scr    = make(L"BUTTON", L"Report plays to Navidrome (scrobbling)",
+                           WS_TABSTOP|BS_AUTOCHECKBOX, IDC_SCROBBLE);
+
         m_format.Create(*this, CWindow::rcDefault, nullptr,
             WS_CHILD|WS_VISIBLE|WS_TABSTOP|WS_VSCROLL|CBS_DROPDOWNLIST, 0, IDC_FORMAT);
-        m_format.SetWindowPos(nullptr, 92, 194, 180, 200, SWP_NOZORDER);
         m_format.SetFont(f);
         for (const auto& opt : navidrome::streamFormatOptions())
             m_format.AddString(pfc::stringcvt::string_wide_from_utf8(opt.label));
 
         m_bitrate.Create(*this, CWindow::rcDefault, nullptr,
             WS_CHILD|WS_VISIBLE|WS_TABSTOP|WS_VSCROLL|CBS_DROPDOWNLIST, 0, IDC_BITRATE);
-        m_bitrate.SetWindowPos(nullptr, 92, 224, 180, 200, SWP_NOZORDER);
         m_bitrate.SetFont(f);
         for (int kbps : navidrome::maxBitrateOptions()) {
             m_bitrate.AddString(kbps == 0
@@ -361,16 +367,45 @@ private:
 
         // Rescan button — useful if files were added/removed server-side and
         // the user doesn't want to wait for Navidrome's own scan schedule.
-        HWND rescan = CreateWindowW(L"BUTTON", L"Rescan Library Now",
-            WS_CHILD|WS_VISIBLE|BS_PUSHBUTTON, 92,260, 130,24, *this,
-            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_RESCAN)), nullptr, nullptr);
-        SendMessageW(rescan, WM_SETFONT, reinterpret_cast<WPARAM>(f), 0);
+        HWND rescan = make(L"BUTTON", L"Rescan Library Now", WS_TABSTOP|BS_PUSHBUTTON, IDC_RESCAN);
+        HWND scanSt = make(L"STATIC", L"", SS_LEFT|SS_ENDELLIPSIS, IDC_SCAN_STATUS);
 
-        HWND scanSt = CreateWindowW(L"STATIC", L"", WS_CHILD|WS_VISIBLE|SS_LEFT, 230,265, 200,18, *this,
-            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_SCAN_STATUS)), nullptr, nullptr);
-        SendMessageW(scanSt, WM_SETFONT, reinterpret_cast<WPARAM>(f), 0);
+        // Layout: one label column sized to its widest label, one field column.
+        const int lineH = lineHeight(*this, f);
+        const int rowH  = (std::max)(s(22), lineH + s(8));
+        const int step  = rowH + s(8);
+        const int pad = s(8), gap = s(8);
+        int labelW = 0;
+        for (HWND l : { lblUrl, lblUser, lblPass, lblFmt, lblRate })
+            labelW = (std::max)(labelW, textWidth(l));
+        const int x = pad + labelW + gap;
+        const int fieldW = s(300), statusW = s(240);
+        auto place = [&](HWND h, int px, int py, int w, int hgt) {
+            ::SetWindowPos(h, nullptr, px, py, w, hgt, SWP_NOZORDER);
+        };
+        auto label = [&](HWND l, int rowY) {
+            place(l, pad, rowY + (rowH - lineH) / 2, labelW, lineH);
+        };
+        auto buttonWithStatus = [&](HWND btn, HWND st, int rowY) {
+            int w = fitWidth(btn, s, 24, 100);
+            place(btn, x, rowY, w, rowH);
+            place(st, x + w + gap, rowY + (rowH - lineH) / 2, statusW, lineH);
+        };
+
+        int y = s(10);
+        label(lblUrl, y);   place(url,  x, y, fieldW, rowH);  y += step;
+        label(lblUser, y);  place(user, x, y, fieldW, rowH);  y += step;
+        label(lblPass, y);  place(pass, x, y, fieldW, rowH);  y += step;
+        buttonWithStatus(test, status, y);                    y += step;
+        place(hdr, x, y, fitWidth(hdr, s, 24, 100), rowH);    y += step;
+        place(scr, x, y, fitWidth(scr, s, 24), rowH);         y += step;
+        // CBS_DROPDOWNLIST height is the *dropped* height, not the closed one.
+        label(lblFmt, y);   place(m_format,  x, y, s(240), s(220));  y += step;
+        label(lblRate, y);  place(m_bitrate, x, y, s(240), s(220));  y += step;
+        buttonWithStatus(rescan, scanSt, y);
 
         loadSettings();
+        m_darkMode.AddDialogWithControls(*this);
         return 0;
     }
 
@@ -498,6 +533,7 @@ private:
     }
 
     CComboBox m_format, m_bitrate;
+    fb2k::CCoreDarkModeHooks m_darkMode;
     preferences_page_callback::ptr m_cb;
     bool m_changed = false;
 };
@@ -530,7 +566,8 @@ public:
 
     HWND     get_wnd() override { return m_hWnd; }
     t_uint32 get_state() override {
-        return m_changed ? preferences_state::changed | preferences_state::resettable : 0;
+        return preferences_state::dark_mode_supported |
+               (m_changed ? preferences_state::changed | preferences_state::resettable : 0);
     }
     void apply() override {
         auto getText = [&](int id) -> std::string {
@@ -558,6 +595,7 @@ public:
     }
 
     BEGIN_MSG_MAP(AudioMusePrefsInstance)
+        MSG_WM_ERASEBKGND(OnEraseBkgnd)
         MSG_WM_CREATE(OnCreate)
         COMMAND_HANDLER_EX(IDC_AM_URL,    EN_CHANGE, OnChanged)
         COMMAND_HANDLER_EX(IDC_AM_TOKEN,  EN_CHANGE, OnChanged)
@@ -565,33 +603,57 @@ public:
         COMMAND_HANDLER_EX(IDC_AM_COUNT,  EN_CHANGE, OnChanged)
     END_MSG_MAP()
 
+    BOOL OnEraseBkgnd(CDCHandle dc) { navidrome::win::eraseLikeDialog(*this, dc); return TRUE; }
+
 private:
     enum { IDC_AM_URL = 1101, IDC_AM_TOKEN = 1102, IDC_AM_SERVER = 1103, IDC_AM_COUNT = 1104 };
 
     LRESULT OnCreate(LPCREATESTRUCT) {
-        HFONT f = reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
-        auto lbl = [&](const wchar_t* t, int x, int y, int w, int h) {
-            HWND h2 = CreateWindowW(L"STATIC", t, WS_CHILD|WS_VISIBLE, x,y,w,h, *this, nullptr, nullptr, nullptr);
-            SendMessageW(h2, WM_SETFONT, reinterpret_cast<WPARAM>(f), 0);
-        };
-        auto edit = [&](int id, int x, int y, int w, int h, DWORD extra = 0) {
-            DWORD sty = WS_CHILD|WS_VISIBLE|WS_BORDER|WS_TABSTOP|ES_AUTOHSCROLL|extra;
-            HWND h2 = CreateWindowW(L"EDIT", L"", sty, x,y,w,h, *this,
+        using namespace navidrome::win;
+        const UiScale s(*this);
+        const HFONT f = uiFont(*this);
+        auto make = [&](const wchar_t* cls, const wchar_t* text, DWORD style, int id = 0) {
+            HWND h = CreateWindowW(cls, text, WS_CHILD|WS_VISIBLE|style, 0,0,0,0, *this,
                 reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), nullptr, nullptr);
-            SendMessageW(h2, WM_SETFONT, reinterpret_cast<WPARAM>(f), 0);
+            setFont(h, f);
+            return h;
         };
-        lbl(L"AudioMuse-AI analyses your Navidrome library for Text Search, Instant\n"
-            L"Playlist and Song Alchemy (File › AudioMuse-AI, track context menu).",
-            8, 8, 380, 32);
-        lbl(L"Server URL:",   8, 54, 90, 18);  edit(IDC_AM_URL,    102, 50, 280, 22);
-        lbl(L"API token:",    8, 84, 90, 18);  edit(IDC_AM_TOKEN,  102, 80, 280, 22, ES_PASSWORD);
-        lbl(L"Server name:",  8,114, 90, 18);  edit(IDC_AM_SERVER, 102,110, 280, 22);
-        lbl(L"Tracks:",       8,144, 90, 18);  edit(IDC_AM_COUNT,  102,140,  60, 22, ES_NUMBER);
-        lbl(L"e.g. http://audiomuse:8000. Token only if AudioMuse-AI has auth on;\n"
-            L"server name only if it serves several media servers. \"Tracks\" also\n"
-            L"sizes Instant Mix, which works without AudioMuse-AI settings.",
-            8, 176, 380, 48);
+        // Paragraphs wrap to the page width (SS_LEFT), no hard line breaks.
+        HWND intro = make(L"STATIC",
+            L"AudioMuse-AI analyses your Navidrome library for Text Search, Instant "
+            L"Playlist and Song Alchemy (File › AudioMuse-AI, track context menu).", SS_LEFT);
+        const DWORD editSty = WS_BORDER|WS_TABSTOP|ES_AUTOHSCROLL;
+        const std::pair<HWND, HWND> rows[] = {
+            { make(L"STATIC", L"Server URL:",  0), make(L"EDIT", L"", editSty, IDC_AM_URL) },
+            { make(L"STATIC", L"API token:",   0), make(L"EDIT", L"", editSty|ES_PASSWORD, IDC_AM_TOKEN) },
+            { make(L"STATIC", L"Server name:", 0), make(L"EDIT", L"", editSty, IDC_AM_SERVER) },
+            { make(L"STATIC", L"Tracks:",      0), make(L"EDIT", L"", editSty|ES_NUMBER, IDC_AM_COUNT) },
+        };
+        HWND help = make(L"STATIC",
+            L"e.g. http://audiomuse:8000. Token only if AudioMuse-AI has auth on; "
+            L"server name only if it serves several media servers. \"Tracks\" also "
+            L"sizes Instant Mix, which works without AudioMuse-AI settings.", SS_LEFT);
+
+        const int lineH = lineHeight(*this, f);
+        const int rowH  = (std::max)(s(22), lineH + s(8));
+        const int pad = s(8), gap = s(8), textW = s(440);
+        int labelW = 0;
+        for (const auto& r : rows) labelW = (std::max)(labelW, textWidth(r.first));
+        const int x = pad + labelW + gap;
+
+        int y = pad;
+        ::SetWindowPos(intro, nullptr, pad, y, textW, 3 * lineH, SWP_NOZORDER);
+        y += 3 * lineH + s(8);
+        for (const auto& r : rows) {
+            int w = r.second == rows[3].second ? s(60) : s(300);
+            ::SetWindowPos(r.first, nullptr, pad, y + (rowH - lineH) / 2, labelW, lineH, SWP_NOZORDER);
+            ::SetWindowPos(r.second, nullptr, x, y, w, rowH, SWP_NOZORDER);
+            y += rowH + s(8);
+        }
+        ::SetWindowPos(help, nullptr, pad, y + s(4), textW, 4 * lineH, SWP_NOZORDER);
+
         load();
+        m_darkMode.AddDialogWithControls(*this);
         return 0;
     }
 
@@ -610,6 +672,7 @@ public:
     void clearChanged() { m_changed = false; notifyCb(); }
 
 private:
+    fb2k::CCoreDarkModeHooks m_darkMode;
     preferences_page_callback::ptr m_cb;
     bool m_changed = false;
 };
@@ -649,7 +712,7 @@ public:
 
     // Nothing editable on this page — it's a launcher, so it's never "changed".
     HWND      get_wnd() override { return m_hWnd; }
-    t_uint32  get_state() override { return 0; }
+    t_uint32  get_state() override { return preferences_state::dark_mode_supported; }
     void      apply() override {}
     void      reset() override {}
 
