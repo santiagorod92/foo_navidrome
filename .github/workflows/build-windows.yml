@@ -204,7 +204,7 @@ jobs:
               /p:OutDir=$out `
               /m /nologo /v:minimal `
               /flp:"logfile=$log;verbosity=detailed;append" `
-              "/clp:ErrorsOnly;Summary"
+              "/clp:WarningsOnly;ErrorsOnly;Summary"
             if ($LASTEXITCODE -ne 0) {
               Write-Host "===== MSBuild FAILED for $($t.Platform) (rc=$LASTEXITCODE) — error lines ====="
               if (Test-Path $log) { Select-String -Path $log -Pattern 'error|fatal' | Select-Object -Last 60 | ForEach-Object { $_.Line } }
@@ -230,7 +230,7 @@ jobs:
           msbuild tests\MediaEnrichmentTests.vcxproj `
             /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 `
             /p:OutDir=$testOut `
-            /m /nologo /v:minimal "/clp:ErrorsOnly;Summary"
+            /m /nologo /v:minimal "/clp:WarningsOnly;ErrorsOnly;Summary"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & "$testOut\MediaEnrichmentTests.exe"
           if ($LASTEXITCODE -ne 0) { Write-Error "MediaEnrichmentLogic tests failed"; exit $LASTEXITCODE }

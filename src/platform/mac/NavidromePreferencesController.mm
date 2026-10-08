@@ -481,14 +481,14 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
         NSError *err = nil;
         BOOL ok = [SubsonicClient.sharedClient pingWithError:&err];
         dispatch_async(dispatch_get_main_queue(), ^{
-            _testButton.enabled = YES;
+            self->_testButton.enabled = YES;
             if (ok) {
-                _statusLabel.stringValue = @"Connected!";
-                _statusLabel.textColor = [NSColor systemGreenColor];
+                self->_statusLabel.stringValue = @"Connected!";
+                self->_statusLabel.textColor = [NSColor systemGreenColor];
             } else {
-                _statusLabel.stringValue = [NSString stringWithFormat:@"%@",
+                self->_statusLabel.stringValue = [NSString stringWithFormat:@"%@",
                     err.localizedDescription ?: @"Connection failed"];
-                _statusLabel.textColor = [NSColor systemRedColor];
+                self->_statusLabel.textColor = [NSColor systemRedColor];
             }
         });
     });
@@ -511,9 +511,9 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
                                                                  error:&err];
         if (!ok) {
             dispatch_async(dispatch_get_main_queue(), ^{
-                _rescanButton.enabled = YES;
-                _scanStatusLabel.textColor = [NSColor systemRedColor];
-                _scanStatusLabel.stringValue = [NSString stringWithFormat:@"Scan failed: %@",
+                self->_rescanButton.enabled = YES;
+                self->_scanStatusLabel.textColor = [NSColor systemRedColor];
+                self->_scanStatusLabel.stringValue = [NSString stringWithFormat:@"Scan failed: %@",
                     err.localizedDescription ?: @"unknown error"];
             });
             return;
@@ -527,15 +527,15 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
                                                                              error:&pollErr];
             if (!polled) break;   // transient error — stop polling, last known count stands
             dispatch_async(dispatch_get_main_queue(), ^{
-                _scanStatusLabel.stringValue = [NSString stringWithFormat:@"Scanning… %ld processed",
+                self->_scanStatusLabel.stringValue = [NSString stringWithFormat:@"Scanning… %ld processed",
                     (long)count];
             });
         }
 
         dispatch_async(dispatch_get_main_queue(), ^{
-            _rescanButton.enabled = YES;
-            _scanStatusLabel.textColor = [NSColor systemGreenColor];
-            _scanStatusLabel.stringValue = [NSString stringWithFormat:@"Scan complete — %ld items",
+            self->_rescanButton.enabled = YES;
+            self->_scanStatusLabel.textColor = [NSColor systemGreenColor];
+            self->_scanStatusLabel.stringValue = [NSString stringWithFormat:@"Scan complete — %ld items",
                 (long)count];
         });
     });

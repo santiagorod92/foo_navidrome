@@ -1,0 +1,20 @@
+// Passed to every xcodebuild of the workspace (`-xcconfig`, mac-ci-build.sh + mac-dev-build.sh).
+// It applies to every target, ours and the SDK's own projects, which are upstream content
+// re-cloned each run and can't be patched in place. Keep it to settings that silence SDK-side
+// noise only: a warning raised by our own sources must stay visible.
+
+// pfc-lite.h prints "WARNING: release build without NDEBUG" in every TU when a Release build
+// doesn't define it, and none of the SDK projects' Release configs do. foo_navidrome.xcodeproj
+// sets it too, so a plain Xcode GUI build of our target is quiet as well.
+GCC_PREPROCESSOR_DEFINITIONS[config=Release] = $(inherited) NDEBUG=1
+
+// SDK/playlist.h marks four declarations `\deprecated` in a doc comment with no
+// [[deprecated]] attribute, and clang flags the mismatch in every TU that includes it. That's
+// about the header's own comments, not about us calling them. Actual use of a deprecated SDK
+// API is still reported: FB2K_DEPRECATED is a real [[deprecated]] (-Wdeprecated-declarations).
+WARNING_CFLAGS = $(inherited) -Wno-documentation-deprecated-sync $(NAVIDROME_SDK_WARNING_CFLAGS_$(PROJECT_NAME))
+
+// Upstream SDK sources with unused locals in Release: service.cpp (PFC_ASSERT_SUCCESS keeps
+// `_Expression_Val` after PFC_ASSERT compiles to nothing) and file_cached_impl.cpp (`nChunks`).
+// Scoped to that one project by name, so our own target keeps -Wunused-variable.
+NAVIDROME_SDK_WARNING_CFLAGS_foobar2000_SDK = -Wno-unused-variable
