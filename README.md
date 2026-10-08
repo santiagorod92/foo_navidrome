@@ -131,8 +131,8 @@ Then point foobar2000 at `http://127.0.0.1:8000` with the `AUDIOMUSE_API_TOKEN` 
 ### Prerequisites
 
 - [foobar2000 v2 for Mac](https://www.foobar2000.org/mac)
-- Xcode 14+
-- foobar2000 SDK — source the SDK subdirs and `pfc/` from [reupen/foobar2000-sdk-unmodified](https://github.com/reupen/foobar2000-sdk-unmodified) (an unmodified mirror of the official SDK; crucially it ships `helpers-mac/`, which the macOS build needs and some other mirrors omit). Arrange them as siblings of this repo:
+- Xcode 15+ (developed with 15.4; the component targets macOS 12.0+)
+- foobar2000 SDK `SDK-2026-09-16` or newer — source the SDK subdirs and `pfc/` from [reupen/foobar2000-sdk-unmodified](https://github.com/reupen/foobar2000-sdk-unmodified) (an unmodified mirror of the official SDK; crucially it ships `helpers-mac/`, which the macOS build needs and some other mirrors omit). Arrange them as siblings of this repo:
 
 ```
 foobar2000/
@@ -317,8 +317,8 @@ Tracks land in the playlist as `navidrome://track/<id>?...` URIs. The component 
 ### Prerequisites
 
 - [foobar2000 v2 for Windows](https://www.foobar2000.org/)
-- Visual Studio 2022 (with Desktop C++ workload)
-- foobar2000 Windows SDK — same directory layout as above
+- Visual Studio 2022 (*Desktop development with C++* workload, MSVC v143 toolset + ATL; the project builds as C++20)
+- foobar2000 SDK `SDK-2026-09-16` or newer — same directory layout as above
 
 ### Build steps
 
@@ -583,6 +583,123 @@ foo_navidrome/
 
 Pull requests are welcome. This section is the fast path from a fresh clone to a merged change.
 
+### Development environment
+
+You don't need a Mac *and* a Windows PC to contribute. Any one of the setups below can build
+and run the component; CI builds every platform on each PR. For reference, this is what the
+project is developed and tested with today:
+
+| | Used for development | Minimum / notes |
+|---|---|---|
+| **Dev OS** | Linux ([Omarchy](https://omarchy.org), Arch-based) | macOS or Windows work too (see the table below) |
+| **foobar2000** | v2.26 for Windows (x64, under Wine 11 Staging) and v2 for Mac (latest) | v2.0+ (auto-skipping tracks deleted on the server needs 2.26) |
+| **foobar2000 SDK** | `SDK-2026-09-16` from [reupen/foobar2000-sdk-unmodified](https://github.com/reupen/foobar2000-sdk-unmodified) (CI clones the latest tag) | `SDK-2026-09-16` or newer: it adds `skipTrack.h` and requires C++20 |
+| **C++ standard** | C++20 for the component, C++17 for the SDK-free unit tests | |
+| **Windows compiler** | clang-cl / lld-link (LLVM 22) cross-compiling on Linux | Visual Studio 2022 (MSVC toolset **v143**, *Desktop development with C++* + ATL); this is what CI uses (`windows-2022` runner) |
+| **Windows SDK / CRT / ATL** | Windows SDK 10.0.26100 + MSVC CRT/ATL, fetched by [xwin](https://github.com/Jake-Shadle/xwin) 0.9.0 | whatever VS 2022 installs |
+| **WTL** | [WTL 10](https://sourceforge.net/projects/wtl/) (10.01 vendored in `third_party/wtl/` for CI; the Linux setup script fetches 10.0.10320) | WTL 10 |
+| **macOS toolchain** | Xcode 15.4 (macOS 14.5 SDK) | Xcode 15+; deployment target **macOS 12.0** |
+| **Runtime testing** | Wine (fast loop), a Windows 11 VM ([dockur/windows](https://github.com/dockur/windows)), and a macOS 14 Sonoma VM ([dockur/macos](https://github.com/dockur/macos)) | any real Windows 10/11 or macOS 12+ machine with foobar2000 v2 |
+| **Build tooling** | GNU Make, bash, git, curl, unzip/zip | macOS ships bash 3.2; the scripts stay compatible with it |
+
+Pick whichever path matches the machine you have:
+
+| You have | Build with | Run foobar2000 on |
+|---|---|---|
+| Linux | `./scripts/win-setup-toolchain.sh` once, then `make win-build-launch` ([details](#building-on-linux-wine)) | Wine |
+| Windows | Visual Studio 2022 → `src/platform/win/foo_navidrome.vcxproj` ([details](#building-on-windows)) | native |
+| macOS | Xcode → `foo_navidrome.xcworkspace`, or `./scripts/mac-dev-build.sh` ([details](#building-on-macos)) | native |
+
+The unit tests (`tests/`) don't need the SDK or foobar2000 at all: `make test` (Linux,
+clang-cl + Wine) or `make mac-test` (plain `clang++`).
+
+### Happy path: build it and try it live
+
+Every local build compiles in the debug log (`/tmp/foo_navidrome_debug.log`), so keep a
+second terminal tailing it while you click around. `make help` lists every target.
+
+**Linux (Windows build, running under Wine)**, the main dev loop:
+
+```bash
+./scripts/win-setup-toolchain.sh   # once: LLVM, xwin SDK/CRT/ATL, WTL, foobar2000 SDK siblings
+make test                          # unit tests (clang-cl + Wine), seconds
+make win-build-launch              # cross-compile the x64 DLL, install it, restart Wine foobar2000
+make win-logs                      # second terminal: follow the debug log, colourised
+make win-ui-smoke                  # optional: scripted UI run + log assertions (see below)
+```
+
+Configure your server once under *Preferences › Tools › Navidrome*, then *File › Open
+Navidrome Browser*. After each code change, `make win-build-launch` again; foobar2000 only
+loads a new DLL on restart, which is why plain `make win-build` isn't enough. If a build
+behaves strangely after editing a shared header, rebuild with
+`./scripts/win-build-local.sh --clean`.
+
+**macOS (native):**
+
+```bash
+make mac-test                      # unit tests (plain clang++)
+# quit foobar2000 first: replacing the bundle under a running process gets it killed
+make mac-build                     # xcodebuild Release + install into ~/Library/foobar2000-v2
+make mac-logs                      # second terminal: follow the debug log
+# start foobar2000, then File › Open Navidrome Browser
+```
+
+**Windows (native, Visual Studio):**
+
+1. Build `tests/MediaEnrichmentTests.vcxproj` (Release | x64) and run it: same suite as `make test`.
+2. Build `src/platform/win/foo_navidrome.vcxproj` (Release | x64), see [Building on Windows](#building-on-windows).
+3. Copy `foo_navidrome.dll` to `%APPDATA%\foobar2000\user-components\foo_navidrome\` and restart foobar2000.
+
+No Windows machine and no Wine? `make win-test` builds on a GitHub Actions Windows runner
+(real MSVC) and downloads the artifact.
+
+### Cross-platform testing in VMs (Docker)
+
+Each change has to work on both platforms, and you rarely have both at hand. The maintainer
+runs one in a container on the same Linux box:
+
+| VM | Based on | Used for | Typical loop |
+|---|---|---|---|
+| **Windows 11** (`../windows-devbox`, `wvm`) | [dockur/windows](https://github.com/dockur/windows), unattended install | what Wine fakes or lacks: Dark Mode, DPI scaling, native control theming | `make win11-seed` once (copies your server settings from the Wine profile), then `make win11-test` / `make win11-smoke`, `make win11-logs` |
+| **macOS 14 Sonoma** (`../macos-devbox`, `mvm`) | [dockur/macos](https://github.com/dockur/macos) | the macOS build from a Linux machine: it compiles with Xcode inside the guest and runs there | `make mac-vm` (boot, open the screen, deploy the latest release), `make mac-vm-build-test`, `make mac-vm-smoke` |
+
+Both VMs keep their disk on a host bind mount with reflink snapshots (`make mac-vm-snapshot`,
+`make win11-snapshot`), show their screen in the browser over noVNC (`make mac-vm-open`,
+`make win11-open`), and accept host-side input and screenshots (`mvm click|key|shot`,
+`wvm click|shot`), so they can be driven without touching them by hand. Every `mvm`/`wvm`
+subcommand is also reachable as `make mac-vm-<cmd>` / `make win11-<cmd>`, e.g.
+`make win11-dpi ARGS=144` or `make win11-theme ARGS=dark`.
+
+The `macos-devbox`/`windows-devbox` helper repos are the maintainer's own wrappers around the
+dockur images and expected as siblings of this repo. Without them you can still test on any
+real Windows or Mac machine; the VM targets are there to cover the platform you don't have.
+
+### Automated UI tests, and letting an LLM agent drive them
+
+The UI smoke scripts launch the real foobar2000 and go through a fixed scenario: open the
+Navidrome Browser, expand an artist, press Enter on an album. They then check the debug log,
+that the process is still alive and that there are no crash reports, and save screenshots
+under `build/ui-test/`:
+
+| Platform | Run the scenario | Drive it step by step |
+|---|---|---|
+| Wine | `make win-ui-smoke` | `make win-ui ARGS='click X Y'` / `'key 0x28'` / `'wait REGEX'` / `'shot'` / `'prefs main'` |
+| Windows 11 VM | `make win11-smoke` | `make win11-ui ARGS='prefs radio'` / `'browser'` / `'log 50'` |
+| macOS VM | `make mac-vm-smoke` | `make mac-vm-ui ARGS='browser'` / `'log 50'`, `make mac-vm-click ARGS='x y'` |
+
+Under Wine, input goes to the browser window as posted messages (`tools/wclick.c`), so your
+own mouse and keyboard stay free. Screenshots use `grim` + `hyprctl`, i.e. a Hyprland host.
+The VMs take VNC input.
+
+These commands are built so a coding agent (the maintainer uses [Claude
+Code](https://claude.com/claude-code)) can verify a change end to end without help: it
+builds with one `make` target, drives the UI with `win-ui`/`win11-ui`/`mac-vm-ui`, reads the
+debug log to check what the component did, and looks at the screenshots to check what it
+drew. [`CLAUDE.md`](CLAUDE.md) holds the project rules for such an agent: every change on
+both platforms, tests run, smoke test extended for new UI. When you add a feature, extend
+the smoke scenario so it covers that feature, and the next change (yours or an agent's) gets
+checked against it too.
+
 ### Getting set up
 
 1. Fork and clone the repo, then lay out the sibling SDK directories described under [Prerequisites](#prerequisites) — the project will not build without `pfc/` and `foobar2000/{SDK,helpers,helpers-mac,shared,foobar2000_component_client}` next to it. The CI workflow clones [reupen/foobar2000-sdk-unmodified](https://github.com/reupen/foobar2000-sdk-unmodified) into exactly that layout if you want a reference.
@@ -603,7 +720,7 @@ Platform folders only hold transport, widget and wiring code — a data-layer fi
 
 - **`navidrome://track/<id>?...` URI scheme.** Tracks are queued as these URIs, not raw HTTP URLs, so playlists survive credential/server changes. Metadata is embedded in the query string; the stream URL is resolved at decode time. **Any code that parses these URIs must be updated together when the scheme changes** — `NavidromeInput`, the art extractor's `is_our_path`, etc. The host-vs-path RFC-3986 trap is documented in `CLAUDE.md`.
 - **GUIDs.** Every registered service has a hardcoded `static constexpr GUID`. **If you fork this component you must regenerate all of them** (`src/platform/mac/NavidromePlugin.mm`, `src/platform/mac/NavidromeInput.mm` and their `src/platform/win/` counterparts) — two components sharing a GUID will collide in foobar2000.
-- **Logging is the debugger.** There's no practical debugger-attach for foobar2000 components on Mac; use the `navi_log` file-logging helper (writes to `/tmp/foo_navidrome.log`, survives a crash). Remove temporary logs before submitting.
+- **Logging is the debugger.** There's no practical debugger-attach for foobar2000 components (Mac or Wine); use the `NAVIDROME_LOG`/`WARN`/`ERR` macros (`src/core/NavidromeDebugLog.h`, enabled with `NAVIDROME_DEBUG_LOG`; they write `/tmp/foo_navidrome_debug.log`, line by line so it survives a crash; `make win-logs`/`make mac-logs` tail it). Remove temporary logs before submitting.
 
 ### Coding conventions
 

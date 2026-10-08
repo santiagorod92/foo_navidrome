@@ -341,6 +341,10 @@ inline const std::vector<int>& maxBitrateOptions() {
 // How often the "Rescan Library Now" flow re-polls getScanStatus.view.
 constexpr int kScanPollIntervalMs = 1500;
 
+// Credit line shown at the bottom left of the main prefs page on both platforms.
+constexpr const char* kPrefsAuthorLine = "Author: Santiago Rodriguez";
+constexpr const char* kSourceCodeUrl   = "https://github.com/santiagorod92/foo_navidrome";
+
 // The codec the server will actually send for the configured format, given the
 // track's own suffix. Used as the decoder hint: transcoding to mp3 means a FLAC
 // track arrives as mp3, and hinting "track.flac" would pick the wrong decoder.

@@ -35,7 +35,7 @@ help:
 	@echo "  win-install           install built DLL into local Wine foobar2000 + package"
 	@echo "  win-logs              follow the local Wine debug log, colourised (run beside win-build-launch)"
 	@echo "  win-ui-smoke          UI smoke test in the local Wine foobar2000: open browser, expand, play, assert log (needs win-build-launch'd DLL)"
-	@echo "  win-ui                drive the Wine browser: ARGS='key 0x28' / 'click X Y' / 'shot' / 'wait REGEX' (scripts/ui-test.sh)"
+	@echo "  win-ui                drive the Wine browser: ARGS='key 0x28' / 'click X Y' / 'shot' / 'wait REGEX' / 'prefs main' (scripts/ui-test.sh)"
 	@echo "  win-test              dispatch build-windows.yml on GH runner, install, [ARGS=--launch]"
 	@echo "                        (win-logs / mac-logs share scripts/navidrome-logs.sh — pass ARGS=-a for the whole file)"
 	@echo ""

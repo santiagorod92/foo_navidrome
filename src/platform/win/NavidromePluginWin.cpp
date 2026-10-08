@@ -281,6 +281,8 @@ public:
     BEGIN_MSG_MAP(NavidromePrefsInstance)
         MSG_WM_ERASEBKGND(OnEraseBkgnd)
         MSG_WM_CREATE(OnCreate)
+        MSG_WM_SIZE(OnSize)
+        MESSAGE_HANDLER_EX(WM_CTLCOLORSTATIC, OnCtlColorStatic)
         MESSAGE_HANDLER_EX(WM_TEST_RESULT, OnTestResult)
         MESSAGE_HANDLER_EX(WM_SCAN_STATUS, OnScanStatus)
         COMMAND_HANDLER_EX(IDC_URL,  EN_CHANGE, OnChanged)
@@ -295,6 +297,30 @@ public:
     END_MSG_MAP()
 
     BOOL OnEraseBkgnd(CDCHandle dc) { navidrome::win::eraseLikeDialog(*this, dc); return TRUE; }
+
+    // Pins the credit lines to the bottom-left corner, never above the last control.
+    void OnSize(UINT, CSize sz) {
+        if (!m_credit[0]) return;
+        using namespace navidrome::win;
+        const UiScale s(*this);
+        const int lineH = lineHeight(*this, uiFont(*this));
+        const int pad = s(8);
+        int y = (std::max)(m_minCreditY, static_cast<int>(sz.cy) - pad - 2 * lineH);
+        for (HWND h : m_credit) {
+            ::SetWindowPos(h, nullptr, pad, y, textWidth(h) + s(4), lineH, SWP_NOZORDER);
+            y += lineH;
+        }
+    }
+
+    // Grey text for the credit lines. Dark Mode's hook calls this too and keeps a
+    // non-standard text colour, so it reads as a watermark in both themes.
+    LRESULT OnCtlColorStatic(UINT msg, WPARAM wp, LPARAM lp) {
+        LRESULT brush = DefWindowProc(msg, wp, lp);
+        const HWND ctrl = reinterpret_cast<HWND>(lp);
+        if (ctrl == m_credit[0] || ctrl == m_credit[1])
+            ::SetTextColor(reinterpret_cast<HDC>(wp), ::GetSysColor(COLOR_GRAYTEXT));
+        return brush;
+    }
 
 private:
     enum { IDC_URL=1001, IDC_USER=1002, IDC_PASS=1003, IDC_TEST=1004, IDC_STATUS=1005,
@@ -403,6 +429,11 @@ private:
         label(lblFmt, y);   place(m_format,  x, y, s(240), s(220));  y += step;
         label(lblRate, y);  place(m_bitrate, x, y, s(240), s(220));  y += step;
         buttonWithStatus(rescan, scanSt, y);
+
+        // Credit watermark, kept in the bottom-left corner by OnSize.
+        m_credit[0] = make(L"STATIC", pfc::stringcvt::string_wide_from_utf8(navidrome::kPrefsAuthorLine), SS_LEFT|SS_NOPREFIX);
+        m_credit[1] = make(L"STATIC", pfc::stringcvt::string_wide_from_utf8(navidrome::kSourceCodeUrl), SS_LEFT|SS_NOPREFIX);
+        m_minCreditY = y + step + s(4);
 
         loadSettings();
         m_darkMode.AddDialogWithControls(*this);
@@ -533,6 +564,8 @@ private:
     }
 
     CComboBox m_format, m_bitrate;
+    HWND m_credit[2] = {};   // author line, source code URL
+    int  m_minCreditY = 0;   // top of the credit block when the page is short
     fb2k::CCoreDarkModeHooks m_darkMode;
     preferences_page_callback::ptr m_cb;
     bool m_changed = false;
