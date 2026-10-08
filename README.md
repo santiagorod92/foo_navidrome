@@ -162,11 +162,12 @@ The expected layout relative to `foo_navidrome/`:
 
 ### Build steps
 
-The fastest dev loop is `./scripts/mac-dev-build.sh` — bumps the patch version in
-`version.txt`, runs `xcodebuild`, and installs to your local foobar2000:
+The fastest dev loop is `./scripts/mac-dev-build.sh` — runs `xcodebuild` and installs to
+your local foobar2000. The build is stamped with `git describe` (e.g. `1.21.2-dev.3+2a46400`),
+so *Preferences › Components* tells a local build from a release:
 
 ```bash
-./scripts/mac-dev-build.sh   # bump patch + build + install (see Scripts for --minor/--no-bump/… flags)
+./scripts/mac-dev-build.sh   # build + install (see Scripts for --patch/--minor/… flags)
 ```
 
 Restart foobar2000 after the script finishes to pick up the new version.
@@ -450,11 +451,11 @@ tell "credentials rejected" from "connection reset" without string-matching.
 
 | Command | What it does |
 |---------|--------------|
-| `./scripts/mac-dev-build.sh` | Bump patch version, `xcodebuild` Release, install locally |
-| `./scripts/mac-dev-build.sh --minor` · `--major` | Bump minor / major instead of patch |
-| `./scripts/mac-dev-build.sh --no-bump` | Rebuild + install at the current version |
+| `./scripts/mac-dev-build.sh` | `xcodebuild` Release, install locally (version = `git describe`, no bump) |
+| `./scripts/mac-dev-build.sh --patch` · `--minor` · `--major` | Stamp the last release tag + 1 (patch / minor / major) |
+| `./scripts/mac-dev-build.sh --no-bump` | Same as no flag (kept for old habits) |
 | `./scripts/mac-dev-build.sh --no-install` | Build only (skip install) |
-| `./scripts/mac-dev-build.sh --new-release` | Build, install, package, then create a GitHub release (no debug tracing — matches CI) |
+| `./scripts/mac-dev-build.sh --new-release` | With a bump flag: build, install, package, then create a GitHub release (no debug tracing — matches CI) |
 | `./scripts/install-macos.sh` | Install an already-built component + package the `.fb2k-component` (called by `mac-dev-build.sh`) |
 | `./scripts/navidrome-logs.sh` | Follow `/tmp/foo_navidrome_debug.log`, colourised (also `make mac-logs`; needs a build from `mac-dev-build.sh` without `--new-release`) |
 
@@ -613,7 +614,7 @@ Platform folders only hold transport, widget and wiring code — a data-layer fi
 ### Commits, versioning, and PRs
 
 - Commit messages **must** follow [Conventional Commits](https://www.conventionalcommits.org/) — the release pipeline parses them to decide the version bump. See [Commit message convention](#commit-message-convention). In short: `feat:` → minor, `fix:`/`perf:`/`refactor:` → patch, `chore:`/`docs:`/`ci:`/etc. → no release, `!` or a `BREAKING CHANGE:` footer → major.
-- **Don't bump `version.txt` by hand** — the release pipeline stamps it. Release notes come from the commits; your job is just well-typed commits. Changes reach `main` through pull requests.
+- **Never bump a version by hand** — releases are tags; the pipeline stamps the version. Release notes come from the commits; your job is just well-typed commits. Changes reach `main` through pull requests.
 - Test on at least one platform and say which one in the PR. Cross-platform changes ideally get verified on both macOS and a Windows build (native, or cross-compiled + run under Wine — see the Linux section).
 - Keep PRs focused; one logical change per PR makes review and the auto-generated changelog far cleaner.
 
@@ -630,7 +631,7 @@ Releases are automated. Every push to `main` triggers `.github/workflows/release
 2. Runs [`semantic-release`](https://semantic-release.gitbook.io/) per `.releaserc.json` as a dry run: it inspects commits since the last tag and decides whether a release is needed, and which version.
 3. If a release is needed:
    - The reusable `build-windows.yml` workflow builds the Windows x86/x64/ARM64EC DLLs of that commit (MSVC/MSBuild), stamped with the new version.
-   - Only then, on macOS: the unit tests run, and semantic-release for real — `scripts/mac-ci-build.sh <next-version>` pins `version.txt`, runs `xcodebuild -configuration Release`, ad-hoc signs, and packages `foo_navidrome_<version>.fb2k-component`; a `v<version>` tag and a GitHub release (notes = changelog) are created with it attached.
+   - Only then, on macOS: the unit tests run, and semantic-release for real — `scripts/mac-ci-build.sh <next-version>` stamps that version, runs `xcodebuild -configuration Release`, ad-hoc signs, and packages `foo_navidrome_<version>.fb2k-component`; a `v<version>` tag and a GitHub release (notes = changelog) are created with it attached.
    - The Windows DLLs are merged into that same `.fb2k-component` (macOS + Windows in one file). `CHANGELOG.md` holds the history up to 1.18.0; later releases are on the Releases page.
 
 ### Commit message convention
@@ -645,13 +646,13 @@ The pipeline reads [Conventional Commits](https://www.conventionalcommits.org/).
 | `chore: …` / `docs: …` / `style: …` / `test: …` / `ci: …` | no release |
 | `feat!: …` or footer `BREAKING CHANGE:` | major bump |
 
-Versions are tracked in `version.txt` (consumed by the Xcode "Generate Version Header" build phase, which writes the gitignored `version_generated.h`).
+The version a build reports comes from `scripts/version.sh`: the release version in CI, `git describe` for any other build (`1.21.2-dev.3+2a46400`), and, in a source zip without `.git`, `version.txt` — which `git archive` fills in from the tags (`export-subst`), so nobody bumps a version by hand. It writes the gitignored `version_generated.h` (the Xcode "Generate Version Header" phase and the Windows build scripts all call it).
 
 ### Manual release (fallback)
 
 ```bash
 # Build, install locally, package, and create a GitHub release in one shot
-./scripts/mac-dev-build.sh --new-release
+./scripts/mac-dev-build.sh --patch --new-release
 ```
 
 This bypasses the workflow and uses the `--new-release` path of `scripts/install-macos.sh`.

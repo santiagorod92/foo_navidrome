@@ -45,7 +45,7 @@ make mac-vm-build-test     # ... then deploy + launch it
 make mac-vm-build ARGS=--clean   # wipe the guest ~/build tree first
 ```
 
-- **No version bump.** It runs `mac-ci-build.sh "$(cat version.txt)"`.
+- **No version bump.** It runs `mac-ci-build.sh "$(scripts/version.sh)"`, resolved on the host (git describe, e.g. `1.21.1-dev.3+2a46400`; the guest copy has no `.git`).
 - **DerivedData is kept** in the guest at `~/build/foobar2000/foo_navidrome/build/`.
 - **It's slow.** Emulated xcodebuild takes ~15–40 min, compared with ~3 min on CI. It's
   fine on demand, but not for a tight loop.

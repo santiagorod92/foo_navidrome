@@ -15,7 +15,7 @@
 #                                       assert log + process + crash reports, screenshot
 #   win11-ui-test.sh browser            open the browser in the running foobar2000
 #   win11-ui-test.sh prefs [PAGE]       open Preferences on one of our pages and screenshot it.
-#                                       PAGE: main | audiomuse | libraries | radio | media (default main)
+#                                       PAGE: main | audiomuse | libraries | radio | media | components (default main)
 #   win11-ui-test.sh log [N]            last N lines of the debug log
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -164,13 +164,16 @@ smoke() {
 }
 
 # Preferences opens on preferences.lastOpenPage, so point that at our page, then /config.
+# `components` is foobar's own page (preferences_page::guid_components): the loaded version.
 prefs() {
-  local tail
+  local guid
   case "${1:-main}" in
-    main) tail=0105 ;; audiomuse) tail=0405 ;; libraries) tail=0112 ;; radio) tail=010F ;; media) tail=0109 ;;
-    *) fail "unknown page '$1' (main | audiomuse | libraries | radio | media)" ;;
+    main) guid=${GUID_PREFIX}0105 ;; audiomuse) guid=${GUID_PREFIX}0405 ;; libraries) guid=${GUID_PREFIX}0112 ;;
+    radio) guid=${GUID_PREFIX}010F ;; media) guid=${GUID_PREFIX}0109 ;;
+    components) guid=0E966267-7DFB-433B-A07C-3F8CDD31A258 ;;
+    *) fail "unknown page '$1' (main | audiomuse | libraries | radio | media | components)" ;;
   esac
-  with_guest_config "INSERT OR REPLACE INTO main.configStrings VALUES ('preferences.lastOpenPage', '$GUID_PREFIX$tail');"
+  with_guest_config "INSERT OR REPLACE INTO main.configStrings VALUES ('preferences.lastOpenPage', '$guid');"
   "$WVM" fb2k start '/config'
   wait_window "Preferences" 30 >/dev/null || fail "Preferences didn't open"
   sleep 2

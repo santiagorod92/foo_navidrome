@@ -28,9 +28,9 @@ help:
 	@echo "  mac-test-clean        same, forcing a clean recompile"
 	@echo ""
 	@echo "  win-build             cross-compile Windows x64 component locally (win-build-local.sh, no version bump)"
-	@echo "  win-build-patch       bump version.txt patch, then cross-compile"
-	@echo "  win-build-minor       bump version.txt minor, then cross-compile"
-	@echo "  win-build-major       bump version.txt major, then cross-compile"
+	@echo "  win-build-patch       stamp last release + patch, then cross-compile"
+	@echo "  win-build-minor       stamp last release + minor, then cross-compile"
+	@echo "  win-build-major       stamp last release + major, then cross-compile"
 	@echo "  win-build-launch      same as win-build, then relaunch local Wine foobar2000 to load it"
 	@echo "  win-install           install built DLL into local Wine foobar2000 + package"
 	@echo "  win-logs              follow the local Wine debug log, colourised (run beside win-build-launch)"
@@ -39,10 +39,10 @@ help:
 	@echo "  win-test              dispatch build-windows.yml on GH runner, install, [ARGS=--launch]"
 	@echo "                        (win-logs / mac-logs share scripts/navidrome-logs.sh — pass ARGS=-a for the whole file)"
 	@echo ""
-	@echo "  mac-build             bump patch, xcodebuild Release, install locally"
-	@echo "  mac-build-patch       alias for mac-build (explicit patch bump)"
-	@echo "  mac-build-minor       bump minor instead of patch"
-	@echo "  mac-build-major       bump major instead of patch"
+	@echo "  mac-build             xcodebuild Release, install locally (version = git describe)"
+	@echo "  mac-build-patch       stamp last release + patch, build + install"
+	@echo "  mac-build-minor       stamp last release + minor, build + install"
+	@echo "  mac-build-major       stamp last release + major, build + install"
 	@echo "  mac-build-no-install  bump + build only (skip install)"
 	@echo "  mac-install           install an already-built component + package"
 	@echo "  mac-release           bump, build, install, package, gh release create"
@@ -156,7 +156,7 @@ mac-install:
 	./scripts/install-macos.sh
 
 mac-release:
-	./scripts/mac-dev-build.sh --new-release
+	./scripts/mac-dev-build.sh --patch --new-release
 
 mac-ci-build:
 	@if [ -z "$(VERSION)" ]; then echo "usage: make mac-ci-build VERSION=x.y.z"; exit 1; fi

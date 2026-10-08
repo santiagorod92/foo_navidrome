@@ -13,8 +13,8 @@
 #   2. push this repo's WORKING TREE to ~/build/foobar2000/foo_navidrome/
 #      (tracked + untracked, minus .git and build output)
 #   3. run scripts/run-unit-tests.sh mac         (skip with --no-unit-tests)
-#   4. run scripts/mac-ci-build.sh <version.txt> (xcodebuild Release + package),
-#      NO version bump — version.txt is written back to its current value
+#   4. run scripts/mac-ci-build.sh <version> (xcodebuild Release + package), with
+#      the version resolved HERE by scripts/version.sh (the guest copy has no .git)
 #   5. tar the resulting foo_navidrome_<v>.fb2k-component back to the repo root
 #   6. --test  -> mvm deploy <component> --launch
 #
@@ -93,10 +93,11 @@ if [ "$RUN_UNIT" = 1 ]; then
   sshg "cd $GDIR && ./scripts/run-unit-tests.sh mac"
 fi
 
-echo "==> guest xcodebuild Release (no version bump) ..."
+VERSION="$("$REPO/scripts/version.sh")"
+echo "==> guest xcodebuild Release, version $VERSION ..."
 EXTRA_ENV=""
 [ "$DEBUG_LOG" = 1 ] && EXTRA_ENV="MAC_EXTRA_CFLAGS=-DNAVIDROME_DEBUG_LOG=1"
-sshg "cd $GDIR && $EXTRA_ENV ./scripts/mac-ci-build.sh \"\$(cat version.txt)\""
+sshg "cd $GDIR && $EXTRA_ENV ./scripts/mac-ci-build.sh '$VERSION'"
 
 # --- pull the packaged component back -----------------------------------
 echo "==> pulling .fb2k-component to $REPO ..."

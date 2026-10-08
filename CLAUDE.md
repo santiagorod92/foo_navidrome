@@ -165,26 +165,26 @@ Wine stays the fast loop; this is for what Wine fakes or lacks (it reports Dark 
 The VM lives in the sibling repo `macos-devbox` (dockur/macos; disk on a host bind mount; btrfs-reflink snapshots; screen at `http://127.0.0.1:8006`; host-side `mvm shot/click/type/key`). One-time: manual macOS install in the browser → `mvm provision` → `mvm snapshot base`. Here: `make mac-vm` (boot + open noVNC + deploy latest release; `VNC=0` skips the browser), `make mac-vm-vnc` (boot + open the screen only), `make mac-vm-open` (screen only; waits for guest sshd first, because a noVNC tab opened during OpenCore's boot picker cancels its auto-boot timeout and leaves the VM stuck there — same targets as foo_ui_panels), `make mac-vm-test [COMPONENT=…]`, `make mac-vm-build[-test]` (xcodebuild in the guest, `scripts/mac-vm/mac-vm-build.sh`; needs `mvm xcode <xip>` once), `make mac-vm-<cmd>` passes through to `mvm`. Never `docker prune`/`rm` — and never put the VM disk back in a container layer.
 
 ### Versioning + dev loop
-Single source of truth: `version.txt`. Xcode's "Generate Version Header" phase reads it every build → `version_generated.h` (gitignored).
+One resolver: `scripts/version.sh` → `version_generated.h` (gitignored) → `DECLARE_COMPONENT_VERSION`, i.e. what foobar2000 shows under *Preferences › Components* (read from the binary at load — nothing to update inside foobar, just swap the DLL/bundle and restart). Order: `$NAVIDROME_VERSION` (releases pass semantic-release's version — the tag doesn't exist yet while they build; an explicit `--patch/--minor/--major` bump too) → `git describe` against the last `v*` tag (`1.21.2` on a clean tag, `1.21.2-dev.3+2a46400[.dirty]` after it) → `version.txt`, only read in a tree without `.git`: in the repo it's a `$Format:%(describe…)$` placeholder that `git archive` (GitHub source zips) expands (`.gitattributes` `export-subst`), so no version number is ever maintained by hand — releases are the `v*` tags. Every build path calls it: `win-build-local.sh`, `win-vm/build-mac.sh`, Xcode's "Generate Version Header" phase, `mac-dev-build.sh`/`mac-ci-build.sh` (as the `NAVIDROME_VERSION` build setting), `mac-vm-build.sh` (resolved on the host: the guest copy and `mac-dev-build.sh`'s SDK-tree copy have no `.git`), `build-windows.yml` (`fetch-depth: 0` so dispatch builds see tags). **Run `git fetch --tags` after a release merges** or local builds describe against the previous tag. Check what a guest actually loaded: `make win11-ui ARGS='prefs components'`.
 ```bash
-./scripts/mac-dev-build.sh                # bump patch, build, install
-./scripts/mac-dev-build.sh --minor/--major/--no-bump/--no-install/--new-release
+./scripts/mac-dev-build.sh                # build, install (no bump)
+./scripts/mac-dev-build.sh --patch/--minor/--major/--no-install/--new-release   # bump = last tag + 1; --new-release needs one
 ```
-`win-build-local.sh` mirrors this (writes `version_generated.h`, same bump flags) but **defaults to no bump** (the Linux cross-compile loop runs constantly and `version.txt` is tracked). Symmetric `make {win,mac}-build-{patch,minor,major}` targets.
+`win-build-local.sh` mirrors this (same bump flags, default no bump). A bump counts from the last release tag (`version.sh --base`) and is only stamped, never written to the tree. Symmetric `make {win,mac}-build-{patch,minor,major}` targets.
 
 ### Release pipeline
 `.github/workflows/release.yml` on push to `main`, via [semantic-release](https://semantic-release.gitbook.io/) reading [Conventional Commits](https://www.conventionalcommits.org/) (config `.releaserc.json`):
 - `feat:` → minor · `fix:`/`perf:`/`refactor:` → patch · `chore:`/`docs:`/`style:`/`test:`/`ci:` → no release · `!`/breaking footer → major.
 - **`commit-analyzer` and `release-notes-generator` type lists must stay in sync** — the `conventionalcommits` preset hides `refactor`/`docs`/`build` by default; any type added to `releaseRules` with `release != false` needs a matching non-hidden entry in `release-notes-generator`'s `presetConfig.types` or its notes are empty.
 - Jobs: `version` (`semantic-release --dry-run`; exec's `verifyReleaseCmd` exports `next_version`) → `build-windows` (reusable `build-windows.yml` on that commit, stamped with that version) → `release` (macOS: `make mac-test`, then semantic-release for real) → `merge-component` → `notify-n8n`. Nothing is published unless both platforms built.
-- Plugin chain: `commit-analyzer` → `release-notes-generator` → `exec` (`mac-ci-build.sh <version>`, xcodebuild + package `.fb2k-component`) → `github` (tag + release + asset; notes = changelog). **`main` is branch-protected (PRs only)**, so no `git`/`changelog` plugins: nothing is committed back — `version.txt` in the repo stays at the last hand-committed value (dev builds report it), `CHANGELOG.md` holds history up to 1.18.0, later notes live on GitHub Releases.
+- Plugin chain: `commit-analyzer` → `release-notes-generator` → `exec` (`mac-ci-build.sh <version>`, xcodebuild + package `.fb2k-component`) → `github` (tag + release + asset; notes = changelog). **`main` is branch-protected (PRs only)**, so no `git`/`changelog` plugins: nothing is committed back — nothing to keep in sync in the repo: every build derives its version from the tags (see Versioning), `CHANGELOG.md` holds history up to 1.18.0, later notes live on GitHub Releases.
 - SDK cloned from `marc2k3/foobar2000-sdk` + `marc2k3/pfc` into sibling layout at CI time.
 - **`release.yml` only checks the push's top commit type** — a `chore:` HEAD (or a PR squash-merged as `ci:`/`docs:`) skips release even with a `feat`/`fix` underneath it; dispatch the workflow by hand then.
-- First-time setup needs a starting tag (`git tag v$(cat version.txt) && git push --tags`) or semantic-release treats next release as v1.0.0.
+- First-time setup needs a starting tag (`git tag v<x.y.z> && git push --tags`) or semantic-release treats next release as v1.0.0.
 
 ### Manual release (bypasses CI)
 ```bash
-./scripts/mac-dev-build.sh --new-release
+./scripts/mac-dev-build.sh --patch --new-release
 ```
 
 ## Decisions & Constraints

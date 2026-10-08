@@ -24,7 +24,7 @@ on:
         type: string
         default: ""
       version:
-        description: "Version to stamp into the DLL (default: read version.txt)"
+        description: "Version to stamp into the DLL (default: scripts/version.sh, i.e. git describe)"
         required: false
         type: string
         default: ""
@@ -64,6 +64,7 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref }}
           path: foobar2000/foo_navidrome
+          fetch-depth: 0   # tags, so scripts/version.sh can stamp a dispatch build 1.21.1-dev.3+<sha>
 
       - name: Checkout foobar2000 SDK bundle
         uses: actions/checkout@v6
@@ -130,15 +131,16 @@ jobs:
 
       # main.cpp reads COMPONENT_VERSION from version_generated.h when present
       # (else falls back to "1.0.0"). The Windows vcxproj has no version-header
-      # build phase, so synthesize it from the explicit input or version.txt.
+      # build phase, so synthesize it: the release's version when release.yml passes
+      # one, else scripts/version.sh's git describe (same resolver as local builds).
       - name: Resolve version + generate version_generated.h
         shell: bash
         working-directory: foobar2000/foo_navidrome
+        env:
+          NAVIDROME_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          V="${{ inputs.version }}"
-          if [ -z "$V" ]; then V="$(cat version.txt)"; fi
-          printf '#pragma once\n#define COMPONENT_VERSION "%s"\n' "$V" > version_generated.h
+          V="$(scripts/version.sh --header version_generated.h)"
           echo "VERSION=$V" >> "$GITHUB_ENV"
           echo "version_generated.h -> COMPONENT_VERSION \"$V\""
 

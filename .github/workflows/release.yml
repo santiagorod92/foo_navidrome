@@ -9,7 +9,7 @@ name: Release
 # main is protected (changes only through pull requests), so nothing here pushes to it: no
 # release commit, no CHANGELOG.md/version.txt write-back — only the v<version> tag and the
 # GitHub release, whose notes are the changelog. Every build stamps the version itself
-# (mac-ci-build.sh writes version.txt; build-windows.yml takes it as an input).
+# (mac-ci-build.sh passes it to xcodebuild; build-windows.yml takes it as an input).
 on:
   push:
     branches: [main]

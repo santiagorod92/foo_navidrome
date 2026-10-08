@@ -18,10 +18,10 @@
 #     --launch   relaunch foobar2000 after installing
 #     --clean    wipe the object cache and rebuild everything
 #     --no-test  skip the unit tests that otherwise gate the build
-#     --minor    bump version.txt minor (resets patch to 0) before building
-#     --major    bump version.txt major (resets minor + patch to 0)
-#     --patch    bump version.txt patch
-#                (default: no bump — the Linux loop runs often, version.txt is tracked)
+#     --minor    stamp the last release's minor + 1 (patch reset to 0)
+#     --major    stamp the last release's major + 1 (minor + patch reset to 0)
+#     --patch    stamp the last release's patch + 1
+#                (default: no bump — stamped with git describe, see scripts/version.sh)
 #     -j N       parallel compile jobs (default: nproc)
 
 set -euo pipefail
@@ -79,33 +79,29 @@ if [ "$RUN_TESTS" = "1" ]; then
   XWIN_SDK="$XWIN_SDK" "$REPO/scripts/run-unit-tests.sh" win
 fi
 
-# Version bump (mirrors mac-dev-build.sh). Default is *no* bump: unlike the mac
-# dev loop, the Linux cross-compile loop runs constantly and version.txt is
-# tracked, so churning it every build is noise. --minor/--major/--patch opt in
-# (make win-build-minor / win-build-major wire the first two).
-VERSION_FILE="$REPO/version.txt"
-[ -f "$VERSION_FILE" ] || echo "1.0.0" > "$VERSION_FILE"
+# Version bump (mirrors mac-dev-build.sh). Default is *no* bump: the build is stamped
+# with git describe. --minor/--major/--patch count from the last release tag
+# (scripts/version.sh --base) and stamp the result; nothing is written to the tree.
 if [ "$BUMP" != "none" ]; then
-  CURRENT="$(tr -d '[:space:]' < "$VERSION_FILE")"
+  CURRENT="$("$REPO/scripts/version.sh" --base)"
   IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
-  MAJOR="${MAJOR:-1}"; MINOR="${MINOR:-0}"; PATCH="${PATCH:-0}"
+  MAJOR="${MAJOR:-0}"; MINOR="${MINOR:-0}"; PATCH="${PATCH:-0}"
   case "$BUMP" in
     major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
     minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
     patch) PATCH=$((PATCH + 1)) ;;
   esac
   NEW="${MAJOR}.${MINOR}.${PATCH}"
-  echo "$NEW" > "$VERSION_FILE"
   echo "==> version: ${CURRENT} -> ${NEW}"
 fi
 
 # main.cpp reads COMPONENT_VERSION from version_generated.h (else falls back to
-# "1.0.0"). The macOS Xcode build phase writes this; mirror it here so the local
-# DLL reports the version.txt version. Gitignored, shared with the mac build.
-printf '#pragma once\n#define COMPONENT_VERSION "%s"\n' "$(cat "$VERSION_FILE")" > "$REPO/version_generated.h"
-# version_generated.h isn't tracked as a compile dependency, so drop main.obj
-# to force it to pick up a version bump (one cheap TU).
-rm -f "$OBJ_DIR/main.obj"
+# "1.0.0"). scripts/version.sh resolves it the same way for every build: git describe
+# (1.21.1-dev.3+2a46400 between releases), version.txt only without git. A bump above
+# is explicit intent, so it wins. Gitignored, shared with the mac build.
+if [ "$BUMP" != "none" ]; then export NAVIDROME_VERSION="$NEW"; fi
+BUILD_VERSION="$("$REPO/scripts/version.sh" --header "$REPO/version_generated.h")"
+echo "==> component version: $BUILD_VERSION"
 
 # Forced-include prefix: the foobar SDK/pfc sources expect a *full* windows.h
 # (NOT lean) so COM types (interface, IUnknown, IDataObject) are defined, but
@@ -191,6 +187,16 @@ obj_for() { # map a source path to a unique, flattened object path
   key="$(echo "$s" | sed "s#^$REPO/##; s#^$SDK_ROOT/##; s#^$PFC_ROOT/#pfc/#; s#^$LIBPPUI_ROOT/#libPPUI/#; s#/#__#g")"
   echo "$OBJ_DIR/${key%.cpp}.obj"
 }
+
+# version_generated.h isn't tracked as a compile dependency, so drop the object of
+# every source that includes it (main.cpp, EsLyricBridge.cpp) when the header is newer
+# (version.sh only rewrites it on change). Found by grep + obj_for: a hardcoded
+# "main.obj" silently stopped matching when main.cpp moved to src/core/, and every
+# local DLL kept the version it was first compiled with.
+while IFS= read -r src; do
+  obj="$(obj_for "$src")"
+  if [ "$REPO/version_generated.h" -nt "$obj" ]; then rm -f "$obj"; fi
+done < <(grep -rlE '#\s*include\s+"version_generated\.h"' "$REPO/src" --include='*.cpp')
 
 # ---------------------------------------------------------------------------
 # Casing resolver: MSVC SDK / foobar sources include headers under mixed case
@@ -295,7 +301,7 @@ if [ "$LAUNCH" = "1" ]; then
   # Fresh log per session so what you see is only this run.
   : > "$DBG_LOG" 2>/dev/null || true
   printf '==== build %s installed %s — foobar2000 relaunch ====\n' \
-    "$(cat "$REPO/version.txt" 2>/dev/null || echo '?')" \
+    "$BUILD_VERSION" \
     "$(date '+%Y-%m-%d %H:%M:%S')" >> "$DBG_LOG" 2>/dev/null || true
   echo "==> relaunching foobar2000 ..."
   pkill -f 'foobar2000.exe' 2>/dev/null || true
