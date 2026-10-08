@@ -3,6 +3,7 @@
 	mac-build mac-build-patch mac-build-minor mac-build-major mac-build-no-install mac-install mac-release mac-ci-build mac-logs \
 	win-vm-setup win-vm-fetch win-vm-install win-vm-test \
 	mac-vm mac-vm-vnc mac-vm-open mac-vm-smoke mac-vm-ui mac-vm-test mac-vm-release mac-vm-build mac-vm-build-test \
+	win11 win11-vnc win11-open win11-test win11-release win11-seed win11-smoke win11-ui win11-logs \
 	audiomuse-up audiomuse-analyze audiomuse-status audiomuse-search audiomuse-logs audiomuse-down clean
 
 XWIN_SDK ?= $(HOME)/.local/share/xwin/sdk
@@ -16,6 +17,7 @@ BUILD_MAC := build-mac
 #   mac-*  -> native macOS component (xcodebuild)
 #   win-vm-*  -> Windows component built + runtime-tested in a VM on macOS
 #   mac-vm-*  -> macOS component runtime-tested in a local macOS VM on Linux (../macos-devbox)
+#   win11-*   -> Windows component runtime-tested in a local Windows 11 VM on Linux (../windows-devbox)
 
 help:
 	@echo "foo_navidrome — make targets"
@@ -62,6 +64,16 @@ help:
 	@echo "  mac-vm-build          build the macOS component INSIDE the guest (xcodebuild), pull the .fb2k-component here [ARGS=--clean]"
 	@echo "  mac-vm-build-test     mac-vm-build, then deploy + launch it in the guest"
 	@echo "  mac-vm-<cmd>          any mvm command: mac-vm-up, -down, -ssh, -shot, -snapshot, -restore ARGS=name, ..."
+	@echo "  win11                 boot the Windows 11 VM (../windows-devbox), open its screen (VNC) in the browser, deploy the latest release [VNC=0: no browser]"
+	@echo "  win11-vnc             boot the Windows 11 VM and open its screen (noVNC) in the browser — nothing deployed"
+	@echo "  win11-open            open the VM screen (noVNC) in the browser once the container's viewer answers"
+	@echo "  win11-test            cross-build the x64 DLL (debug log), deploy into the VM, relaunch"
+	@echo "  win11-release         deploy a GitHub release [TAG=v1.12.0, default latest], relaunch"
+	@echo "  win11-seed            copy foo_navidrome settings (server/account) from the Wine profile into the VM"
+	@echo "  win11-smoke           build, deploy, run the UI smoke test on real Windows (scripts/win11/win11-ui-test.sh)"
+	@echo "  win11-ui              win11-ui-test.sh ARGS='prefs radio' / 'browser' / 'log 50' — no build"
+	@echo "  win11-logs            follow the guest's debug log (lands in the VM's shared folder)"
+	@echo "  win11-<cmd>           any wvm command: win11-up, -down, -ssh, -shot, -dpi ARGS=144, -theme ARGS=dark, ..."
 	@echo "                        (see ../macos-devbox/README.md; one-time: mvm setup, up, provision, snapshot base)"
 	@echo ""
 	@echo "  audiomuse-up          start the local AudioMuse-AI test stack (dev/audiomuse/, needs dev/audiomuse/.env)"
@@ -232,6 +244,63 @@ mac-vm-build-test:
 
 mac-vm-%:
 	$(MVM) $* $(ARGS)
+
+# --- Windows 11 VM on Linux (../windows-devbox, `wvm`) ---
+# Real Windows for what Wine can't show (Dark Mode, DPI scaling, native theming); the Wine targets
+# above stay the fast loop. The VM itself (unattended install, snapshots, deploy, screenshots) is
+# the sibling windows-devbox repo; the foo_navidrome scenario is scripts/win11/win11-ui-test.sh.
+# Any other wvm command passes through: `make win11-shot`, `make win11-dpi ARGS=144`, ...
+WVM ?= $(abspath ../windows-devbox/wvm)
+WVM_ENV = $(dir $(WVM))wvm.env
+
+# Boot, open the screen, wait for SSH + the desktop, deploy the latest release. VNC=0 skips the tab.
+win11:
+	$(WVM) up
+	@if [ "$(VNC)" != 0 ]; then $(MAKE) --no-print-directory win11-open; fi
+	$(WVM) up --wait
+	$(MAKE) win11-release
+
+# Just the VM + its screen: boot (no-op if already up), open the VNC viewer, wait for the desktop.
+win11-vnc:
+	$(WVM) up
+	$(MAKE) --no-print-directory win11-open
+	$(WVM) up --wait
+
+# The guest's screen (dockur's noVNC page) in the browser, once the container's web viewer answers.
+# Unlike the macOS guest there's no boot picker to disturb, so no need to wait for the OS itself —
+# the tab shows the install/boot as it happens. Port: wvm.env / environment, else the default.
+win11-open:
+	@eval "$$( [ -f "$(WVM_ENV)" ] && grep -E '^WVM_WEB_PORT=' "$(WVM_ENV)" )"; \
+	  web=http://127.0.0.1:$${WVM_WEB_PORT:-8007}; \
+	  echo "waiting for the VM screen at $$web ..."; \
+	  for i in $$(seq 1 60); do curl -fs -o /dev/null "$$web" && break; sleep 2; done; \
+	  curl -fs -o /dev/null "$$web" || { echo "VM screen not answering at $$web ($(WVM) logs)"; exit 1; }; \
+	  $(WVM) web
+
+# Local x64 build (debug log on) into the guest, relaunched.
+win11-test:
+	./scripts/win-build-local.sh --no-test
+	$(WVM) deploy build-win/foo_navidrome.dll --launch
+
+win11-release:
+	$(WVM) deploy --gh santiagorod92/foo_navidrome$(if $(TAG),@$(TAG)) --launch
+
+# Copy foo_navidrome's settings (server, account, ...) from the Wine profile into the guest.
+win11-seed:
+	./scripts/win11/win11-ui-test.sh seed
+
+win11-smoke:
+	./scripts/win-build-local.sh --no-test
+	./scripts/win11/win11-ui-test.sh smoke
+
+win11-ui:
+	./scripts/win11/win11-ui-test.sh $(ARGS)
+
+win11-logs:
+	tail -f "$$($(WVM) shared)/tmp/foo_navidrome_debug.log"
+
+win11-%:
+	$(WVM) $* $(ARGS)
 
 # --- Local AudioMuse-AI test stack (dev/audiomuse/, scripts/audiomuse-dev.sh) ---
 audiomuse-up:
