@@ -13,6 +13,8 @@
 #   ui-test.sh key VK [X Y]           post a key to the browser (default: into the tree)
 #   ui-test.sh wait REGEX [SECS]      wait for a new log line matching REGEX (since last mark)
 #   ui-test.sh shot [FILE.png]        screenshot of the browser window, else the main window (build/ui-test/)
+#   ui-test.sh prefs [PAGE]           restart foobar2000 into Preferences on one of our pages, screenshot
+#                                     (main | audiomuse | libraries | radio | media | components)
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$REPO/build/tools"; EXE="$OUT/wclick.exe"
@@ -93,6 +95,32 @@ restart() {
   sleep 5
 }
 
+# Preferences opens on preferences.lastOpenPage, and `foobar2000 -config` only opens it on a
+# cold start under Wine, so stop foobar2000, point that key at our page, then start it that way.
+# Page GUIDs as in scripts/win11/win11-ui-test.sh.
+prefs() {
+  local guid p='A1B2C3D4-1111-2222-AABB-CCDDEEFF'
+  case "${1:-main}" in
+    main) guid=${p}0105 ;; audiomuse) guid=${p}0405 ;; libraries) guid=${p}0112 ;;
+    radio) guid=${p}010F ;; media) guid=${p}0109 ;;
+    components) guid=0E966267-7DFB-433B-A07C-3F8CDD31A258 ;;
+    *) fail "unknown page '$1' (main | audiomuse | libraries | radio | media | components)" ;;
+  esac
+  if running; then
+    foobar2000 -exit >/dev/null 2>&1 || true
+    for _ in $(seq 1 20); do running || break; sleep 0.5; done
+    pkill -f 'foobar2000[.]exe' || true; sleep 1
+  fi
+  sqlite3 "$HOME/.foobar2000/profile/config.sqlite" \
+    "INSERT OR REPLACE INTO configStrings VALUES ('preferences.lastOpenPage', '$guid');"
+  nohup foobar2000 -config >/dev/null 2>&1 &
+  for _ in $(seq 1 40); do geom Preferences >/dev/null 2>&1 && break; sleep 0.5; done
+  geom Preferences >/dev/null 2>&1 || fail "Preferences didn't open"
+  sleep 2
+  local f="$SHOTS/prefs-${1:-main}-$(date +%H%M%S).png"
+  mkdir -p "$SHOTS"; grim -g "$(geom Preferences)" "$f" && echo "$f"
+}
+
 open_browser() {
   foobar2000 "-command:Open Navidrome Browser" >/dev/null 2>&1 &
   for _ in $(seq 1 30); do geom >/dev/null 2>&1 && return 0; sleep 0.5; done
@@ -144,5 +172,6 @@ case "${1:-}" in
   wait)    shift; wait_log "$@" ;;
   mark)    mark ;;
   shot)    shift; shot "$@" ;;
-  *) sed -n '2,15p' "$0"; exit 2 ;;
+  prefs)   shift; prefs "$@" ;;
+  *) sed -n '2,17p' "$0"; exit 2 ;;
 esac

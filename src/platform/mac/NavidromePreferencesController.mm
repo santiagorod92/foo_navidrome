@@ -304,6 +304,15 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
     infoLabel.font = [NSFont systemFontOfSize:11];
     [root addSubview:infoLabel];
 
+    // Credit watermark, pinned to the bottom-left corner.
+    NSTextField *creditLabel = [NSTextField labelWithString:
+        [NSString stringWithFormat:@"%s\n%s", navidrome::kPrefsAuthorLine, navidrome::kSourceCodeUrl]];
+    creditLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    creditLabel.textColor = [NSColor tertiaryLabelColor];
+    creditLabel.font = [NSFont systemFontOfSize:10];
+    creditLabel.selectable = YES;
+    [root addSubview:creditLabel];
+
     CGFloat pad   = 16;
     CGFloat vGap  = 10;
     CGFloat labelW = 90;
@@ -387,7 +396,16 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
         [infoLabel.topAnchor constraintEqualToAnchor:_rescanButton.bottomAnchor constant:vGap * 2],
         [infoLabel.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:pad],
         [infoLabel.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-pad],
+
+        // Credit watermark: below the info label, at the bottom when there's room
+        [creditLabel.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:pad],
+        [creditLabel.topAnchor constraintGreaterThanOrEqualToAnchor:infoLabel.bottomAnchor constant:vGap * 2],
     ]];
+    // Low priority: a short page must not fight the host's frame for the root view.
+    NSLayoutConstraint *creditBottom =
+        [creditLabel.bottomAnchor constraintEqualToAnchor:root.bottomAnchor constant:-pad];
+    creditBottom.priority = NSLayoutPriorityDefaultLow;
+    creditBottom.active = YES;
 
     // Set notifications for immediate-save behaviour (foobar2000 preferences pages
     // are expected to apply changes as they're made, not on an "Apply" button).
