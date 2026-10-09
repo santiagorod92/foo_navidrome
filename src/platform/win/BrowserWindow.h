@@ -5,6 +5,7 @@
 #include <SDK/coreDarkMode.h>
 #include <SDK/ui_element.h>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <vector>
@@ -60,6 +61,9 @@ public:
     // Create as a WS_CHILD panel filling `parent` (used by the Media Library
     // prefs page for an inline browser, mirroring the macOS embedded mount).
     void createEmbedded(HWND parent);
+    // Default UI element mount: while `pass()` is true (layout edit mode) a
+    // right-click on the tree goes to the host instead of our context menu.
+    void setContextMenuPassthrough(std::function<bool()> pass) { m_passContextMenu = std::move(pass); }
 
     DECLARE_WND_CLASS(L"foo_navidrome_BrowserWnd")
 
@@ -296,6 +300,7 @@ private:
     // True when hosted inline in the prefs page (vs. the standalone window);
     // only the standalone window hides itself after an Enter "queue + play".
     bool          m_embedded = false;
+    std::function<bool()> m_passContextMenu;
 
     // Keeps nodes alive; HTREEITEM lParam points into these shared_ptrs
     std::map<HTREEITEM, std::shared_ptr<NavidromeNode>> m_nodeMap;

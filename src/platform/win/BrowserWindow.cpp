@@ -1323,7 +1323,11 @@ void BrowserWindow::populateChildren(LoadedPayload* payload) {
 // The formatting is shared with macOS (which splits it back across its 3
 // columns) — see navidrome::nodeDisplay() / singleColumnLabel().
 std::string BrowserWindow::labelFor(const std::shared_ptr<NavidromeNode>& node) const {
-    return navidrome::singleColumnLabel(*node);
+    std::string label = navidrome::singleColumnLabel(*node);
+    // Search results are a flat song list, so name the artist on each row.
+    if (m_isSearching && node->type == NavidromeNode::Song && !node->subtitle.empty())
+        label += " \u2014 " + node->subtitle;
+    return label;
 }
 
 void BrowserWindow::refreshLabel(const std::shared_ptr<NavidromeNode>& node) {
@@ -1620,6 +1624,12 @@ void BrowserWindow::OnContextMenu(CWindow wnd, CPoint point) {
     if (wnd.m_hWnd != m_tree.m_hWnd) {
         dbgLog("OnContextMenu: wnd mismatch, passing through");
         SetMsgHandled(FALSE); return;
+    }
+    if (m_passContextMenu && m_passContextMenu()) {
+        // Layout edit mode: hand the click to the Default UI host.
+        GetParent().SendMessage(WM_CONTEXTMENU, reinterpret_cast<WPARAM>(wnd.m_hWnd),
+                                MAKELPARAM(point.x, point.y));
+        return;
     }
 
     if (point.x == -1 && point.y == -1) {
@@ -2370,21 +2380,9 @@ void BrowserWindow::OnTimer(UINT_PTR id) {
         payload->error      = err;
         payload->generation = generation;
         for (auto& s : results.songs) {
-            auto n = std::make_shared<NavidromeNode>();
-            n->type           = NavidromeNode::Song;
-            n->id             = s.id;
-            n->displayName    = s.title + " \u2014 " + s.artist;
-            n->subtitle       = s.artist;
-            n->album          = s.album;
-            n->albumId        = s.albumId;
-            n->coverArtId     = s.coverArtId;
-            n->suffix         = s.suffix;
-            n->track          = s.track;
-            n->year           = s.year;
-            n->duration       = s.duration;
-            n->starred        = s.starred;
-            n->rating         = s.rating;
-            n->childrenLoaded = true;
+            // Plain song node: displayName is the track title that enqueue
+            // writes to the playlist. The " — artist" suffix is label-only.
+            auto n = navidrome::makeSongNode(s);
             payload->nodes.push_back(n);
         }
         syncBrowserNodesToPlaylists(payload->nodes);
