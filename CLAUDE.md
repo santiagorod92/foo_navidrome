@@ -269,6 +269,8 @@ One resolver: `scripts/version.sh` → `version_generated.h` (gitignored) → `D
 
 - `cfg_int`/`cfg_bool` must be qualified `cfg_var_modern::cfg_int`/`cfg_bool` — unqualified resolves to the legacy variant (no `set()`, different serialization) on Windows SDK headers; Windows fails to build, macOS compiles fine. `cfg_string` has no such ambiguity.
 
+- **Don't use libPPUI symbols (`WIN32_OP`, `libPPUI/*.h`) in the DLL** — `win-build-local.sh` compiles `../libPPUI` sources in, but `foo_navidrome.vcxproj` has no libPPUI `ProjectReference`, so CI's MSBuild fails at link (`unresolved external symbol WIN32_OP_FAIL`) while every local build is green. Throw `exception_win32(GetLastError())` (pfc) instead.
+
 - **`std::min`/`std::max` need parens on Windows:** `(std::min)(a, b)` — `windows.h` macros `min`/`max` otherwise mangle the call. macOS compiles the bare form fine.
 
 - **Adding a `src/platform/win/*.cpp` only needs a `src/platform/win/foo_navidrome.vcxproj` edit** — both clang-cl build scripts derive their source list from the vcxproj via `scripts/component-sources.sh`. A *moved/renamed* file still needs the vcxproj edit, and `component-sources.sh` resolves every `Include=` relative to the vcxproj's own folder (so `..\..\core\X.cpp` works). Tested helpers also need `tests/MediaEnrichmentTests.vcxproj` + `run-unit-tests.sh`.

@@ -7,7 +7,6 @@
 #include "../../core/NavidromeDebugLog.h"
 #include <SDK/ui_element.h>
 #include <helpers/atl-misc.h>
-#include <libPPUI/win32_op.h>
 
 namespace {
 
@@ -23,7 +22,9 @@ public:
         : m_config(cfg), m_callback(cb) {}
 
     void initialize_window(HWND parent) {
-        WIN32_OP(Create(parent, nullptr, nullptr, WS_CHILD | WS_CLIPCHILDREN) != NULL);
+        // Not WIN32_OP: it lives in libPPUI, which the MSBuild project doesn't link.
+        if (Create(parent, nullptr, nullptr, WS_CHILD | WS_CLIPCHILDREN) == NULL)
+            throw exception_win32(GetLastError());
     }
 
     BEGIN_MSG_MAP_EX(NavidromeBrowserElement)
