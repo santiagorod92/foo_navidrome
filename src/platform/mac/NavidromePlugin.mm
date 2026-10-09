@@ -8,6 +8,8 @@
 #include <SDK/library_manager.h>
 #include <SDK/play_callback.h>
 #include <SDK/initquit.h>
+#include <initializer_list>
+#include <strings.h>
 #include <SDK/ui_element_mac.h>
 #include "../../core/SubsonicTypes.h"
 #include "../../core/NavidromePlaylistSync.h"
@@ -964,13 +966,23 @@ FB2K_SERVICE_FACTORY(preferences_page_navidrome_library);
 // singleton.
 // ---------------------------------------------------------------------------
 
+// The layout editor is plain text and its built-in names are lowercase (`playlist`,
+// `playback-controls`), so match ignoring case and accept a hyphenated alias next to the
+// display name (no space to get wrong).
+static bool matchesLayoutName(const char *name, std::initializer_list<const char *> names) {
+    if (name == nullptr) return false;
+    for (const char *n : names)
+        if (strcasecmp(name, n) == 0) return true;
+    return false;
+}
+
 class ui_element_mac_navidrome : public ui_element_mac {
 public:
     service_ptr instantiate(service_ptr /*arg*/) override {
         return fb2k::wrapNSObject([NavidromeBrowserController new]);
     }
     bool match_name(const char *name) override {
-        return name != nullptr && !strcmp(name, "Navidrome");
+        return matchesLayoutName(name, {"Navidrome", "navidrome-browser"});
     }
     fb2k::stringRef get_name() override { return fb2k::makeString("Navidrome"); }
     GUID get_guid() override { return guid_ui_element_mac; }
@@ -986,7 +998,7 @@ public:
         return fb2k::wrapNSObject([NavidromeLyricsController new]);
     }
     bool match_name(const char *name) override {
-        return name != nullptr && !strcmp(name, "Navidrome Lyrics");
+        return matchesLayoutName(name, {"Navidrome Lyrics", "navidrome-lyrics"});
     }
     fb2k::stringRef get_name() override { return fb2k::makeString("Navidrome Lyrics"); }
     GUID get_guid() override { return guid_ui_element_mac_lyrics; }

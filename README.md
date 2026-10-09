@@ -38,7 +38,7 @@ A [foobar2000](https://www.foobar2000.org/) component that lets you browse and s
 - Test Connection button to verify server connectivity
 - **Native `navidrome://` URI scheme**: tracks added to playlists store a stable URI, not a transient HTTP URL — playlists survive credential rotation or server URL changes
 - **Auto-skips tracks deleted from the server**: once a track 404s during playback (e.g. a stale playlist entry after a library reorg), it's skipped automatically for the rest of the session on any later shuffle/repeat/Random Mix — no more retrying the same dead stream over and over
-- Appears under **Preferences › Media Library › Library viewers** alongside Album List / Artist View, and (macOS) can also be docked as a panel in the main window layout via **Preferences › Display › Layout › Edit Layout**
+- Appears under **Preferences › Media Library › Library viewers** alongside Album List / Artist View, and can also be docked as a panel in the main window layout: **Navidrome Browser** in the Default UI element picker on Windows (*View › Layout › Enable layout editing mode*, right-click › *Replace UI Element…*), `navidrome` in **View › Layout › Edit Layout…** on macOS
 - **Lyrics on Windows** via [ESLyric](https://github.com/ESLyric/release) — see [Lyrics (ESLyric)](#lyrics-eslyric-windows)
 - **Lyrics on macOS** in a native **Navidrome Lyrics** layout panel — see [Lyrics (macOS)](#lyrics-macos)
 - **Instant Mix** from any playlist track (right-click › Navidrome › Instant Mix) or any song, album or artist in the browser — plays similar songs in a dedicated *Instant Mix* playlist — plus **AudioMuse-AI** Text Search, Instant Playlist and Song Alchemy — see [Instant Mix and AudioMuse-AI](#instant-mix-and-audiomuse-ai)
@@ -65,7 +65,7 @@ Don't hand-edit them — they're overwritten on the next config save/startup. If
 
 ESLyric doesn't exist on macOS, so foo_navidrome ships its own lyrics panel:
 
-1. **Preferences › Display › Layout › Edit Layout** → add the **Navidrome Lyrics** element wherever you want it.
+1. **View › Layout › Edit Layout…** → add a `navidrome-lyrics` line wherever you want the panel.
 2. Play a track that foo_navidrome added (a `navidrome://track/<id>` URI). The panel follows the now-playing track.
 
 Lyrics come from Navidrome's `getLyricsBySongId.view` (embedded or sidecar `.lrc` lyrics on the server). When the server has timings, the current line is highlighted and kept centred as the song plays; otherwise the lyrics show as plain text. On servers without that endpoint it falls back to the classic artist/title `getLyrics.view` lookup. Lyrics are cached for the session, so replaying a track doesn't refetch.
@@ -205,9 +205,10 @@ component** and abort on failure — pass `--no-test` to skip. All paths call
 
 ### Usage
 
-Two ways to open the browser:
+Three ways to open the browser:
 - **File › Open Navidrome Browser**
 - **Preferences › Media Library › Library viewers › Navidrome › Activate**
+- As a panel in your layout, always open: on Windows (Default UI) enable *View › Layout › Enable layout editing mode*, right-click an element › *Replace UI Element…* (or add a splitter first) and pick **Navidrome Browser** under *Media Library Viewers*; on macOS open *View › Layout › Edit Layout…* and add a `navidrome` line where you want the panel (names are case-insensitive)
 
 Then:
 - Expand an artist to see albums, expand an album to see songs
@@ -738,7 +739,7 @@ Platform folders only hold transport, widget and wiring code — a data-layer fi
 ### Good places to start
 
 - Offline / caching support for streamed tracks.
-- A Windows equivalent of the macOS `ui_element_mac` layout panel (dock the browser inside the main window layout, not just the standalone window / prefs page).
+- A Columns UI panel (`uie::window`) for the browser on Windows. Default UI is covered.
 
 ## Releasing
 

@@ -157,6 +157,7 @@
     <ClCompile Include="NavidromeInputWin.cpp" />
     <ClCompile Include="NavidromeLibraryServiceWin.cpp" />
     <ClCompile Include="BrowserWindow.cpp" />
+    <ClCompile Include="NavidromeUiElementWin.cpp" />
     <ClCompile Include="..\..\core\NavidromeBrowserModel.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
