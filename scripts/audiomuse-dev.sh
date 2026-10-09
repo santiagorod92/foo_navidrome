@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
-# audiomuse-dev.sh — drive the local AudioMuse-AI test stack (dev/audiomuse/docker-compose.yml)
-# used to test foo_navidrome's AudioMuse features (issue #16) against a real AudioMuse.
-#
-#   audiomuse-dev.sh up          start the stack, wait for the API, check the host Ollama has the model
-#   audiomuse-dev.sh analyze [N] analyse the N newest albums (default NUM_RECENT_ALBUMS from .env)
-#   audiomuse-dev.sh status      API health, last/active task, a sample CLAP text search
-#   audiomuse-dev.sh search TEXT one CLAP text search (what foo_navidrome's Text Search sends)
-#   audiomuse-dev.sh logs        follow flask + worker logs
-#   audiomuse-dev.sh down [-v]   stop the stack (-v also deletes the analysis + models)
+usage() {
+  cat <<'USAGE'
+Usage: audiomuse-dev.sh <command>
+  up          start the stack, wait for the API, check the host Ollama model
+  analyze [N] analyse the N newest albums
+  status      API health, last/active task, a sample CLAP text search
+  search TEXT one CLAP text search
+  logs        follow flask + worker logs
+  down [-v]   stop the stack (-v also deletes the analysis + models)
+USAGE
+}
+
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 DIR="$REPO/dev/audiomuse"
@@ -18,22 +21,18 @@ say()  { printf '\033[1;36m==> %s\033[0m\n' "$*"; }
 fail() { printf '\033[1;31mERROR\033[0m %s\n' "$*" >&2; exit 1; }
 
 [ -f "$ENV" ] || fail "no $ENV — cp dev/audiomuse/.env.example dev/audiomuse/.env and fill in the Navidrome credentials"
-set -a; # shellcheck disable=SC1090
+set -a;
 . "$ENV"; set +a
-PORT=8000   # fixed in the AudioMuse image (gunicorn --bind 0.0.0.0:8000), host network
+PORT=8000
 API="http://127.0.0.1:$PORT"
 TOKEN="${AUDIOMUSE_API_TOKEN:-foo-navidrome-dev-token}"
 MODEL="${OLLAMA_MODEL:-qwen3.5:9b}"
 
-# Bearer-authenticated JSON call; prints the body.
-api() {  # METHOD PATH [JSON]
+api() {
   curl -sS -X "$1" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
        ${3:+-d "$3"} "$API$2"
 }
 
-# AudioMuse persists its config in Postgres (app_config) on first start, and the
-# stored values then win over the environment — editing .env later does nothing.
-# Push the LLM settings from .env into the table; restart flask/worker if changed.
 sync_llm_config() {
   local url="${OLLAMA_URL:-http://127.0.0.1:11434/api/generate}" changed=0 key val cur
   for kv in "AI_MODEL_PROVIDER=OLLAMA" "OLLAMA_SERVER_URL=$url" "OLLAMA_MODEL_NAME=$MODEL"; do
@@ -63,7 +62,6 @@ case "${1:-}" in
     compose up -d
     wait_api
     sync_llm_config
-    # Instant Playlist needs the chat model on the host's Ollama (see .env.example).
     if [ -z "${OLLAMA_URL:-}" ]; then
       if curl -sf http://127.0.0.1:11434/api/tags | grep -q "\"name\":\"$MODEL\""; then
         say "host Ollama has $MODEL"
@@ -96,5 +94,5 @@ case "${1:-}" in
     ;;
   logs)  compose logs -f --tail 50 flask worker ;;
   down)  shift; compose down "$@" ;;
-  *) sed -n '2,11p' "$0"; exit 2 ;;
+  *) usage; exit 2 ;;
 esac

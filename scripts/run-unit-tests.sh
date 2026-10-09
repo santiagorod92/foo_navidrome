@@ -1,27 +1,9 @@
 #!/usr/bin/env bash
-# run-unit-tests.sh — build + run the cross-platform logic unit tests.
-#
-# Every tests/*.cpp (one topic each, plus TestMain.cpp — see tests/TestHarness.h)
-# + the SDK-free src/core/*.cpp they exercise, compiled with a per-host toolchain:
-#
-#   mac  -> native clang++                         (macOS dev / CI)
-#   win  -> clang-cl + xwin SDK, run under wine     (Linux cross-compile / CI fast path)
-#
-# The suite covers SubsonicTypes.h (shared, byte-identical everywhere) and
-# MediaEnrichmentLogic.cpp, whose only platform-specific line is MD5
-# (#if defined(_WIN32) WinCrypt / #else CommonCrypto).
-#
-# Called by: Makefile (`make test` / `make mac-test`), scripts/mac-dev-build.sh,
-# scripts/win-build-local.sh. Keep those callers pointed here — don't re-inline
-# the compile command.
-#
-# Usage: run-unit-tests.sh [mac|win|auto]   (default: auto — pick by `uname -s`)
 
 set -euo pipefail
 
 MODE="${1:-auto}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-# Globbed, so a new tests/*.cpp needs no edit here (the vcxproj globs too).
 SRC=("$ROOT"/tests/*.cpp \
      "$ROOT/src/core/MediaEnrichmentLogic.cpp" \
      "$ROOT/src/core/NavidromeBrowserModel.cpp" \

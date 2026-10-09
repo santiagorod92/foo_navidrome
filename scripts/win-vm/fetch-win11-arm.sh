@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# fetch-win11-arm.sh — build a Windows 11 ARM64 install ISO via uupdump and the
-# virtio-win driver ISO, dropping both into the VM dir for win-vm.sh.
-#
-# Downloads Microsoft UUP files (~4GB) and converts them to an ISO with wimlib.
-# Also grabs the stable virtio-win ISO (has ARM64 drivers). Run once.
 set -euo pipefail
 
 VMDIR="${VMDIR:-$HOME/.local/share/foo_navidrome-winvm}"
@@ -16,7 +11,6 @@ for t in aria2c cabextract wimlib-imagex mkisofs curl python3; do
   command -v "$t" >/dev/null || { echo "missing $t — run setup-mac-toolchain.sh"; exit 1; }
 done
 
-# virtio-win (stable) — has NetKVM/w11/ARM64.
 if [ ! -f "$VMDIR/virtio-win.iso" ]; then
   echo "==> downloading virtio-win.iso"
   curl -L -o "$VMDIR/virtio-win.iso" \
@@ -38,8 +32,6 @@ print(arm[0]["uuid"] if arm else "")')"
     --data "autodl=2&updates=1" -o "$WORK/pkg.zip"
   unzip -oq "$WORK/pkg.zip" -d "$WORK"
 
-  # The macOS converter requires chntpw on PATH; with our ConvertConfig it is
-  # never actually invoked, so a no-op stub satisfies the presence check.
   mkdir -p "$WORK/stubbin"; printf '#!/bin/sh\nexit 0\n' > "$WORK/stubbin/chntpw"; chmod +x "$WORK/stubbin/chntpw"
 
   echo "==> building ISO (downloads ~4GB + converts — 15-30 min)"

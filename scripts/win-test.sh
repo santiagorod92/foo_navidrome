@@ -1,30 +1,21 @@
 #!/usr/bin/env bash
-# win-test.sh — build the Windows x64 component on a GitHub runner and install
-# it into the local Wine foobar2000 for testing.
-#
-# foobar2000 has no native Linux build: on Linux it runs under Wine, i.e. the
-# *Windows* foobar2000, which loads Windows .dll components. And the Windows
-# sources use ATL/WinHTTP, which can't be cross-compiled with mingw. So instead
-# of building locally we dispatch the reusable `build-windows.yml` workflow on a
-# GitHub windows-latest runner, wait for it, download the resulting DLL, and
-# drop it into the Wine user-components dir.
-#
-# Usage:
-#   ./win-test.sh [--ref <branch|tag|sha>] [--launch] [--no-wait]
-#
-#   --ref REF    Build this ref instead of the current branch. The ref must be
-#                pushed to origin — the runner checks it out from GitHub.
-#   --launch     Relaunch foobar2000 after installing (kills any running one).
-#   --no-wait    Dispatch the build and exit without waiting / installing.
-#
-# Requires: gh (authenticated), git, unzip.
+usage() {
+  cat <<'USAGE'
+Usage: win-test.sh [--ref <branch|tag|sha>] [--launch] [--no-wait]
+Builds the x64 DLL on a GitHub runner (build-windows.yml) and installs it into Wine foobar2000.
+  --ref REF    build this pushed ref instead of the current branch
+  --launch     relaunch foobar2000 after installing
+  --no-wait    dispatch the build and exit
+Requires: gh (authenticated), git, unzip.
+USAGE
+}
 
 set -euo pipefail
 
 WORKFLOW="build-windows.yml"
 ARTIFACT="windows-component"
 COMPONENT_DIR="$HOME/.foobar2000/profile/user-components-x64/foo_navidrome"
-FOOBAR_LAUNCHER="foobar2000"   # the Wine wrapper on PATH (/usr/bin/foobar2000)
+FOOBAR_LAUNCHER="foobar2000"
 
 REF=""
 LAUNCH=0
@@ -35,18 +26,16 @@ while [ $# -gt 0 ]; do
     --ref)      REF="${2:-}"; shift 2 ;;
     --launch)   LAUNCH=1; shift ;;
     --no-wait)  WAIT=0; shift ;;
-    -h|--help)  grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)  usage; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
 
-cd "$(dirname "$0")/.."   # repo root (scripts/ lives one level down)
+cd "$(dirname "$0")/.."
 
 command -v gh   >/dev/null || { echo "ERROR: gh not found"; exit 1; }
 command -v unzip >/dev/null || { echo "ERROR: unzip not found"; exit 1; }
 
-# Default ref = current branch. The runner checks the ref out from GitHub, so it
-# must exist on origin and be up to date — warn if the local branch is ahead.
 if [ -z "$REF" ]; then
   REF="$(git rev-parse --abbrev-ref HEAD)"
 fi
@@ -64,8 +53,6 @@ else
   echo "         dispatch will fail."
 fi
 
-# Dispatch. Record the newest pre-existing run id so we can detect the new one
-# (gh gives no run id back from `workflow run`).
 PREV_ID="$(gh run list --workflow "$WORKFLOW" --json databaseId \
              --jq '.[0].databaseId // 0' 2>/dev/null || echo 0)"
 
@@ -77,7 +64,6 @@ if [ "$WAIT" = "0" ]; then
   exit 0
 fi
 
-# Poll for the new run to register (the dispatch->visible delay is a few sec).
 echo -n "==> waiting for the run to start"
 RUN_ID=""
 for _ in $(seq 1 30); do
@@ -96,8 +82,6 @@ if [ -z "$RUN_ID" ]; then
 fi
 echo "==> run id: $RUN_ID  ($(gh run view "$RUN_ID" --json url --jq .url))"
 
-# Stream status until it finishes; --exit-status makes gh return non-zero on
-# failure. Don't abort the script (set -e) before we can show the log hint.
 set +e
 gh run watch "$RUN_ID" --exit-status
 WATCH_RC=$?
@@ -108,14 +92,11 @@ if [ "$WATCH_RC" != "0" ]; then
   exit "$WATCH_RC"
 fi
 
-# Download the component artifact and install the raw DLL.
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 echo "==> downloading artifact '$ARTIFACT' ..."
 gh run download "$RUN_ID" --name "$ARTIFACT" --dir "$TMP"
 
-# The artifact now carries both the x86 (root) and x64 (x64/) DLLs. The local
-# Wine foobar2000 is x64, so install the x64 one; fall back to any match.
 DLL="$(find "$TMP" -path '*/x64/foo_navidrome.dll' -type f | head -n1)"
 if [ -z "$DLL" ]; then
   DLL="$(find "$TMP" -name foo_navidrome.dll -type f | head -n1)"

@@ -143,9 +143,6 @@ navidrome::ArtistInfo conv(SubsonicArtistInfo *x) {
     return r;
 }
 
-// Map an ObjC array to std::vector<navidrome::X> via the matching conv()
-// overload. The element type is given explicitly, so nothing is deduced from
-// the (generics-erased) NSArray type.
 template <class ObjC, class T = decltype(conv(std::declval<ObjC *>()))>
 std::vector<T> mapArr(NSArray<ObjC *> *arr) {
     std::vector<T> v;
@@ -317,8 +314,6 @@ struct MacBrowserClient final : navidrome::IBrowserClient {
     bool setStarred(bool starred, const std::string& id, navidrome::StarKind kind,
                     std::string& e) override {
         NSError *err = nil;
-        // SubsonicStarKind and navidrome::StarKind declare Song/Album/Artist in
-        // the same order — plain cast, same convention as NavidromeNodeType.
         BOOL ok = [client setStarred:starred
                                 forId:@(id.c_str())
                                  kind:static_cast<SubsonicStarKind>(kind)
@@ -341,20 +336,21 @@ struct MacBrowserClient final : navidrome::IBrowserClient {
         return true;
     }
 };
-
-} // namespace
+}
 
 std::unique_ptr<navidrome::IBrowserClient> navidrome::makeMacBrowserClient() {
     return std::make_unique<MacBrowserClient>();
 }
 
-// --- macOS half of navidrome_library_api (the service itself is shared, in main.cpp) ---------
-
 bool navidrome::libraryIsConfigured() { return [SubsonicClient.sharedClient isConfigured]; }
 
 navidrome::IBrowserClient& navidrome::libraryClient() {
-    static MacBrowserClient inst; // stateless over the SubsonicClient singleton
+    static MacBrowserClient inst;
     return inst;
+}
+
+bool navidrome::libraryServerInfo(ServerInfo& out, std::string& outError) {
+    return [SubsonicClient.sharedClient serverInfo:out error:outError];
 }
 
 std::vector<uint8_t> navidrome::libraryFetchCover(const std::string& id, int size, abort_callback& abort) {
@@ -363,7 +359,6 @@ std::vector<uint8_t> navidrome::libraryFetchCover(const std::string& id, int siz
         NSURL *url = [SubsonicClient.sharedClient coverArtURLForId:@(id.c_str()) size:size];
         if (!url) return {};
         NSError *err = nil;
-        // Through SubsonicClient so the configured custom headers (e.g. Cloudflare Access) apply.
         NSData *data = [SubsonicClient.sharedClient dataForURL:url error:&err];
         abort.check();
         if (!data || data.length == 0) {

@@ -5,6 +5,7 @@
 #include "../../core/NavidromePlaylistSync.h"
 #include "../../core/NavidromeDebugLog.h"
 #include "../../core/NavidromeAudioMuse.h"
+#include "../../core/NavidromeDiagnostics.h"
 #include "EsLyricBridge.h"
 #include "WinUi.h"
 #include <SDK/cfg_var.h>
@@ -13,7 +14,9 @@
 #include <SDK/initquit.h>
 #include <SDK/play_callback.h>
 #include <algorithm>
+#include <memory>
 #include <string>
+#include <shellapi.h>
 #include <cctype>
 #include <chrono>
 #include <mutex>
@@ -22,6 +25,7 @@
 #pragma comment(lib, "winhttp.lib")
 
 namespace {
+
     void refreshEsLyricBridge() {
         auto ctx = navidrome::SubsonicClientWin::get().snapshot();
         std::string err = navidrome::EsLyricBridge::installOrUpdate(ctx);
@@ -30,33 +34,14 @@ namespace {
     }
 }
 
-static std::wstring u8ToWide(const std::string& s) {
-    if (s.empty()) return {};
-    int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
-    std::wstring w(n, 0);
-    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, &w[0], n);
-    if (!w.empty() && w.back() == 0) w.pop_back();
-    return w;
-}
+using navidrome::win::u8ToWide;
+using navidrome::win::wToU8;
 
-static std::string wToU8(const std::wstring& w) {
-    if (w.empty()) return {};
-    int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, nullptr, 0, nullptr, nullptr);
-    std::string s(n, 0);
-    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, &s[0], n, nullptr, nullptr);
-    if (!s.empty() && s.back() == 0) s.pop_back();
-    return s;
-}
-
-// ---------------------------------------------------------------------------
-// GUIDs — must match NavidromePlugin.mm so settings persist cross-platform
-// ---------------------------------------------------------------------------
 static constexpr GUID guid_cfg_server_url = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x01} };
 static constexpr GUID guid_cfg_username   = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x02} };
 static constexpr GUID guid_cfg_password   = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x03} };
 static constexpr GUID guid_cfg_salt       = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x04} };
 static constexpr GUID guid_prefs_page     = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x05} };
-// tail 0x01,0x06 was guid_mainmenu_group (never registered) — reserved, don't reuse
 static constexpr GUID guid_mainmenu_cmd   = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x07} };
 static constexpr GUID guid_mainmenu_bookmark_cmd =
     { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x0e} };
@@ -67,50 +52,22 @@ static constexpr GUID guid_cfg_max_bitrate   = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,
 static constexpr GUID guid_cfg_library_filter = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x10} };
 static constexpr GUID guid_cfg_library_ids   = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x11} };
 
-// ---------------------------------------------------------------------------
-// Config vars
-// ---------------------------------------------------------------------------
 namespace navidrome {
+
     cfg_string cfg_server_url(guid_cfg_server_url, "http://localhost:4533/");
     cfg_string cfg_username  (guid_cfg_username,   "");
     cfg_string cfg_password  (guid_cfg_password,   "");
     cfg_string cfg_salt      (guid_cfg_salt,        "fb2k_navidrome");
-    // Extra HTTP headers (one "Name: Value" per line) sent on every request —
-    // API, cover art and audio stream. Used e.g. for Cloudflare Access
-    // service-token headers when Navidrome sits behind a Zero Trust tunnel.
     cfg_string cfg_custom_headers(guid_cfg_custom_headers, "");
-    // Report plays back to Navidrome (play counts, "Recently Played", and any
-    // Last.fm / ListenBrainz relay the server has configured).
-    // Qualified: an unqualified cfg_bool resolves to the legacy
-    // cfg_int_t<bool> (no set()) here, and the two flavours serialize
-    // differently — both platforms must use the same one.
     cfg_var_modern::cfg_bool cfg_scrobble(guid_cfg_scrobble, true);
 
-    // Transcoding preferences, applied to every stream.view request.
-    // cfg_stream_format: "" = let the server decide, "raw" = never transcode,
-    // otherwise a Subsonic format name ("mp3", "opus", "aac", …).
-    // cfg_max_bitrate: kbps ceiling; 0 = unlimited.
-    // Qualified for the same reason as cfg_scrobble — an unqualified cfg_int
-    // resolves to the legacy cfg_int_t<t_int32>, which has no set() and
-    // serializes differently.
     cfg_string cfg_stream_format(guid_cfg_stream_format, "");
     cfg_var_modern::cfg_int cfg_max_bitrate(guid_cfg_max_bitrate, 0);
 
-    // Multi-library filter. cfg_library_filter off (the default) => every
-    // request behaves exactly as before, no getMusicFolders round-trip.
-    // When on, cfg_library_ids is a comma-separated list of getMusicFolders
-    // ids to restrict browsing to; empty or "covers every library" both mean
-    // "no restriction". Qualified cfg_bool for the same reason as cfg_scrobble.
     cfg_var_modern::cfg_bool cfg_library_filter(guid_cfg_library_filter, false);
     cfg_string cfg_library_ids(guid_cfg_library_ids, "");
 }
 
-// ---------------------------------------------------------------------------
-// Custom HTTP headers editor — a standalone window opened from the prefs page.
-// Multiline "Name: Value" per line; persisted to cfg_custom_headers. The
-// "Cloudflare headers" button inserts the two CF Access service-token header
-// names so the user only has to paste the id/secret values.
-// ---------------------------------------------------------------------------
 class NavidromeHeadersWindow : public CWindowImpl<NavidromeHeadersWindow> {
 public:
     DECLARE_WND_CLASS(L"foo_navidrome_HeadersWnd")
@@ -219,8 +176,6 @@ private:
 
     void OnCancel(UINT, int, HWND) { ShowWindow(SW_HIDE); }
 
-    // Append the two CF Access header names if they're not already present, so
-    // the user just pastes the id/secret values after the colon.
     void OnCloudflare(UINT, int, HWND) {
         std::string text = editTextU8();
         std::string lower = text;
@@ -233,7 +188,7 @@ private:
             text += headerName;
             text += ": ";
             text += "\r\n";
-            lower += needle;  // keep dedupe state consistent across both inserts
+            lower += needle;
         };
         ensure("CF-Access-Client-Id");
         ensure("CF-Access-Client-Secret");
@@ -242,9 +197,6 @@ private:
     }
 };
 
-// ---------------------------------------------------------------------------
-// Preferences page (programmatic window — no .rc file required)
-// ---------------------------------------------------------------------------
 class NavidromePrefsInstance : public CWindowImpl<NavidromePrefsInstance>,
                                public preferences_page_instance {
 public:
@@ -252,11 +204,8 @@ public:
 
     explicit NavidromePrefsInstance(preferences_page_callback::ptr cb) : m_cb(cb) {}
 
-    // preferences_page_instance
     HWND      get_wnd() override { return m_hWnd; }
     t_uint32  get_state() override {
-        // Without dark_mode_supported foobar2000 draws the whole Preferences dialog light while
-        // this page is shown, even in Dark Mode (issue #18). No "unchanged" constant: that's 0.
         return preferences_state::dark_mode_supported |
                (m_changed ? preferences_state::changed | preferences_state::resettable : 0);
     }
@@ -285,6 +234,7 @@ public:
         MESSAGE_HANDLER_EX(WM_CTLCOLORSTATIC, OnCtlColorStatic)
         MESSAGE_HANDLER_EX(WM_TEST_RESULT, OnTestResult)
         MESSAGE_HANDLER_EX(WM_SCAN_STATUS, OnScanStatus)
+        MESSAGE_HANDLER_EX(WM_DIAG_READY, OnDiagReady)
         COMMAND_HANDLER_EX(IDC_URL,  EN_CHANGE, OnChanged)
         COMMAND_HANDLER_EX(IDC_USER, EN_CHANGE, OnChanged)
         COMMAND_HANDLER_EX(IDC_PASS, EN_CHANGE, OnChanged)
@@ -294,11 +244,12 @@ public:
         COMMAND_HANDLER_EX(IDC_FORMAT,  CBN_SELCHANGE, OnChanged)
         COMMAND_HANDLER_EX(IDC_BITRATE, CBN_SELCHANGE, OnChanged)
         COMMAND_HANDLER_EX(IDC_RESCAN, BN_CLICKED, OnRescan)
+        COMMAND_HANDLER_EX(IDC_DIAG, BN_CLICKED, OnCopyDiagnostics)
+        COMMAND_HANDLER_EX(IDC_LOGDIR, BN_CLICKED, OnOpenLogFolder)
     END_MSG_MAP()
 
     BOOL OnEraseBkgnd(CDCHandle dc) { navidrome::win::eraseLikeDialog(*this, dc); return TRUE; }
 
-    // Pins the credit lines to the bottom-left corner, never above the last control.
     void OnSize(UINT, CSize sz) {
         if (!m_credit[0]) return;
         using namespace navidrome::win;
@@ -312,8 +263,6 @@ public:
         }
     }
 
-    // Grey text for the credit lines. Dark Mode's hook calls this too and keeps a
-    // non-standard text colour, so it reads as a watermark in both themes.
     LRESULT OnCtlColorStatic(UINT msg, WPARAM wp, LPARAM lp) {
         LRESULT brush = DefWindowProc(msg, wp, lp);
         const HWND ctrl = reinterpret_cast<HWND>(lp);
@@ -325,20 +274,13 @@ public:
 private:
     enum { IDC_URL=1001, IDC_USER=1002, IDC_PASS=1003, IDC_TEST=1004, IDC_STATUS=1005,
            IDC_HEADERS=1006, IDC_SCROBBLE=1007, IDC_FORMAT=1008, IDC_BITRATE=1009,
-           IDC_RESCAN=1010, IDC_SCAN_STATUS=1011 };
+           IDC_RESCAN=1010, IDC_SCAN_STATUS=1011, IDC_DIAG=1012, IDC_LOGDIR=1013,
+           IDC_DIAG_STATUS=1014 };
 
-    // Transcode format + max-bitrate choices are shared with the macOS prefs UI
-    // — navidrome::streamFormatOptions() / navidrome::maxBitrateOptions() in
-    // SubsonicTypes.h. The stored `format` value goes on the wire as
-    // stream.view's `format=`; "" = server default, "raw" = original file.
-
-    // Posted from the background ping thread back to the UI thread (see OnTest).
     static constexpr UINT WM_TEST_RESULT = WM_USER + 200;
-    // Posted from the background scan thread back to the UI thread (see OnRescan).
     static constexpr UINT WM_SCAN_STATUS = WM_USER + 201;
+    static constexpr UINT WM_DIAG_READY = WM_USER + 202;
 
-    // wParam of WM_SCAN_STATUS. `done` marks the final message for a scan (re-enables
-    // the button); intermediate messages while polling just update the count shown.
     struct ScanProgress {
         bool        ok       = false;
         bool        done     = false;
@@ -360,8 +302,6 @@ private:
         HWND lblUrl  = make(L"STATIC", L"Server URL:",  0);
         HWND lblUser = make(L"STATIC", L"Username:",    0);
         HWND lblPass = make(L"STATIC", L"Password:",    0);
-        // Streaming transcode controls. Both are per-request stream.view params,
-        // so a change takes effect on the next track without reconnecting.
         HWND lblFmt  = make(L"STATIC", L"Stream as:",   0);
         HWND lblRate = make(L"STATIC", L"Max bitrate:", 0);
 
@@ -391,12 +331,27 @@ private:
                 : (std::to_wstring(kbps) + L" kbps").c_str());
         }
 
-        // Rescan button — useful if files were added/removed server-side and
-        // the user doesn't want to wait for Navidrome's own scan schedule.
-        HWND rescan = make(L"BUTTON", L"Rescan Library Now", WS_TABSTOP|BS_PUSHBUTTON, IDC_RESCAN);
+        HWND rescan = make(L"BUTTON", L"Rescan", WS_TABSTOP|BS_PUSHBUTTON, IDC_RESCAN);
         HWND scanSt = make(L"STATIC", L"", SS_LEFT|SS_ENDELLIPSIS, IDC_SCAN_STATUS);
 
-        // Layout: one label column sized to its widest label, one field column.
+        LOGFONTW lf{};
+        ::GetObjectW(f, sizeof(lf), &lf);
+        lf.lfWeight = FW_BOLD;
+        m_sectionFont = ::CreateFontIndirectW(&lf);
+        auto makeSection = [&](const wchar_t* title) {
+            HWND t = make(L"STATIC", title, SS_LEFT|SS_NOPREFIX);
+            setFont(t, m_sectionFont.m_hFont ? m_sectionFont.m_hFont : f);
+            HWND line = make(L"STATIC", L"", SS_ETCHEDHORZ);
+            return std::make_pair(t, line);
+        };
+        const auto connSection    = makeSection(L"Navidrome Server Connection");
+        const auto librarySection = makeSection(L"Rescan Navidrome Library");
+        const auto logsSection    = makeSection(L"Logs and Troubleshooting");
+
+        HWND diag    = make(L"BUTTON", L"Copy Diagnostics", WS_TABSTOP|BS_PUSHBUTTON, IDC_DIAG);
+        HWND logDir  = make(L"BUTTON", L"Open Log Folder", WS_TABSTOP|BS_PUSHBUTTON, IDC_LOGDIR);
+        HWND diagSt  = make(L"STATIC", L"", SS_LEFT|SS_ENDELLIPSIS, IDC_DIAG_STATUS);
+
         const int lineH = lineHeight(*this, f);
         const int rowH  = (std::max)(s(22), lineH + s(8));
         const int step  = rowH + s(8);
@@ -418,19 +373,35 @@ private:
             place(st, x + w + gap, rowY + (rowH - lineH) / 2, statusW, lineH);
         };
 
+        auto section = [&](const std::pair<HWND, HWND>& sec, int rowY) {
+            const int tw = textWidth(sec.first) + s(4);
+            place(sec.first, pad, rowY + (rowH - lineH) / 2, tw, lineH);
+            const int lineX = pad + tw + gap;
+            place(sec.second, lineX, rowY + rowH / 2, (std::max)(0, x + fieldW - lineX), s(2));
+        };
+
         int y = s(10);
+        section(connSection, y);                              y += step;
         label(lblUrl, y);   place(url,  x, y, fieldW, rowH);  y += step;
         label(lblUser, y);  place(user, x, y, fieldW, rowH);  y += step;
         label(lblPass, y);  place(pass, x, y, fieldW, rowH);  y += step;
         buttonWithStatus(test, status, y);                    y += step;
         place(hdr, x, y, fitWidth(hdr, s, 24, 100), rowH);    y += step;
         place(scr, x, y, fitWidth(scr, s, 24), rowH);         y += step;
-        // CBS_DROPDOWNLIST height is the *dropped* height, not the closed one.
         label(lblFmt, y);   place(m_format,  x, y, s(240), s(220));  y += step;
         label(lblRate, y);  place(m_bitrate, x, y, s(240), s(220));  y += step;
-        buttonWithStatus(rescan, scanSt, y);
+        y += s(6);
+        section(librarySection, y);                           y += step;
+        buttonWithStatus(rescan, scanSt, y);                  y += step + s(6);
+        section(logsSection, y);                              y += step;
+        {
+            const int diagW = fitWidth(diag, s, 24, 100);
+            place(diag, x, y, diagW, rowH);
+            const int logW = fitWidth(logDir, s, 24, 100);
+            place(logDir, x + diagW + gap, y, logW, rowH);
+            place(diagSt, x + diagW + gap + logW + gap, y + (rowH - lineH) / 2, statusW, lineH);
+        }
 
-        // Credit watermark, kept in the bottom-left corner by OnSize.
         m_credit[0] = make(L"STATIC", pfc::stringcvt::string_wide_from_utf8(navidrome::kPrefsAuthorLine), SS_LEFT|SS_NOPREFIX);
         m_credit[1] = make(L"STATIC", pfc::stringcvt::string_wide_from_utf8(navidrome::kSourceCodeUrl), SS_LEFT|SS_NOPREFIX);
         m_minCreditY = y + step + s(4);
@@ -501,8 +472,6 @@ private:
         }).detach();
     }
 
-    // Runs on the UI thread; lParam owns a heap std::string with the error text
-    // (null on success). Registered via MESSAGE_HANDLER_EX in the message map.
     LRESULT OnTestResult(UINT, WPARAM wParam, LPARAM lParam) {
         bool ok = wParam != 0;
         auto* errStr = reinterpret_cast<std::string*>(lParam);
@@ -512,9 +481,60 @@ private:
         return 0;
     }
 
-    // Kicks off a server-side rescan and polls getScanStatus.view until it
-    // finishes. Subsonic doesn't report a total item count up front, so the
-    // status text can only show "N processed", not a percentage.
+    void OnCopyDiagnostics(UINT, int, HWND) {
+        ::EnableWindow(GetDlgItem(IDC_DIAG), FALSE);
+        SetDlgItemText(IDC_DIAG_STATUS, L"Collecting\u2026");
+        const HWND page = m_hWnd;
+        std::thread([page]() {
+          navidrome::dbg::runGuarded("UI", "copy diagnostics", [&]{
+            auto* text = new std::string(navidrome::collectDiagnostics());
+            if (!::PostMessage(page, WM_DIAG_READY, 0, reinterpret_cast<LPARAM>(text))) delete text;
+          });
+        }).detach();
+    }
+
+    LRESULT OnDiagReady(UINT, WPARAM, LPARAM lParam) {
+        std::unique_ptr<std::string> text(reinterpret_cast<std::string*>(lParam));
+        ::EnableWindow(GetDlgItem(IDC_DIAG), TRUE);
+        const bool ok = text && copyToClipboard(pfc::stringcvt::string_wide_from_utf8(text->c_str()).get_ptr());
+        if (!ok) NAVIDROME_WARN("UI", "copy diagnostics: clipboard unavailable");
+        SetDlgItemText(IDC_DIAG_STATUS, ok ? L"Copied to the clipboard"
+                                           : L"Couldn't open the clipboard");
+        return 0;
+    }
+
+    bool copyToClipboard(const std::wstring& w) {
+        if (!::OpenClipboard(*this)) return false;
+        ::EmptyClipboard();
+        const size_t bytes = (w.size() + 1) * sizeof(wchar_t);
+        HGLOBAL mem = ::GlobalAlloc(GMEM_MOVEABLE, bytes);
+        bool ok = false;
+        if (mem) {
+            if (void* p = ::GlobalLock(mem)) {
+                memcpy(p, w.c_str(), bytes);
+                ::GlobalUnlock(mem);
+                ok = ::SetClipboardData(CF_UNICODETEXT, mem) != nullptr;
+            }
+            if (!ok) ::GlobalFree(mem);
+        }
+        ::CloseClipboard();
+        return ok;
+    }
+
+    void OnOpenLogFolder(UINT, int, HWND) {
+        const std::string path = navidrome::componentLogPath();
+        if (path.empty()) { SetDlgItemText(IDC_DIAG_STATUS, L"No log file yet"); return; }
+        const std::wstring wpath = pfc::stringcvt::string_wide_from_utf8(path.c_str()).get_ptr();
+        std::wstring args;
+        if (::GetFileAttributesW(wpath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+            args = L"/select,\"" + wpath + L"\"";
+        } else {
+            const size_t slash = wpath.find_last_of(L"\\/");
+            args = L"\"" + wpath.substr(0, slash == std::wstring::npos ? 0 : slash) + L"\"";
+        }
+        ::ShellExecuteW(*this, L"open", L"explorer.exe", args.c_str(), nullptr, SW_SHOWNORMAL);
+    }
+
     void OnRescan(UINT, int, HWND) {
         ::EnableWindow(GetDlgItem(IDC_RESCAN), FALSE);
         SetDlgItemText(IDC_SCAN_STATUS, L"Starting scan…");
@@ -534,7 +554,7 @@ private:
                     std::chrono::milliseconds(navidrome::kScanPollIntervalMs));
                 std::string pollErr;
                 auto polled = navidrome::SubsonicClientWin::get().getScanStatus(pollErr);
-                if (!pollErr.empty()) break;   // transient error — stop polling, last known count stands
+                if (!pollErr.empty()) break;
                 status = polled;
                 PostMessage(WM_SCAN_STATUS,
                     reinterpret_cast<WPARAM>(new ScanProgress{true, false, status.count, ""}), 0);
@@ -545,7 +565,6 @@ private:
         }).detach();
     }
 
-    // Runs on the UI thread; wParam owns a heap ScanProgress.
     LRESULT OnScanStatus(UINT, WPARAM wParam, LPARAM) {
         auto* p = reinterpret_cast<ScanProgress*>(wParam);
         if (!p->ok) {
@@ -564,8 +583,9 @@ private:
     }
 
     CComboBox m_format, m_bitrate;
-    HWND m_credit[2] = {};   // author line, source code URL
-    int  m_minCreditY = 0;   // top of the credit block when the page is short
+    HWND m_credit[2] = {};
+    CFont m_sectionFont;
+    int  m_minCreditY = 0;
     fb2k::CCoreDarkModeHooks m_darkMode;
     preferences_page_callback::ptr m_cb;
     bool m_changed = false;
@@ -585,11 +605,6 @@ public:
 };
 FB2K_SERVICE_FACTORY(NavidromePrefsPageFactory);
 
-// ---------------------------------------------------------------------------
-// Preferences > Tools > Navidrome > AudioMuse-AI (issue #16). The settings are
-// the shared cfg vars in main.cpp (NavidromeAudioMuse.h); same fields as the
-// macOS page. Staged like the main page: Apply saves, Reset restores defaults.
-// ---------------------------------------------------------------------------
 class AudioMusePrefsInstance : public CWindowImpl<AudioMusePrefsInstance>,
                                public preferences_page_instance {
 public:
@@ -651,7 +666,6 @@ private:
             setFont(h, f);
             return h;
         };
-        // Paragraphs wrap to the page width (SS_LEFT), no hard line breaks.
         HWND intro = make(L"STATIC",
             L"AudioMuse-AI analyses your Navidrome library for Text Search, Instant "
             L"Playlist and Song Alchemy (File › AudioMuse-AI, track context menu).", SS_LEFT);
@@ -716,12 +730,10 @@ public:
         preferences_page_callback::ptr cb) override {
         auto inst = fb2k::service_new<AudioMusePrefsInstance>(cb);
         inst->Create(parent);
-        // load() during WM_CREATE fires EN_CHANGE; that isn't a user edit.
         inst->clearChanged();
         return inst;
     }
     const char* get_name() override { return "AudioMuse-AI"; }
-    // Matches the macOS page's GUID.
     GUID        get_guid() override {
         return { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x04,0x05} };
     }
@@ -729,13 +741,6 @@ public:
 };
 FB2K_SERVICE_FACTORY(AudioMusePrefsPageFactory);
 
-// ---------------------------------------------------------------------------
-// Media Library preferences sub-page — makes "Navidrome" appear under
-// Preferences > Media Library (parity with the macOS build, which parents a
-// page to guid_media_library). The macOS page embeds the browser directly;
-// on Windows the browser is a standalone top-level window, so this page just
-// hosts an "Open Navidrome Browser" button that surfaces it.
-// ---------------------------------------------------------------------------
 class NavidromeLibraryPrefsInstance : public CWindowImpl<NavidromeLibraryPrefsInstance>,
                                       public preferences_page_instance {
 public:
@@ -743,7 +748,6 @@ public:
 
     explicit NavidromeLibraryPrefsInstance(preferences_page_callback::ptr cb) : m_cb(cb) {}
 
-    // Nothing editable on this page — it's a launcher, so it's never "changed".
     HWND      get_wnd() override { return m_hWnd; }
     t_uint32  get_state() override { return preferences_state::dark_mode_supported; }
     void      apply() override {}
@@ -755,10 +759,6 @@ public:
     END_MSG_MAP()
 
 private:
-    // Embed the browser inline, filling the page — parity with the macOS build
-    // (which mounts the browser view controller directly in this sub-page). A
-    // fresh BrowserWindow instance owned by this page, distinct from the
-    // standalone-window singleton used by the File menu / library_viewer.
     LRESULT OnCreate(LPCREATESTRUCT) {
         m_browser.createEmbedded(*this);
         return 0;
@@ -782,7 +782,6 @@ public:
         return inst;
     }
     const char* get_name() override { return "Navidrome"; }
-    // Match macOS guid_library_prefs (…01,0x09) for cross-platform tidiness.
     GUID        get_guid() override {
         return { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x09} };
     }
@@ -790,9 +789,6 @@ public:
 };
 FB2K_SERVICE_FACTORY(NavidromeLibraryPrefsFactory);
 
-// ---------------------------------------------------------------------------
-// Main menu: File > Open Navidrome Browser
-// ---------------------------------------------------------------------------
 class NavidromeMenuCmd : public mainmenu_commands {
 public:
     t_uint32 get_command_count() override { return 2; }
@@ -823,8 +819,6 @@ public:
     }
 
 private:
-    // Saves the currently-playing track's position as a Navidrome bookmark.
-    // createBookmark.view is an upsert, so this also updates any existing one.
     static void bookmarkCurrentPosition() {
         metadb_handle_ptr track;
         auto pc = playback_control::get();
@@ -853,26 +847,18 @@ private:
 };
 FB2K_SERVICE_FACTORY(NavidromeMenuCmd);
 
-// ---------------------------------------------------------------------------
-// Cover art extractor — serves cover art from Navidrome's getCoverArt
-// endpoint, matching both navidrome:// URIs and legacy /rest/stream.view
-// URLs. A real extractor (not a fallback) so foobar always calls open() for
-// our paths, and results are cached in-process (see MediaEnrichmentLogic.h)
-// to avoid refetching the same cover for every track in an album.
-// ---------------------------------------------------------------------------
 namespace {
-    // Session-deduped console diagnostics for non-not-found cover failures,
-    // so a broken server doesn't spam the console once per track.
+
     std::mutex g_coverDiagMutex;
     std::set<std::pair<navidrome::FetchClass, std::string>> g_coverDiagSeen;
 
     void logCoverError(navidrome::FetchClass cls, const std::string& id) {
         using namespace navidrome;
-        if (cls == FetchClass::NotFound) return; // not-found is silent (normal)
+        if (cls == FetchClass::NotFound) return;
 
         {
             std::lock_guard<std::mutex> lock(g_coverDiagMutex);
-            if (!g_coverDiagSeen.insert({cls, id}).second) return; // already logged
+            if (!g_coverDiagSeen.insert({cls, id}).second) return;
         }
 
         const char* msg = "";
@@ -898,17 +884,15 @@ public:
     album_art_data_ptr query(const GUID& what, abort_callback& abort) override {
         if (what != album_art_ids::cover_front) throw exception_album_art_not_found();
 
-        // Check cache first
         auto cached = navidrome::CoverCache::instance().get(
             m_context.serverUrl, m_context.username, m_id);
         if (!cached.empty()) {
             return album_art_data_impl::g_create(cached.data(), cached.size());
         }
 
-        // Fetch from server
         std::string url = navidrome::SubsonicClientWin::get().coverArtURL(
             m_context, m_id, 0);
-        static constexpr std::size_t kMaxCoverBytes = 20 * 1024 * 1024; // 20 MB
+        static constexpr std::size_t kMaxCoverBytes = 20 * 1024 * 1024;
 
         auto result = navidrome::SubsonicClientWin::get().httpGetBinary(
             m_context, url, kMaxCoverBytes, abort);
@@ -922,7 +906,6 @@ public:
             throw exception_album_art_not_found();
         }
 
-        // Cache success
         navidrome::CoverCache::instance().put(
             m_context.serverUrl, m_context.username, m_id, result.body);
 
@@ -955,15 +938,6 @@ public:
 };
 FB2K_SERVICE_FACTORY(NavidromeArtExtractor);
 
-// ---------------------------------------------------------------------------
-// Scrobbler — reports plays back to Navidrome so play counts, "Recently
-// Played" and any Last.fm / ListenBrainz relay configured server-side reflect
-// what's played through foobar2000.
-//
-// Two calls per track, matching the Subsonic contract: submission=false on
-// start ("now playing"), submission=true once enough of the track has been
-// heard (half its length, capped at 4 minutes — the Last.fm convention).
-// ---------------------------------------------------------------------------
 class NavidromeScrobbler : public play_callback_static {
 public:
     unsigned get_flags() override {
@@ -989,7 +963,6 @@ public:
         m_tracker.onStop();
     }
 
-    // Unused callbacks (not requested in get_flags, but the interface is pure).
     void on_playback_starting(play_control::t_track_command, bool) override {}
     void on_playback_seek(double) override {}
     void on_playback_pause(bool) override {}
@@ -999,8 +972,6 @@ public:
     void on_volume_change(float) override {}
 
 private:
-    // Fire and forget on a worker thread — a slow or unreachable server must
-    // never stall playback, and a failed scrobble isn't worth interrupting for.
     static void scrobbleAsync(std::string songId, bool submission) {
         std::thread([songId, submission]() {
             navidrome::dbg::runGuarded("Scrobble", "scrobbleAsync", [&]{
@@ -1014,10 +985,6 @@ private:
         }).detach();
     }
 
-    // One extra request per played track. That's the only moment we can pick up
-    // a rating changed outside foobar (the Navidrome web UI, another client)
-    // without polling every playlist entry — Subsonic has no bulk rating
-    // lookup, so a whole-playlist refresh would be one request per track.
     static void refreshRatingAsync(std::string songId) {
         std::thread([songId]() {
             navidrome::dbg::runGuarded("Rating", "refreshRatingAsync", [&]{
@@ -1045,8 +1012,6 @@ private:
 };
 static play_callback_static_factory_t<NavidromeScrobbler> g_navidrome_scrobbler_factory;
 
-// Client calls behind the shared playlist context menu (main.cpp). Background
-// thread only — the menu marshals them off the UI thread itself.
 bool navidrome::setRatingOnServer(const std::string& songId, int rating) {
     std::string err;
     return navidrome::SubsonicClientWin::get().setRating(rating, songId, err);
@@ -1058,11 +1023,6 @@ bool navidrome::setStarredOnServer(const std::string& songId, bool starred) {
         starred, songId, navidrome::StarKind::Song, err);
 }
 
-// Startup refresh — mirrors navidromeRefreshRatingsOnStart() in
-// NavidromePlugin.mm.
-
-// One-shot dump of the state that shapes every later trace line — see the
-// macOS twin in NavidromePlugin.mm.
 static void navidromeLogSessionEnv() {
 #ifdef NAVIDROME_DEBUG_LOG
     navidrome::SessionEnv e;
@@ -1081,13 +1041,8 @@ static void navidromeLogSessionEnv() {
 static void navidromeRefreshRatingsOnStart() {
     navidromeLogSessionEnv();
 
-    // Main thread: walking the playlists is a main-thread operation.
     navidrome::PlaylistAlbumScan scan = navidrome::scanPlaylistAlbums();
 
-
-    // Nothing of ours in any playlist — the only exit that stays quiet. Every
-    // other one says why, because "hook never fired" and "hook fired and found
-    // nothing" are otherwise indistinguishable from the outside.
     if (scan.entries == 0) return;
 
     if (!navidrome::refreshRatingsOnStartEnabled()) {
@@ -1102,8 +1057,6 @@ static void navidromeRefreshRatingsOnStart() {
                   " entries, " + std::to_string(scan.albumIds.size()) + " distinct albums, " +
                   std::to_string(scan.ungrouped) + " ungrouped");
 
-    // Skipping coverage silently is how a partial refresh gets mistaken for a
-    // complete one, so the two outcomes that leave entries behind say so.
     if (scan.albumIds.empty()) {
         std::string msg = "Navidrome: " + std::to_string(scan.entries) +
             " playlist entry/entries carry no album id (added by an older version)"
@@ -1130,8 +1083,6 @@ static void navidromeRefreshRatingsOnStart() {
                 updates.push_back(std::move(u));
             }
         }
-        // One sync for everything: it walks every playlist once, so doing it per
-        // album would repeat that walk for no gain.
         const std::size_t ok = albumIds.size() - failed;
         navidrome::syncRatingsToPlaylists(std::move(updates));
 
@@ -1145,7 +1096,6 @@ static void navidromeRefreshRatingsOnStart() {
     }).detach();
 }
 
-// initquit on both platforms — see NavidromePlugin.mm.
 class NavidromeStartupRefresh : public initquit {
 public:
     void on_init() override { navidromeRefreshRatingsOnStart(); }
@@ -1153,10 +1103,6 @@ public:
 
 static initquit_factory_t<NavidromeStartupRefresh> g_navidrome_startup_refresh_factory;
 
-// ---------------------------------------------------------------------------
-// Init/quit — installs/refreshes the ESLyric bridge on startup so lyrics work
-// without opening prefs first; a no-op when ESLyric isn't installed.
-// ---------------------------------------------------------------------------
 class NavidromeInitQuit : public initquit {
 public:
     void on_init() override {

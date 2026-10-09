@@ -1,21 +1,4 @@
 #!/usr/bin/env bash
-# build-mac.sh — cross-compile the foo_navidrome Windows DLL on macOS using
-# clang-cl + lld-link + xwin (Microsoft CRT/SDK/ATL) + WTL. No MSVC, no Windows.
-#
-# Run scripts/win-vm/setup-mac-toolchain.sh once first. Only the x64 target is
-# supported here: clang cannot cross-compile ARM64EC (it needs MSVC-only
-# intrinsics like __rdtsc); CI (build-windows.yml) builds ARM64EC with real MSVC.
-# On Windows-on-ARM, foobar2000 is ARM64EC and loads the x64 DLL via emulation,
-# so x64 is enough to runtime-test the component in the VM.
-#
-# Env overrides (defaults set by setup-mac-toolchain.sh):
-#   SDK_ROOT   ~/.local/share/foo_navidrome-sdk/foobar2000
-#   PFC_ROOT   ~/.local/share/foo_navidrome-sdk/pfc
-#   LIBPPUI_ROOT ~/.local/share/foo_navidrome-sdk/libPPUI
-#   XWIN_SDK   ~/.local/share/xwin/sdk
-#   WTL_INC    ~/.local/share/wtl/Include
-#
-# Requires bash 4+ (mapfile). macOS ships 3.2 — re-exec under Homebrew bash.
 set -euo pipefail
 if [ -z "${BASH_VERSINFO:-}" ] || [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
   exec "$(brew --prefix)/bin/bash" "$0" "$@"
@@ -62,11 +45,6 @@ SYS_INC=(-imsvc "$WTL" -imsvc "$XWIN/crt/include" -imsvc "$XWIN/sdk/include/um"
          -imsvc "$XWIN/sdk/include/shared" -imsvc "$XWIN/sdk/include/ucrt" -imsvc "$XWIN/sdk/include/winrt")
 PROJ_INC=(-I "$REPO/src/platform/win" -I "$REPO" -I "$SDK_ROOT" -I "$SDK_ROOT/.." -I "$PFC_ROOT")
 DEFS=(/DWIN32 /D_WINDOWS /D_USRDLL /DUNICODE /D_UNICODE /DNDEBUG /D_CRT_SECURE_NO_WARNINGS /D_SECURE_ATL=1)
-# clang-cl reads /Users/... as the /U flag, so sources are passed as /Tp<path>.
-# Static CRT (/MT): the local build is x64 but foobar-on-ARM is ARM64EC and only
-# bundles the ARM64EC flavour of VCRUNTIME140/MSVCP140. An emulated x64 component
-# can't use those, so link the CRT statically to stay self-contained. (CI builds
-# native ARM64EC with /MD for releases, where foobar's bundled CRT matches.)
 CL_COMMON=(--target=x86_64-pc-windows-msvc /c /std:c++20 /utf-8 /EHsc /MT /GR /w "${DEFS[@]}" /FI"$PREFIX_H" "${SYS_INC[@]}" "${PROJ_INC[@]}")
 
 SRCS=()
@@ -74,8 +52,6 @@ while IFS= read -r f; do SRCS+=("$f"); done < <(
   {
     ls "$PFC_ROOT"/*.cpp "$SDK_ROOT/SDK"/*.cpp "$SDK_ROOT/helpers"/*.cpp \
        "$LIBPPUI_ROOT"/*.cpp "$SDK_ROOT/foobar2000_component_client"/*.cpp 2>/dev/null
-    # Component sources are parsed from src/platform/win/foo_navidrome.vcxproj — add a
-    # new .cpp there and this cross-build picks it up with no edit here.
     bash "$REPO/scripts/component-sources.sh" "$REPO"
   } | grep -vE '/(pfc-fb2k-hooks|nix-objects)\.cpp$'
 )

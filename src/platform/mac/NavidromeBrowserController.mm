@@ -1,4 +1,4 @@
-#import "NavidromeBrowserController.h"
+#import "NavidromeBrowserController+Private.h"
 #import "MacSubsonicBrowserClient.h"
 #include "../../core/SubsonicTypes.h"
 #include "../../core/NavidromeBrowserModel.h"
@@ -10,21 +10,10 @@
 #include <SDK/playable_location.h>
 #include <SDK/playback_control.h>
 
-// The shared browser core (NavidromeBrowserModel.h) talks to the Subsonic
-// client through this seam; the Mac adapter converts to/from the ObjC client.
-static navidrome::IBrowserClient& browserClient() {
+navidrome::IBrowserClient& NBCBrowserClient() {
     static std::unique_ptr<navidrome::IBrowserClient> inst = navidrome::makeMacBrowserClient();
     return *inst;
 }
-
-// nil-safe NSString -> std::string, for the ObjC-node <-> shared-node bridge.
-static std::string NBCStr(NSString *x) {
-    return x ? std::string(x.UTF8String) : std::string();
-}
-
-// ---------------------------------------------------------------------------
-// NavidromeNode
-// ---------------------------------------------------------------------------
 
 @implementation NavidromeNode
 
@@ -44,7 +33,7 @@ static std::string NBCStr(NSString *x) {
     n.starred      = s.starred;
     n.rating       = s.rating;
     n.children     = [NSMutableArray array];
-    n.childrenLoaded = YES;  // Songs are always leaves
+    n.childrenLoaded = YES;
     return n;
 }
 
@@ -66,7 +55,6 @@ static std::string NBCStr(NSString *x) {
     return n;
 }
 
-// Mirrors navidrome::isLeaf — "All Songs" is enqueue-only, never expanded.
 - (BOOL)isLeaf { return self.type == NavidromeNodeTypeSong ||
                         self.type == NavidromeNodeTypeRadioStation ||
                         self.type == NavidromeNodeTypeLoading ||
@@ -75,12 +63,6 @@ static std::string NBCStr(NSString *x) {
 
 - (BOOL)isAllSongs { return self.type == NavidromeNodeTypeCategory &&
                             self.categoryKind == NavidromeCategoryAllSongs; }
-
-// ---- Bridge to the shared C++ node model (NavidromeBrowserModel.h) ----------
-// The ObjC class stays the NSOutlineView view-model; the shared code operates
-// on navidrome::BrowserNode. The enums are declared in the same order, so the
-// type/category fields bridge by a plain cast. `children` is view-only and is
-// not carried across.
 
 + (instancetype)wrapCoreNode:(const navidrome::BrowserNode &)c {
     NavidromeNode *n = [NavidromeNode new];
@@ -131,7 +113,6 @@ static std::string NBCStr(NSString *x) {
 
 @end
 
-// Wrap a fetched list of shared nodes as NSOutlineView view-models.
 static NSMutableArray<NavidromeNode *> *
 NBCWrapList(const std::vector<navidrome::BrowserNodePtr> &nodes) {
     NSMutableArray<NavidromeNode *> *out = [NSMutableArray arrayWithCapacity:nodes.size()];
@@ -140,13 +121,6 @@ NBCWrapList(const std::vector<navidrome::BrowserNodePtr> &nodes) {
     return out;
 }
 
-// ---------------------------------------------------------------------------
-// NavidromeBrowserController
-// ---------------------------------------------------------------------------
-
-// Outline view subclass that turns Return / Enter into a "commit" action.
-// Key equivalents (default buttons) intercept Return before -keyDown:, so the
-// Add button no longer claims @"\r" — this is the only Return handler now.
 @interface NavidromeCommitOutlineView : NSOutlineView
 @property (nonatomic, copy) void (^onCommit)(void);
 @end
@@ -162,9 +136,6 @@ NBCWrapList(const std::vector<navidrome::BrowserNodePtr> &nodes) {
     [super keyDown:event];
 }
 
-// Right-click acts on the clicked row: if it isn't already part of the
-// selection, select just that row so the context-menu actions (which operate on
-// -selectedNodes) target what the user clicked. Suppress the menu on empty space.
 - (NSMenu *)menuForEvent:(NSEvent *)event {
     NSPoint pt = [self convertPoint:event.locationInWindow fromView:nil];
     NSInteger row = [self rowAtPoint:pt];
@@ -174,41 +145,6 @@ NBCWrapList(const std::vector<navidrome::BrowserNodePtr> &nodes) {
           byExtendingSelection:NO];
     return [super menuForEvent:event];
 }
-@end
-
-@interface NavidromeBrowserController () <NSSearchFieldDelegate>
-// Root artist nodes
-@property (nonatomic, strong) NSMutableArray<NavidromeNode *> *rootNodes;
-// YES when hosted in the standalone NSWindow (vs. embedded in the prefs page);
-// only then does the Enter shortcut close the window after queueing.
-@property (nonatomic, assign) BOOL standalone;
-// Controls
-@property (nonatomic, strong) NSOutlineView  *outlineView;
-@property (nonatomic, strong) NSSearchField  *searchField;
-@property (nonatomic, strong) NSProgressIndicator *spinner;
-@property (nonatomic, strong) NSTextField    *statusLabel;
-// Filtered nodes when searching
-@property (nonatomic, strong) NSMutableArray<NavidromeNode *> *filteredNodes;
-@property (nonatomic, assign) BOOL isSearching;
-// Debounces live-as-you-type search: a keystroke (re)arms this timer rather
-// than firing a request per character.
-@property (nonatomic, strong) NSTimer *searchDebounceTimer;
-// Bumped on every dispatch (including clearing the box) so a search response
-// that arrives after a later keystroke is dropped instead of clobbering it.
-@property (nonatomic, assign) NSUInteger searchGeneration;
-// "Add to Navidrome Playlist" submenu, populated from _serverPlaylists when the
-// menu opens. Fetching the list on demand would block the main thread, so the
-// cache is refreshed in the background at load time and after every mutation.
-@property (nonatomic, strong) NSMenu *playlistsMenu;
-@property (nonatomic, strong) NSArray<SubsonicPlaylist *> *serverPlaylists;
-@property (nonatomic, assign) BOOL playlistsLoading;
-// Cached radio stations, refreshed alongside serverPlaylists — lets the
-// enqueue path resolve a station's streamUrl from just its id without a
-// network round-trip.
-@property (nonatomic, strong) NSArray<SubsonicRadioStation *> *radioStations;
-// "Song Alchemy (AudioMuse-AI)" — hidden until an AudioMuse-AI server is set
-// (toggled in -menuNeedsUpdate: when the row menu opens).
-@property (nonatomic, strong) NSMenuItem *alchemyItem;
 @end
 
 @implementation NavidromeBrowserController
@@ -233,18 +169,14 @@ NBCWrapList(const std::vector<navidrome::BrowserNodePtr> &nodes) {
 - (void)buildUI {
     NSView *content = self.view;
 
-    // ── Search field (top) ──────────────────────────────────────────────
     _searchField = [NSSearchField new];
     _searchField.translatesAutoresizingMaskIntoConstraints = NO;
     _searchField.placeholderString = @"Search artists, albums, songs…";
     _searchField.target = self;
     _searchField.action = @selector(searchChanged:);
-    // NSSearchField's action alone only fires on Enter/Cancel — live typing
-    // goes through -controlTextDidChange: below.
     _searchField.delegate = self;
     [content addSubview:_searchField];
 
-    // ── Spinner (top-right corner) ───────────────────────────────────────
     _spinner = [[NSProgressIndicator alloc] init];
     _spinner.translatesAutoresizingMaskIntoConstraints = NO;
     _spinner.style = NSProgressIndicatorStyleSpinning;
@@ -252,7 +184,6 @@ NBCWrapList(const std::vector<navidrome::BrowserNodePtr> &nodes) {
     [_spinner setDisplayedWhenStopped:NO];
     [content addSubview:_spinner];
 
-    // ── Outline view (center) ────────────────────────────────────────────
     NavidromeCommitOutlineView *outline = [[NavidromeCommitOutlineView alloc] init];
     __weak typeof(self) weakSelf = self;
     outline.onCommit = ^{ [weakSelf commitSelectionFromKeyboard]; };
@@ -266,7 +197,6 @@ NBCWrapList(const std::vector<navidrome::BrowserNodePtr> &nodes) {
     _outlineView.target = self;
     _outlineView.doubleAction = @selector(doubleClicked:);
 
-    // Right-click context menu — mirrors the bottom buttons for a native feel.
     NSMenu *rowMenu = [[NSMenu alloc] init];
     NSMenuItem *playItem = [rowMenu addItemWithTitle:@"Play Now"
                                               action:@selector(playNow:)
@@ -276,7 +206,6 @@ NBCWrapList(const std::vector<navidrome::BrowserNodePtr> &nodes) {
                                              action:@selector(addToPlaylist:)
                                       keyEquivalent:@""];
     addItem.target = self;
-    // Instant Mix (getSimilarSongs2) for the selected artist/album/song.
     NSMenuItem *similarItem = [rowMenu addItemWithTitle:@"Instant Mix"
                                                  action:@selector(playSimilarSelection:)
                                           keyEquivalent:@""];
@@ -286,14 +215,11 @@ NBCWrapList(const std::vector<navidrome::BrowserNodePtr> &nodes) {
                                keyEquivalent:@""];
     _alchemyItem.target = self;
     rowMenu.delegate = self;
-    // Biography + last.fm link for the selected artist.
     NSMenuItem *artistInfoItem = [rowMenu addItemWithTitle:@"Artist Info"
                                                      action:@selector(showArtistInfo:)
                                               keyEquivalent:@""];
     artistInfoItem.target = self;
 
-    // Server-side favorites + ratings. Both are per-user state on Navidrome, so
-    // they show up in its web UI and in every other Subsonic client.
     [rowMenu addItem:[NSMenuItem separatorItem]];
     NSMenuItem *starItem = [rowMenu addItemWithTitle:@"Star"
                                               action:@selector(starSelection:)
@@ -303,6 +229,10 @@ NBCWrapList(const std::vector<navidrome::BrowserNodePtr> &nodes) {
                                                 action:@selector(unstarSelection:)
                                          keyEquivalent:@""];
     unstarItem.target = self;
+    NSMenuItem *removeBookmarkItem = [rowMenu addItemWithTitle:@"Remove Bookmark"
+                                                        action:@selector(removeBookmarkSelection:)
+                                                 keyEquivalent:@""];
+    removeBookmarkItem.target = self;
 
     NSMenuItem *ratingItem = [rowMenu addItemWithTitle:@"Rating"
                                                 action:nil
@@ -320,8 +250,6 @@ NBCWrapList(const std::vector<navidrome::BrowserNodePtr> &nodes) {
     }
     [rowMenu setSubmenu:ratingMenu forItem:ratingItem];
 
-    // Server playlists. The submenu is filled in -menuNeedsUpdate: from the
-    // cached playlist list, so opening the menu never blocks on the network.
     [rowMenu addItem:[NSMenuItem separatorItem]];
     NSMenuItem *addToPlaylistItem = [rowMenu addItemWithTitle:@"Add to Navidrome Playlist"
                                                        action:nil
@@ -343,7 +271,6 @@ NBCWrapList(const std::vector<navidrome::BrowserNodePtr> &nodes) {
                                          keyEquivalent:@""];
     deleteItem.target = self;
 
-    // Internet radio stations. Unlike playlists, "New" needs no selection.
     [rowMenu addItem:[NSMenuItem separatorItem]];
     NSMenuItem *newRadioItem = [rowMenu addItemWithTitle:@"New Radio Station…"
                                                   action:@selector(newRadioStation:)
@@ -358,8 +285,6 @@ NBCWrapList(const std::vector<navidrome::BrowserNodePtr> &nodes) {
                                               keyEquivalent:@""];
     deleteRadioItem.target = self;
 
-    // Podcast channels. Like radio, "Subscribe" needs no selection. No update
-    // endpoint — Subsonic's podcast API is subscribe/unsubscribe only.
     [rowMenu addItem:[NSMenuItem separatorItem]];
     NSMenuItem *subscribePodcastItem = [rowMenu addItemWithTitle:@"Subscribe to Podcast…"
                                                            action:@selector(subscribePodcast:)
@@ -388,7 +313,6 @@ NBCWrapList(const std::vector<navidrome::BrowserNodePtr> &nodes) {
 
     _outlineView.menu = rowMenu;
 
-    // Columns
     NSTableColumn *nameCol = [[NSTableColumn alloc] initWithIdentifier:@"name"];
     nameCol.title = @"Name";
     nameCol.minWidth = 160;
@@ -416,20 +340,16 @@ NBCWrapList(const std::vector<navidrome::BrowserNodePtr> &nodes) {
     scrollView.borderType = NSBezelBorder;
     [content addSubview:scrollView];
 
-    // ── Status label (bottom-left) ───────────────────────────────────────
     _statusLabel = [NSTextField labelWithString:@""];
     _statusLabel.translatesAutoresizingMaskIntoConstraints = NO;
     _statusLabel.textColor = [NSColor secondaryLabelColor];
     _statusLabel.font = [NSFont systemFontOfSize:11];
     [content addSubview:_statusLabel];
 
-    // ── Buttons (bottom-right) ───────────────────────────────────────────
     NSButton *addBtn = [NSButton buttonWithTitle:@"Add to Playlist"
                                           target:self
                                           action:@selector(addToPlaylist:)];
     addBtn.translatesAutoresizingMaskIntoConstraints = NO;
-    // Return is handled by the outline view (commit + play + close); don't let
-    // the default-button key equivalent steal it.
 
     NSButton *playBtn = [NSButton buttonWithTitle:@"Play Now"
                                            target:self
@@ -445,25 +365,20 @@ NBCWrapList(const std::vector<navidrome::BrowserNodePtr> &nodes) {
     [content addSubview:playBtn];
     [content addSubview:refreshBtn];
 
-    // ── Auto-layout ──────────────────────────────────────────────────────
     CGFloat pad = 10;
     [NSLayoutConstraint activateConstraints:@[
-        // Search field
         [_searchField.topAnchor constraintEqualToAnchor:content.topAnchor constant:pad],
         [_searchField.leadingAnchor constraintEqualToAnchor:content.leadingAnchor constant:pad],
         [_searchField.trailingAnchor constraintEqualToAnchor:_spinner.leadingAnchor constant:-pad],
 
-        // Spinner
         [_spinner.centerYAnchor constraintEqualToAnchor:_searchField.centerYAnchor],
         [_spinner.trailingAnchor constraintEqualToAnchor:content.trailingAnchor constant:-pad],
 
-        // Scroll view
         [scrollView.topAnchor constraintEqualToAnchor:_searchField.bottomAnchor constant:pad],
         [scrollView.leadingAnchor constraintEqualToAnchor:content.leadingAnchor constant:pad],
         [scrollView.trailingAnchor constraintEqualToAnchor:content.trailingAnchor constant:-pad],
         [scrollView.bottomAnchor constraintEqualToAnchor:addBtn.topAnchor constant:-pad],
 
-        // Bottom row buttons
         [addBtn.bottomAnchor constraintEqualToAnchor:content.bottomAnchor constant:-pad],
         [addBtn.trailingAnchor constraintEqualToAnchor:content.trailingAnchor constant:-pad],
 
@@ -473,22 +388,13 @@ NBCWrapList(const std::vector<navidrome::BrowserNodePtr> &nodes) {
         [refreshBtn.bottomAnchor constraintEqualToAnchor:content.bottomAnchor constant:-pad],
         [refreshBtn.leadingAnchor constraintEqualToAnchor:content.leadingAnchor constant:pad],
 
-        // Status label
         [_statusLabel.centerYAnchor constraintEqualToAnchor:addBtn.centerYAnchor],
         [_statusLabel.leadingAnchor constraintEqualToAnchor:refreshBtn.trailingAnchor constant:pad],
         [_statusLabel.trailingAnchor constraintEqualToAnchor:playBtn.leadingAnchor constant:-pad],
     ]];
 }
 
-// ---------------------------------------------------------------------------
-// Data loading
-// ---------------------------------------------------------------------------
-
-// Smart-list roots, shown above the artist list. Each expands lazily like any
-// other node, so opening the browser still costs exactly one getArtists call.
 - (NSArray<NavidromeNode *> *)buildCategoryNodes {
-    // Canonical list (incl. Bookmarks) is shared with Windows — see
-    // navidrome::buildCategoryNodes() in NavidromeBrowserModel.h.
     return NBCWrapList(navidrome::buildCategoryNodes());
 }
 
@@ -501,31 +407,31 @@ NBCWrapList(const std::vector<navidrome::BrowserNodePtr> &nodes) {
     _statusLabel.stringValue = @"Loading artists…";
     [_rootNodes removeAllObjects];
     [_outlineView reloadData];
-    // Warm the cache the "Add to Navidrome Playlist" submenu reads from, so the
-    // first right-click already lists the server's playlists.
     [self refreshServerPlaylists];
     [self refreshRadioStations];
 
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        // Categories + either per-library nodes (multi-library server) or a flat
-        // artist list — the whole decision is shared with Windows.
         std::string err;
         NSMutableArray<NavidromeNode *> *roots =
-            NBCWrapList(navidrome::buildRootNodes(browserClient(), err));
+            NBCWrapList(navidrome::buildRootNodes(NBCBrowserClient(), err));
         std::string errCopy = err;
         dispatch_async(dispatch_get_main_queue(), ^{
             [self->_spinner stopAnimation:nil];
             if (!errCopy.empty()) {
+                self->_reloadNotice = nil;
                 self->_statusLabel.stringValue = [NSString stringWithFormat:@"Error: %s", errCopy.c_str()];
                 return;
             }
+            self->_treeLoadedAtMs = navidrome::browserNowMs();
             NSUInteger artists = 0, libraries = 0;
             for (NavidromeNode *n in roots) {
                 if (n.type == NavidromeNodeTypeArtist)  ++artists;
                 if (n.type == NavidromeNodeTypeLibrary) ++libraries;
             }
             [self->_rootNodes addObjectsFromArray:roots];
-            self->_statusLabel.stringValue = libraries
+            NSString *notice = self->_reloadNotice;
+            self->_reloadNotice = nil;
+            self->_statusLabel.stringValue = notice ? notice : libraries
                 ? [NSString stringWithFormat:@"%lu libraries", (unsigned long)libraries]
                 : [NSString stringWithFormat:@"%lu artists", (unsigned long)artists];
             [self->_outlineView reloadData];
@@ -533,16 +439,11 @@ NBCWrapList(const std::vector<navidrome::BrowserNodePtr> &nodes) {
     });
 }
 
-// Synchronous child fetch for any expandable node — background thread only.
-// Shared by lazy expansion and the deep song collector so both agree on what a
-// category / playlist / artist / album contains. The node-type dispatch, the
-// "N tracks" subtitles and the playlist rating push-back are shared with
-// Windows — see navidrome::fetchChildren in NavidromeBrowserModel.cpp.
 - (NSMutableArray<NavidromeNode *> *)fetchChildrenOf:(NavidromeNode *)node
                                                error:(NSError **)outError {
     std::string err;
     navidrome::BrowserNode core = [node coreNode];
-    auto kids = navidrome::fetchChildren(browserClient(), core, err);
+    auto kids = navidrome::fetchChildren(NBCBrowserClient(), core, err);
     if (!err.empty()) {
         if (outError)
             *outError = [NSError errorWithDomain:@"Navidrome"
@@ -553,9 +454,6 @@ NBCWrapList(const std::vector<navidrome::BrowserNodePtr> &nodes) {
     return NBCWrapList(kids);
 }
 
-// Marshal the view-models to shared nodes and hand off — the Song filter and
-// the rating push-back itself live in navidrome::syncBrowserNodesToPlaylists
-// (NavidromeBrowserModel.h), shared with Windows.
 static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
     std::vector<navidrome::BrowserNodePtr> core;
     core.reserve(nodes.count);
@@ -568,7 +466,6 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
     if (node.childrenLoaded || node.isLoading) return;
     node.isLoading = YES;
 
-    // Insert temporary "Loading…" placeholder
     [node.children removeAllObjects];
     [node.children addObject:[NavidromeNode loadingNode]];
     [ov reloadItem:node reloadChildren:YES];
@@ -592,20 +489,11 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
     });
 }
 
-// ---------------------------------------------------------------------------
-// Search
-// ---------------------------------------------------------------------------
-
-// NSSearchField's action alone only fires on Enter or the Cancel button —
-// this covers those, and dispatches immediately (no debounce wait).
 - (void)searchChanged:(id)sender {
     [_searchDebounceTimer invalidate];
     [self dispatchSearch];
 }
 
-// Fires on every keystroke. Live-as-you-type search would otherwise hit the
-// server once per character, so this just (re)arms a short debounce timer;
-// -dispatchSearch runs once typing pauses.
 - (void)controlTextDidChange:(NSNotification *)note {
     if (note.object != _searchField) return;
     [_searchDebounceTimer invalidate];
@@ -620,9 +508,6 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
 - (void)dispatchSearch {
     _searchDebounceTimer = nil;
     NSString *query = [_searchField stringValue];
-    // Any dispatch — including clearing the box — invalidates whatever
-    // search request is still in flight, so a stale response can't land on
-    // top of newer results.
     NSUInteger generation = ++_searchGeneration;
 
     if (query.length < 2) {
@@ -641,8 +526,6 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
         NSError *err = nil;
         NSDictionary *results = [SubsonicClient.sharedClient search:query error:&err];
         dispatch_async(dispatch_get_main_queue(), ^{
-            // Superseded by a later keystroke/clear while this request was
-            // in flight — drop it instead of clobbering newer results.
             if (generation != self->_searchGeneration) return;
 
             [self->_spinner stopAnimation:nil];
@@ -654,7 +537,6 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
                 return;
             }
 
-            // Build flat list of song nodes matching the search
             NSArray<SubsonicSong *> *songs = results[@"songs"];
             for (SubsonicSong *s in songs)
                 [self->_filteredNodes addObject:[NavidromeNode songNode:s]];
@@ -667,11 +549,6 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
     });
 }
 
-// ---------------------------------------------------------------------------
-// Adding to playlist
-// ---------------------------------------------------------------------------
-
-// Returns all selected playable nodes (anything but the loading/error rows).
 - (NSArray<NavidromeNode *> *)selectedNodes {
     NSMutableArray<NavidromeNode *> *nodes = [NSMutableArray array];
     NSIndexSet *selected = [_outlineView selectedRowIndexes];
@@ -685,21 +562,16 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
     return nodes;
 }
 
-// Entry point for Add/Play actions — handles async deep loading for artists/albums.
 - (void)addNodesToPlaylist:(NSArray<NavidromeNode *> *)nodes play:(BOOL)play {
     [self addNodesToPlaylist:nodes play:play closeWhenDone:NO];
 }
 
-// closeWhenDone closes the standalone window once tracks are queued — used by
-// the Enter shortcut ("queue, play, and dismiss"). No-op when embedded.
 - (void)addNodesToPlaylist:(NSArray<NavidromeNode *> *)nodes
                       play:(BOOL)play
              closeWhenDone:(BOOL)closeWhenDone {
     [self addNodesToPlaylist:nodes play:play closeWhenDone:closeWhenDone clearFirst:NO];
 }
 
-// clearFirst replaces the active playlist's contents instead of appending —
-// used by the Enter shortcut ("select artist/album, Enter = play just this").
 - (void)addNodesToPlaylist:(NSArray<NavidromeNode *> *)nodes
                       play:(BOOL)play
              closeWhenDone:(BOOL)closeWhenDone
@@ -709,7 +581,6 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
         return;
     }
 
-    // Fast path: everything is already a song node
     BOOL allSongs = YES;
     for (NavidromeNode *n in nodes)
         if (n.type != NavidromeNodeTypeSong) { allSongs = NO; break; }
@@ -722,16 +593,28 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
     [_spinner startAnimation:nil];
     _statusLabel.stringValue = @"Loading tracks…";
 
-    // Copy nodes list for use on background thread
     NSArray *nodesCopy = [nodes copy];
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         NSError *err = nil;
         NSMutableArray<NavidromeNode *> *songs = [self collectSelectionSongs:nodesCopy error:&err];
+        if (err) NAVIDROME_WARN("UI", "addNodesToPlaylist: " + NBCStr(err.localizedDescription));
         dispatch_async(dispatch_get_main_queue(), ^{
             [self->_spinner stopAnimation:nil];
-            if (err) {
-                self->_statusLabel.stringValue = [NSString stringWithFormat:@"Error: %@",
-                                            err.localizedDescription];
+            const bool stale = navidrome::browserTreeIsStale(self->_treeLoadedAtMs,
+                                                             navidrome::browserNowMs());
+            const bool gotSongs = !err && songs.count > 0;
+            const std::string errText = err ? NBCStr(err.localizedDescription) : std::string();
+            const bool reload =
+                navidrome::shouldReloadAfterEmptyCollect(gotSongs, err != nil, stale);
+            const std::string problem = navidrome::queueProblemMessage(gotSongs, errText, reload);
+            if (!problem.empty()) navidrome::showBrowserQueueError(problem);
+            if (reload) {
+                NAVIDROME_WARN("UI", "addNodesToPlaylist: nothing to queue, reloading the browse tree");
+                self.reloadNotice = @"Couldn't load tracks — list reloaded, select again";
+                [self refresh:nil];
+            } else if (!gotSongs) {
+                NAVIDROME_WARN("UI", "addNodesToPlaylist: the selection resolved to no tracks");
+                self->_statusLabel.stringValue = @"No tracks found — try Refresh";
             } else {
                 [self enqueueNodes:songs play:play clearFirst:clearFirst];
                 if (closeWhenDone) [self closeStandaloneWindow];
@@ -740,8 +623,6 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
     });
 }
 
-// Return / Enter in the tree: replace the active playlist with the selection,
-// start playing, and close the window (standalone only).
 - (void)commitSelectionFromKeyboard {
     [self addNodesToPlaylist:[self selectedNodes] play:YES closeWhenDone:YES clearFirst:YES];
 }
@@ -750,20 +631,12 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
     if (self.standalone) [self.view.window close];
 }
 
-// An artist's synthetic children (Top Songs, Similar Artists) are for browsing, not for
-// "add this artist to the playlist": Top Songs would duplicate the discography, and Similar
-// Artists is a cyclic graph — Tremonti lists Alter Bridge, Alter Bridge lists Tremonti — so
-// descending into it never terminates. Mirrors isArtistSubCategory in
-// navidrome::collectSongsDeep (NavidromeBrowserModel.cpp), which this is the Obj-C twin of.
 static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
     return n.type == NavidromeNodeTypeCategory &&
            (n.categoryKind == NavidromeCategoryArtistTopSongs ||
             n.categoryKind == NavidromeCategoryArtistSimilarArtists);
 }
 
-// Synchronous deep song collector — must be called from a background thread.
-// Walks any expandable node (artist, album, category, playlist) down to songs,
-// reusing already-expanded children and fetching the rest on demand.
 - (void)collectSongsDeep:(NavidromeNode *)node
                     into:(NSMutableArray<NavidromeNode *> *)songs
                    error:(NSError **)outError {
@@ -789,10 +662,6 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
     }
 }
 
-// collectSongsDeep over a multi-selection — the Obj-C twin of
-// navidrome::collectSelectionSongs: a song an earlier selected node already
-// produced is dropped from later ones (artist + one of its albums selected
-// together), repeats within one node (a server playlist) are kept.
 - (NSMutableArray<NavidromeNode *> *)collectSelectionSongs:(NSArray<NavidromeNode *> *)nodes
                                                      error:(NSError **)outError {
     NSMutableArray<NavidromeNode *> *out = [NSMutableArray array];
@@ -817,10 +686,6 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
 - (void)enqueueNodes:(NSArray<NavidromeNode *> *)songNodes
                 play:(BOOL)play
           clearFirst:(BOOL)clearFirst {
-    // The metadb / hint / playlist_manager / playback block is shared with
-    // Windows — see navidrome::enqueueBrowserNodes in main.cpp. Only the radio
-    // stream-URL lookup is platform-local. Main thread only (callers already
-    // are). __unsafe_unretained self: the lambda is invoked synchronously here.
     __unsafe_unretained NavidromeBrowserController *weakSelf = self;
     std::vector<navidrome::BrowserNodePtr> nodes;
     nodes.reserve(songNodes.count);
@@ -838,10 +703,6 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
     _statusLabel.stringValue = @(status.c_str());
 }
 
-// ---------------------------------------------------------------------------
-// Actions
-// ---------------------------------------------------------------------------
-
 - (IBAction)addToPlaylist:(id)sender {
     [self addNodesToPlaylist:[self selectedNodes] play:NO];
 }
@@ -850,8 +711,6 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
     [self addNodesToPlaylist:[self selectedNodes] play:YES];
 }
 
-// Instant Mix from the first selected artist, album or song — the shared run
-// in main.cpp (progress window, dedicated "Instant Mix" playlist).
 - (IBAction)playSimilarSelection:(id)sender {
     NavidromeNode *node = [self selectedNodes].firstObject;
     navidrome::BrowserNode core = node ? [node coreNode] : navidrome::BrowserNode{};
@@ -862,8 +721,6 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
     navidrome::startInstantMix(std::make_shared<navidrome::BrowserNode>(core));
 }
 
-// Song Alchemy over the selected songs/artists — the run itself (progress
-// window, new playlist) is the shared one in main.cpp.
 - (IBAction)alchemySelection:(id)sender {
     std::vector<navidrome::BrowserNodePtr> core;
     for (NavidromeNode *n in [self selectedNodes])
@@ -877,9 +734,6 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
     navidrome::audioMuseAlchemy(std::move(seeds), std::move(label));
 }
 
-// Fetches the selected artist's biography + last.fm link and shows it in a
-// modal alert — a read-only lookup, not an enqueue action, so it skips
-// -enqueueNodes:play:clearFirst: every other context-menu action here goes through.
 - (IBAction)showArtistInfo:(id)sender {
     NavidromeNode *node = [self selectedNodes].firstObject;
     if (!node || node.type != NavidromeNodeTypeArtist) {
@@ -893,7 +747,7 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
     NSString *artistName = node.displayName;
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         std::string err;
-        auto info = browserClient().getArtistInfo(artistId, err);
+        auto info = NBCBrowserClient().getArtistInfo(artistId, err);
         NSString *text = @(navidrome::formatArtistBiography(info).c_str());
         NSString *lastFmUrl = info.lastFmUrl.empty() ? nil : @(info.lastFmUrl.c_str());
         std::string errCopy = err;
@@ -916,14 +770,12 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
     });
 }
 
-// Fetches a fresh batch of random tracks and appends + plays them. No
-// selection needed — always available, like "Send Active Playlist".
 - (IBAction)playRandomMix:(id)sender {
     [_spinner startAnimation:nil];
     _statusLabel.stringValue = @"Fetching random mix…";
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         std::string err;
-        auto nodes = navidrome::fetchRandomMix(browserClient(), 100, err);
+        auto nodes = navidrome::fetchRandomMix(NBCBrowserClient(), 100, err);
         NSMutableArray<NavidromeNode *> *songNodes = NBCWrapList(nodes);
         std::string errCopy = err;
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -944,863 +796,10 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
 - (IBAction)refresh:(id)sender {
     [_searchDebounceTimer invalidate];
     _searchDebounceTimer = nil;
-    ++_searchGeneration;   // drop any search still in flight
+    ++_searchGeneration;
     _isSearching = NO;
     _searchField.stringValue = @"";
     [self loadArtists];
-}
-
-// ---------------------------------------------------------------------------
-// Favorites, ratings and playlist upload
-// ---------------------------------------------------------------------------
-
-- (IBAction)starSelection:(id)sender   { [self applyStarred:YES]; }
-- (IBAction)unstarSelection:(id)sender { [self applyStarred:NO]; }
-
-- (void)applyStarred:(BOOL)starred {
-    NSMutableArray<NavidromeNode *> *targets = [NSMutableArray array];
-    for (NavidromeNode *n in [self selectedNodes]) {
-        if (n.type == NavidromeNodeTypeSong ||
-            n.type == NavidromeNodeTypeAlbum ||
-            n.type == NavidromeNodeTypeArtist)
-            [targets addObject:n];
-    }
-    if (targets.count == 0) {
-        _statusLabel.stringValue = @"Select a song, album or artist first";
-        return;
-    }
-
-    std::vector<navidrome::BrowserNodePtr> core;
-    core.reserve(targets.count);
-    for (NavidromeNode *n in targets)
-        core.push_back(std::make_shared<navidrome::BrowserNode>([n coreNode]));
-
-    [_spinner startAnimation:nil];
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        // The type dispatch, the API call and the rating push-back are shared
-        // with Windows — see navidrome::applyStarredToNodes.
-        auto result = navidrome::applyStarredToNodes(browserClient(), core, starred);
-        if (!result.error.empty())
-            NAVIDROME_WARN("UI", std::string(starred ? "star" : "unstar") +
-                " failed: " + result.error);
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self->_spinner stopAnimation:nil];
-            for (NSUInteger i = 0; i < targets.count; i++)
-                targets[i].starred = core[i]->starred;
-            if (!result.error.empty()) {
-                self->_statusLabel.stringValue =
-                    [NSString stringWithFormat:@"Error: %s", result.error.c_str()];
-            } else {
-                self->_statusLabel.stringValue = [NSString stringWithFormat:@"%@ %lu item(s)",
-                    starred ? @"Starred" : @"Unstarred", (unsigned long)result.done];
-            }
-            [self->_outlineView reloadData];
-        });
-    });
-}
-
-// Ratings are a song-level concept in Subsonic; albums/artists are ignored.
-- (IBAction)setRatingFromMenu:(NSMenuItem *)item {
-    NSInteger rating = item.tag;
-    NSMutableArray<NavidromeNode *> *songs = [NSMutableArray array];
-    for (NavidromeNode *n in [self selectedNodes])
-        if (n.type == NavidromeNodeTypeSong) [songs addObject:n];
-
-    if (songs.count == 0) {
-        _statusLabel.stringValue = @"Select one or more songs to rate";
-        return;
-    }
-
-    std::vector<navidrome::BrowserNodePtr> core;
-    core.reserve(songs.count);
-    for (NavidromeNode *n in songs)
-        core.push_back(std::make_shared<navidrome::BrowserNode>([n coreNode]));
-
-    [_spinner startAnimation:nil];
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        // Shared with Windows — see navidrome::applyRatingToNodes.
-        auto result = navidrome::applyRatingToNodes(browserClient(), core, (int)rating);
-        if (!result.error.empty())
-            NAVIDROME_WARN("UI", "setRatingFromMenu: rating=" + std::to_string((long)rating) +
-                " failed: " + result.error);
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self->_spinner stopAnimation:nil];
-            for (NSUInteger i = 0; i < songs.count; i++)
-                songs[i].rating = core[i]->rating;
-            self->_statusLabel.stringValue = !result.error.empty()
-                ? [NSString stringWithFormat:@"Error: %s", result.error.c_str()]
-                : [NSString stringWithFormat:@"Rated %lu song(s)", (unsigned long)songs.count];
-            [self->_outlineView reloadData];
-        });
-    });
-}
-
-// Pushes the active foobar2000 playlist to the server under the same name, so
-// it shows up on phones / the web UI. Only navidrome:// tracks can be sent —
-// local files have no Subsonic id.
-- (IBAction)sendActivePlaylist:(id)sender {
-    auto pm = playlist_manager::get();
-    t_size playlist = pm->get_active_playlist();
-    if (playlist == pfc_infinite) {
-        _statusLabel.stringValue = @"No active playlist";
-        return;
-    }
-
-    pfc::string8 pfcName;
-    pm->playlist_get_name(playlist, pfcName);
-    metadb_handle_list items;
-    pm->playlist_get_all_items(playlist, items);
-
-    NSMutableArray<NSString *> *songIds = [NSMutableArray array];
-    NSUInteger skipped = 0;
-    for (t_size i = 0; i < items.get_count(); i++) {
-        std::string id = navidrome::trackIdFromURI(items[i]->get_path());
-        if (id.empty()) { skipped++; continue; }
-        [songIds addObject:[NSString stringWithUTF8String:id.c_str()]];
-    }
-
-    if (songIds.count == 0) {
-        _statusLabel.stringValue = @"No Navidrome tracks in the active playlist";
-        return;
-    }
-
-    NSString *name = [NSString stringWithUTF8String:pfcName.c_str()];
-    if (name.length == 0) name = @"foobar2000";
-    NSUInteger skippedCount = skipped;
-
-    [_spinner startAnimation:nil];
-    _statusLabel.stringValue = @"Uploading playlist…";
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        NSError *err = nil;
-        BOOL ok = [SubsonicClient.sharedClient createPlaylistNamed:name
-                                                           songIds:songIds
-                                                             error:&err] != nil;
-        if (!ok)
-            NAVIDROME_WARN("UI", "sendActivePlaylist \"" + NBCStr(name) + "\" failed: " +
-                NBCStr(err.localizedDescription));
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self->_spinner stopAnimation:nil];
-            if (!ok) {
-                self->_statusLabel.stringValue =
-                    [NSString stringWithFormat:@"Upload failed: %@",
-                     err.localizedDescription ?: @"Unknown error"];
-                return;
-            }
-            self->_statusLabel.stringValue = skippedCount > 0
-                ? [NSString stringWithFormat:@"Sent “%@” (%lu tracks, %lu non-Navidrome skipped)",
-                   name, (unsigned long)songIds.count, (unsigned long)skippedCount]
-                : [NSString stringWithFormat:@"Sent “%@” (%lu tracks)",
-                   name, (unsigned long)songIds.count];
-            [self invalidatePlaylistsCategory];
-            [self refreshServerPlaylists];
-        });
-    });
-}
-
-// ---------------------------------------------------------------------------
-// Download originals
-//
-// download.view always serves the file as stored on the server — the streaming
-// transcode preferences deliberately don't apply here.
-// ---------------------------------------------------------------------------
-
-- (IBAction)downloadSelection:(id)sender {
-    NSArray<NavidromeNode *> *nodes = [self selectedNodes];
-    if (nodes.count == 0) { _statusLabel.stringValue = @"Select at least one item first"; return; }
-
-    NSOpenPanel *panel = [NSOpenPanel openPanel];
-    panel.canChooseFiles = NO;
-    panel.canChooseDirectories = YES;
-    panel.canCreateDirectories = YES;
-    panel.allowsMultipleSelection = NO;
-    panel.prompt = @"Download Here";
-    panel.message = @"Choose a folder for the downloaded tracks.";
-    if ([panel runModal] != NSModalResponseOK || !panel.URL) return;
-    NSString *destDir = panel.URL.path;
-
-    [_spinner startAnimation:nil];
-    _statusLabel.stringValue = @"Resolving tracks…";
-
-    NSArray *nodesCopy = [nodes copy];
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        NSError *err = nil;
-        NSMutableArray<NavidromeNode *> *songs = [self collectSelectionSongs:nodesCopy error:&err];
-        if (err) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [self->_spinner stopAnimation:nil];
-                self->_statusLabel.stringValue =
-                    [NSString stringWithFormat:@"Error: %@", err.localizedDescription];
-            });
-            return;
-        }
-
-        NSUInteger done = 0, failed = 0;
-        for (NSUInteger i = 0; i < songs.count; i++) {
-            NavidromeNode *s = songs[i];
-            NSUInteger position = i + 1;
-            dispatch_async(dispatch_get_main_queue(), ^{
-                self->_statusLabel.stringValue =
-                    [NSString stringWithFormat:@"Downloading %lu/%lu…",
-                     (unsigned long)position, (unsigned long)songs.count];
-            });
-
-            NSURL *url = [SubsonicClient.sharedClient downloadURLForSongId:s.nodeId];
-            if (!url) { failed++; continue; }
-
-            NSString *path = [destDir stringByAppendingPathComponent:
-                              [self downloadFileNameForNode:s]];
-            NSError *one = nil;
-            if ([SubsonicClient.sharedClient downloadURL:url toPath:path error:&one]) done++;
-            else failed++;
-        }
-
-        NSUInteger okCount = done, failCount = failed;
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self->_spinner stopAnimation:nil];
-            self->_statusLabel.stringValue = failCount == 0
-                ? [NSString stringWithFormat:@"Downloaded %lu track(s)", (unsigned long)okCount]
-                : [NSString stringWithFormat:@"Downloaded %lu, %lu failed",
-                   (unsigned long)okCount, (unsigned long)failCount];
-        });
-    });
-}
-
-// "<track>. <artist> - <title>.<suffix>" with anything illegal replaced. The
-// suffix comes from the node when known; download.view keeps the original
-// container either way, so a missing suffix just means no extension.
-- (NSString *)downloadFileNameForNode:(NavidromeNode *)node {
-    NSMutableString *name = [NSMutableString string];
-    if (node.trackNumber > 0) [name appendFormat:@"%02ld. ", (long)node.trackNumber];
-    if (node.subtitle.length) [name appendFormat:@"%@ - ", node.subtitle];
-    [name appendString:node.displayName.length ? node.displayName : @"untitled"];
-
-    std::string clean = navidrome::sanitizeFileName([name UTF8String] ?: "untitled");
-    NSString *result = [NSString stringWithUTF8String:clean.c_str()];
-    if (node.suffix.length) result = [result stringByAppendingFormat:@".%@", node.suffix];
-    return result;
-}
-
-// ---------------------------------------------------------------------------
-// Server playlist management
-//
-// Everything here works on song ids, so the selection is first resolved down to
-// songs (fetching artist/album/genre children when needed) exactly the way the
-// Add-to-playlist actions do.
-// ---------------------------------------------------------------------------
-
-// Refresh the cached playlist list used by the "Add to Navidrome Playlist"
-// submenu. Cheap enough to re-run after every mutation.
-- (void)refreshServerPlaylists {
-    if (_playlistsLoading || ![SubsonicClient.sharedClient isConfigured]) return;
-    _playlistsLoading = YES;
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        NSError *err = nil;
-        NSArray<SubsonicPlaylist *> *lists =
-            [SubsonicClient.sharedClient getPlaylistsWithError:&err];
-        dispatch_async(dispatch_get_main_queue(), ^{
-            self->_playlistsLoading = NO;
-            if (!err && lists) self->_serverPlaylists = lists;
-        });
-    });
-}
-
-// NSMenuDelegate — fills the submenu from the cache each time it opens.
-- (void)menuNeedsUpdate:(NSMenu *)menu {
-    if (menu == _alchemyItem.menu) {
-        _alchemyItem.hidden = !navidrome::audioMuseSettings().configured();
-        return;
-    }
-    if (menu != _playlistsMenu) return;
-    [menu removeAllItems];
-
-    for (NSUInteger i = 0; i < _serverPlaylists.count; i++) {
-        NSMenuItem *it = [menu addItemWithTitle:_serverPlaylists[i].name
-                                         action:@selector(addSelectionToServerPlaylist:)
-                                  keyEquivalent:@""];
-        it.target = self;
-        it.tag    = (NSInteger)i;
-    }
-    if (_serverPlaylists.count == 0) {
-        NSMenuItem *placeholder = [menu addItemWithTitle:
-            (_playlistsLoading ? @"Loading…" : @"No playlists on server")
-                                                  action:nil keyEquivalent:@""];
-        placeholder.enabled = NO;
-    }
-    [menu addItem:[NSMenuItem separatorItem]];
-    NSMenuItem *newItem = [menu addItemWithTitle:@"New Playlist…"
-                                          action:@selector(newServerPlaylist:)
-                                   keyEquivalent:@""];
-    newItem.target = self;
-
-    // A stale cache is only visible once — refresh for the next open.
-    [self refreshServerPlaylists];
-}
-
-// Resolves the current selection to Subsonic song ids on a background thread.
-- (void)collectSelectedSongIds:(void (^)(NSArray<NSString *> *ids, NSError *err))done {
-    NSArray<NavidromeNode *> *nodes = [self selectedNodes];
-    if (nodes.count == 0) {
-        _statusLabel.stringValue = @"Select at least one item first";
-        return;
-    }
-    [_spinner startAnimation:nil];
-    _statusLabel.stringValue = @"Resolving tracks…";
-
-    NSArray *nodesCopy = [nodes copy];
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        NSError *err = nil;
-        NSMutableArray<NavidromeNode *> *songs = [self collectSelectionSongs:nodesCopy error:&err];
-        NSMutableArray<NSString *> *ids = [NSMutableArray array];
-        for (NavidromeNode *s in songs)
-            if (s.nodeId.length) [ids addObject:s.nodeId];
-
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self->_spinner stopAnimation:nil];
-            done(ids, err);
-        });
-    });
-}
-
-- (IBAction)addSelectionToServerPlaylist:(NSMenuItem *)item {
-    NSUInteger idx = (NSUInteger)item.tag;
-    if (idx >= _serverPlaylists.count) return;
-    SubsonicPlaylist *target = _serverPlaylists[idx];
-
-    [self collectSelectedSongIds:^(NSArray<NSString *> *ids, NSError *err) {
-        if (err)       { self->_statusLabel.stringValue =
-                             [NSString stringWithFormat:@"Error: %@", err.localizedDescription]; return; }
-        if (!ids.count) { self->_statusLabel.stringValue = @"No tracks in the selection"; return; }
-
-        self->_statusLabel.stringValue = @"Adding to playlist…";
-        [self->_spinner startAnimation:nil];
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-            NSError *one = nil;
-            BOOL ok = [SubsonicClient.sharedClient addSongs:ids
-                                                 toPlaylist:target.playlistId
-                                                      error:&one];
-            if (!ok)
-                NAVIDROME_WARN("UI", "addSelectionToServerPlaylist \"" + NBCStr(target.name) +
-                    "\" failed: " + NBCStr(one.localizedDescription));
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [self->_spinner stopAnimation:nil];
-                self->_statusLabel.stringValue = ok
-                    ? [NSString stringWithFormat:@"Added %lu track(s) to “%@”",
-                       (unsigned long)ids.count, target.name]
-                    : [NSString stringWithFormat:@"Failed: %@",
-                       one.localizedDescription ?: @"unknown error"];
-                if (ok) {
-                    [self invalidatePlaylistNode:target.playlistId];
-                    [self refreshServerPlaylists];
-                }
-            });
-        });
-    }];
-}
-
-- (IBAction)newServerPlaylist:(id)sender {
-    [self collectSelectedSongIds:^(NSArray<NSString *> *ids, NSError *err) {
-        if (err) {
-            self->_statusLabel.stringValue =
-                [NSString stringWithFormat:@"Error: %@", err.localizedDescription];
-            return;
-        }
-        NSString *name = [self promptForText:@"New Navidrome playlist"
-                                     message:@"Name for the new playlist:"
-                                initialValue:@""];
-        if (name.length == 0) return;
-
-        self->_statusLabel.stringValue = @"Creating playlist…";
-        [self->_spinner startAnimation:nil];
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-            NSError *one = nil;
-            NSString *newId = [SubsonicClient.sharedClient createPlaylistNamed:name
-                                                                        songIds:ids
-                                                                          error:&one];
-            if (!newId)
-                NAVIDROME_WARN("UI", "newServerPlaylist \"" + NBCStr(name) + "\" failed: " +
-                    NBCStr(one.localizedDescription));
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [self->_spinner stopAnimation:nil];
-                self->_statusLabel.stringValue = newId
-                    ? [NSString stringWithFormat:@"Created “%@” (%lu track(s))",
-                       name, (unsigned long)ids.count]
-                    : [NSString stringWithFormat:@"Failed: %@",
-                       one.localizedDescription ?: @"unknown error"];
-                if (newId) {
-                    [self invalidatePlaylistsCategory];
-                    [self refreshServerPlaylists];
-                }
-            });
-        });
-    }];
-}
-
-// Only meaningful for song rows sitting directly under a playlist node — that's
-// where a track has a position for songIndexToRemove to refer to.
-- (IBAction)removeFromPlaylist:(id)sender {
-    NavidromeNode *playlist = nil;
-    NSMutableArray<NSNumber *> *indexes = [NSMutableArray array];
-
-    for (NavidromeNode *n in [self selectedNodes]) {
-        if (n.type != NavidromeNodeTypeSong) continue;
-        NavidromeNode *parent = [_outlineView parentForItem:n];
-        if (!parent || parent.type != NavidromeNodeTypePlaylist) continue;
-        // Mixing playlists in one request isn't expressible — the endpoint takes
-        // a single playlistId.
-        if (playlist && ![playlist.nodeId isEqualToString:parent.nodeId]) continue;
-        playlist = parent;
-        NSUInteger idx = [parent.children indexOfObject:n];
-        if (idx != NSNotFound) [indexes addObject:@(idx)];
-    }
-
-    if (!playlist || indexes.count == 0) {
-        _statusLabel.stringValue = @"Select tracks inside a server playlist first";
-        return;
-    }
-
-    NSString *playlistId = playlist.nodeId;
-    NSString *playlistName = playlist.displayName;
-    [_spinner startAnimation:nil];
-    _statusLabel.stringValue = @"Removing…";
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        NSError *err = nil;
-        BOOL ok = [SubsonicClient.sharedClient removeIndexes:indexes
-                                                fromPlaylist:playlistId
-                                                       error:&err];
-        if (!ok)
-            NAVIDROME_WARN("UI", "removeFromPlaylist \"" + NBCStr(playlistName) + "\" failed: " +
-                NBCStr(err.localizedDescription));
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self->_spinner stopAnimation:nil];
-            self->_statusLabel.stringValue = ok
-                ? [NSString stringWithFormat:@"Removed %lu track(s) from “%@”",
-                   (unsigned long)indexes.count, playlistName]
-                : [NSString stringWithFormat:@"Failed: %@",
-                   err.localizedDescription ?: @"unknown error"];
-            if (ok) [self invalidatePlaylistNode:playlistId];
-        });
-    });
-}
-
-- (IBAction)renamePlaylist:(id)sender {
-    NavidromeNode *playlist = [self singleSelectedPlaylist];
-    if (!playlist) { _statusLabel.stringValue = @"Select a single server playlist"; return; }
-
-    NSString *name = [self promptForText:@"Rename playlist"
-                                 message:@"New name:"
-                            initialValue:playlist.displayName ?: @""];
-    if (name.length == 0 || [name isEqualToString:playlist.displayName]) return;
-
-    NSString *playlistId = playlist.nodeId;
-    [_spinner startAnimation:nil];
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        NSError *err = nil;
-        BOOL ok = [SubsonicClient.sharedClient renamePlaylist:playlistId
-                                                       toName:name
-                                                        error:&err];
-        if (!ok)
-            NAVIDROME_WARN("UI", "renamePlaylist -> \"" + NBCStr(name) + "\" failed: " +
-                NBCStr(err.localizedDescription));
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self->_spinner stopAnimation:nil];
-            if (ok) {
-                playlist.displayName = name;
-                self->_statusLabel.stringValue = [NSString stringWithFormat:@"Renamed to “%@”", name];
-                [self->_outlineView reloadData];
-                [self refreshServerPlaylists];
-            } else {
-                self->_statusLabel.stringValue = [NSString stringWithFormat:@"Failed: %@",
-                    err.localizedDescription ?: @"unknown error"];
-            }
-        });
-    });
-}
-
-- (IBAction)deletePlaylist:(id)sender {
-    NavidromeNode *playlist = [self singleSelectedPlaylist];
-    if (!playlist) { _statusLabel.stringValue = @"Select a single server playlist"; return; }
-
-    NSAlert *confirm = [[NSAlert alloc] init];
-    confirm.messageText = [NSString stringWithFormat:@"Delete “%@” from the server?",
-                           playlist.displayName];
-    confirm.informativeText = @"The playlist is removed for every client. "
-                               "The tracks themselves are not touched.";
-    confirm.alertStyle = NSAlertStyleWarning;
-    [confirm addButtonWithTitle:@"Delete"];
-    [confirm addButtonWithTitle:@"Cancel"];
-    if ([confirm runModal] != NSAlertFirstButtonReturn) return;
-
-    NSString *playlistId = playlist.nodeId;
-    NSString *playlistName = playlist.displayName;
-    [_spinner startAnimation:nil];
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        NSError *err = nil;
-        BOOL ok = [SubsonicClient.sharedClient deletePlaylist:playlistId error:&err];
-        if (!ok)
-            NAVIDROME_WARN("UI", "deletePlaylist \"" + NBCStr(playlistName) + "\" failed: " +
-                NBCStr(err.localizedDescription));
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self->_spinner stopAnimation:nil];
-            self->_statusLabel.stringValue = ok
-                ? [NSString stringWithFormat:@"Deleted “%@”", playlistName]
-                : [NSString stringWithFormat:@"Failed: %@",
-                   err.localizedDescription ?: @"unknown error"];
-            if (ok) {
-                [self invalidatePlaylistsCategory];
-                [self refreshServerPlaylists];
-            }
-        });
-    });
-}
-
-// Exactly one playlist row selected, or nil.
-- (NavidromeNode *)singleSelectedPlaylist {
-    NSArray<NavidromeNode *> *sel = [self selectedNodes];
-    if (sel.count != 1) return nil;
-    return sel[0].type == NavidromeNodeTypePlaylist ? sel[0] : nil;
-}
-
-// Drop a playlist node's cached children so the next expand refetches them.
-- (void)invalidatePlaylistNode:(NSString *)playlistId {
-    for (NavidromeNode *root in _rootNodes) {
-        if (root.type != NavidromeNodeTypeCategory ||
-            root.categoryKind != NavidromeCategoryPlaylists) continue;
-        for (NavidromeNode *pl in root.children) {
-            if (![pl.nodeId isEqualToString:playlistId]) continue;
-            [pl.children removeAllObjects];
-            pl.childrenLoaded = NO;
-            [_outlineView collapseItem:pl];
-            [_outlineView reloadItem:pl reloadChildren:YES];
-            return;
-        }
-    }
-}
-
-// Drop the whole Playlists category — used when a playlist appears or vanishes.
-- (void)invalidatePlaylistsCategory {
-    for (NavidromeNode *root in _rootNodes) {
-        if (root.type != NavidromeNodeTypeCategory ||
-            root.categoryKind != NavidromeCategoryPlaylists) continue;
-        [root.children removeAllObjects];
-        root.childrenLoaded = NO;
-        [_outlineView collapseItem:root];
-        [_outlineView reloadItem:root reloadChildren:YES];
-        return;
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Internet radio station management
-// ---------------------------------------------------------------------------
-
-// Refresh the cached station list the enqueue path resolves streamUrl from.
-// Cheap enough to re-run after every mutation, same as refreshServerPlaylists.
-- (void)refreshRadioStations {
-    if (![SubsonicClient.sharedClient isConfigured]) return;
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        NSError *err = nil;
-        NSArray<SubsonicRadioStation *> *stations =
-            [SubsonicClient.sharedClient getRadioStationsWithError:&err];
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if (!err && stations) self->_radioStations = stations;
-        });
-    });
-}
-
-- (SubsonicRadioStation *)radioStationForId:(NSString *)stationId {
-    for (SubsonicRadioStation *s in _radioStations)
-        if ([s.stationId isEqualToString:stationId]) return s;
-    return nil;
-}
-
-// Exactly one radio station row selected, or nil.
-- (NavidromeNode *)singleSelectedRadioStation {
-    NSArray<NavidromeNode *> *sel = [self selectedNodes];
-    if (sel.count != 1) return nil;
-    return sel[0].type == NavidromeNodeTypeRadioStation ? sel[0] : nil;
-}
-
-// Drop the whole Radio category — used when a station appears/vanishes/changes.
-- (void)invalidateRadioCategory {
-    for (NavidromeNode *root in _rootNodes) {
-        if (root.type != NavidromeNodeTypeCategory ||
-            root.categoryKind != NavidromeCategoryRadio) continue;
-        [root.children removeAllObjects];
-        root.childrenLoaded = NO;
-        [_outlineView collapseItem:root];
-        [_outlineView reloadItem:root reloadChildren:YES];
-        return;
-    }
-}
-
-- (IBAction)newRadioStation:(id)sender {
-    // Unlike a new playlist, creating a station needs no selection.
-    NSString *name = nil, *streamUrl = nil, *homePageUrl = nil;
-    if (![self promptForRadioStationWithTitle:@"New Radio Station"
-                                          name:&name
-                                     streamURL:&streamUrl
-                                   homePageURL:&homePageUrl])
-        return;
-    if (name.length == 0 || streamUrl.length == 0) {
-        _statusLabel.stringValue = @"Name and stream URL are required";
-        return;
-    }
-
-    _statusLabel.stringValue = @"Creating radio station…";
-    [_spinner startAnimation:nil];
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        NSError *err = nil;
-        NSString *result = [SubsonicClient.sharedClient createRadioStationWithStreamURL:streamUrl
-                                                                                    name:name
-                                                                             homePageUrl:homePageUrl
-                                                                                   error:&err];
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self->_spinner stopAnimation:nil];
-            self->_statusLabel.stringValue = result
-                ? [NSString stringWithFormat:@"Created “%@”", name]
-                : [NSString stringWithFormat:@"Failed: %@",
-                   err.localizedDescription ?: @"unknown error"];
-            if (result) {
-                [self invalidateRadioCategory];
-                [self refreshRadioStations];
-            }
-        });
-    });
-}
-
-- (IBAction)editRadioStation:(id)sender {
-    NavidromeNode *node = [self singleSelectedRadioStation];
-    if (!node) { _statusLabel.stringValue = @"Select a single radio station"; return; }
-    SubsonicRadioStation *current = [self radioStationForId:node.nodeId];
-
-    NSString *name = nil, *streamUrl = nil, *homePageUrl = nil;
-    if (![self promptForRadioStationWithTitle:@"Edit Radio Station"
-                            initialName:current.name ?: node.displayName
-                       initialStreamURL:current.streamUrl ?: @""
-                     initialHomePageURL:current.homePageUrl ?: @""
-                                   name:&name
-                              streamURL:&streamUrl
-                            homePageURL:&homePageUrl])
-        return;
-    if (name.length == 0 || streamUrl.length == 0) {
-        _statusLabel.stringValue = @"Name and stream URL are required";
-        return;
-    }
-
-    NSString *stationId = node.nodeId;
-    [_spinner startAnimation:nil];
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        NSError *err = nil;
-        BOOL ok = [SubsonicClient.sharedClient updateRadioStation:stationId
-                                                          streamURL:streamUrl
-                                                               name:name
-                                                        homePageUrl:homePageUrl
-                                                              error:&err];
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self->_spinner stopAnimation:nil];
-            self->_statusLabel.stringValue = ok
-                ? [NSString stringWithFormat:@"Updated “%@”", name]
-                : [NSString stringWithFormat:@"Failed: %@",
-                   err.localizedDescription ?: @"unknown error"];
-            if (ok) {
-                [self invalidateRadioCategory];
-                [self refreshRadioStations];
-            }
-        });
-    });
-}
-
-- (IBAction)deleteRadioStation:(id)sender {
-    NavidromeNode *node = [self singleSelectedRadioStation];
-    if (!node) { _statusLabel.stringValue = @"Select a single radio station"; return; }
-
-    NSAlert *confirm = [[NSAlert alloc] init];
-    confirm.messageText = [NSString stringWithFormat:@"Delete “%@” from the server?",
-                           node.displayName];
-    confirm.informativeText = @"The station is removed for every client.";
-    confirm.alertStyle = NSAlertStyleWarning;
-    [confirm addButtonWithTitle:@"Delete"];
-    [confirm addButtonWithTitle:@"Cancel"];
-    if ([confirm runModal] != NSAlertFirstButtonReturn) return;
-
-    NSString *stationId = node.nodeId;
-    NSString *stationName = node.displayName;
-    [_spinner startAnimation:nil];
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        NSError *err = nil;
-        BOOL ok = [SubsonicClient.sharedClient deleteRadioStation:stationId error:&err];
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self->_spinner stopAnimation:nil];
-            self->_statusLabel.stringValue = ok
-                ? [NSString stringWithFormat:@"Deleted “%@”", stationName]
-                : [NSString stringWithFormat:@"Failed: %@",
-                   err.localizedDescription ?: @"unknown error"];
-            if (ok) {
-                [self invalidateRadioCategory];
-                [self refreshRadioStations];
-            }
-        });
-    });
-}
-
-// Exactly one podcast channel row selected, or nil.
-- (NavidromeNode *)singleSelectedPodcastChannel {
-    NSArray<NavidromeNode *> *sel = [self selectedNodes];
-    if (sel.count != 1) return nil;
-    return sel[0].type == NavidromeNodeTypePodcastChannel ? sel[0] : nil;
-}
-
-// Drop the whole Podcasts category — used when a channel is subscribed/unsubscribed.
-- (void)invalidatePodcastsCategory {
-    for (NavidromeNode *root in _rootNodes) {
-        if (root.type != NavidromeNodeTypeCategory ||
-            root.categoryKind != NavidromeCategoryPodcasts) continue;
-        [root.children removeAllObjects];
-        root.childrenLoaded = NO;
-        [_outlineView collapseItem:root];
-        [_outlineView reloadItem:root reloadChildren:YES];
-        return;
-    }
-}
-
-// Unlike editing a radio station, Subsonic's podcast API has no update
-// endpoint — only subscribe (create) and unsubscribe (delete).
-- (IBAction)subscribePodcast:(id)sender {
-    NSString *url = [self promptForText:@"Subscribe to Podcast"
-                                 message:@"Podcast RSS feed URL:"
-                            initialValue:@""];
-    if (url.length == 0) return;
-
-    _statusLabel.stringValue = @"Subscribing…";
-    [_spinner startAnimation:nil];
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        NSError *err = nil;
-        [SubsonicClient.sharedClient createPodcastChannelWithURL:url error:&err];
-        BOOL ok = err == nil;
-        if (!ok) NAVIDROME_WARN("UI", "subscribePodcast \"" + NBCStr(url) + "\" failed: " +
-                                 NBCStr(err.localizedDescription));
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self->_spinner stopAnimation:nil];
-            self->_statusLabel.stringValue = ok
-                ? @"Subscribed"
-                : [NSString stringWithFormat:@"Failed: %@",
-                   err.localizedDescription ?: @"unknown error"];
-            if (ok) [self invalidatePodcastsCategory];
-        });
-    });
-}
-
-- (IBAction)unsubscribePodcast:(id)sender {
-    NavidromeNode *node = [self singleSelectedPodcastChannel];
-    if (!node) { _statusLabel.stringValue = @"Select a single podcast"; return; }
-
-    NSAlert *confirm = [[NSAlert alloc] init];
-    confirm.messageText = [NSString stringWithFormat:@"Unsubscribe from “%@”?", node.displayName];
-    confirm.informativeText = @"Downloaded episodes are removed from the server.";
-    confirm.alertStyle = NSAlertStyleWarning;
-    [confirm addButtonWithTitle:@"Unsubscribe"];
-    [confirm addButtonWithTitle:@"Cancel"];
-    if ([confirm runModal] != NSAlertFirstButtonReturn) return;
-
-    NSString *channelId = node.nodeId;
-    NSString *channelName = node.displayName;
-    [_spinner startAnimation:nil];
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        NSError *err = nil;
-        BOOL ok = [SubsonicClient.sharedClient deletePodcastChannel:channelId error:&err];
-        if (!ok) NAVIDROME_WARN("UI", "unsubscribePodcast \"" + NBCStr(channelName) + "\" failed: " +
-                                 NBCStr(err.localizedDescription));
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self->_spinner stopAnimation:nil];
-            self->_statusLabel.stringValue = ok
-                ? [NSString stringWithFormat:@"Unsubscribed from “%@”", channelName]
-                : [NSString stringWithFormat:@"Failed: %@",
-                   err.localizedDescription ?: @"unknown error"];
-            if (ok) [self invalidatePodcastsCategory];
-        });
-    });
-}
-
-// Modal 3-field prompt (name / stream URL / home page URL). Returns NO if
-// cancelled, in which case the out params are left untouched.
-- (BOOL)promptForRadioStationWithTitle:(NSString *)title
-                                   name:(NSString **)outName
-                              streamURL:(NSString **)outStreamURL
-                            homePageURL:(NSString **)outHomePageURL {
-    return [self promptForRadioStationWithTitle:title
-                                     initialName:@""
-                                initialStreamURL:@""
-                              initialHomePageURL:@""
-                                            name:outName
-                                       streamURL:outStreamURL
-                                     homePageURL:outHomePageURL];
-}
-
-- (BOOL)promptForRadioStationWithTitle:(NSString *)title
-                            initialName:(NSString *)initialName
-                       initialStreamURL:(NSString *)initialStreamURL
-                     initialHomePageURL:(NSString *)initialHomePageURL
-                                   name:(NSString **)outName
-                              streamURL:(NSString **)outStreamURL
-                            homePageURL:(NSString **)outHomePageURL {
-    NSAlert *alert = [[NSAlert alloc] init];
-    alert.messageText = title;
-    alert.informativeText = @"Name and stream URL are required. Home page URL is optional.";
-    [alert addButtonWithTitle:@"OK"];
-    [alert addButtonWithTitle:@"Cancel"];
-
-    CGFloat fieldWidth = 260, rowHeight = 24, rowGap = 6, labelHeight = 16;
-    NSView *container = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, fieldWidth, 3 * (rowHeight + labelHeight + rowGap))];
-
-    NSTextField *nameLabel = [NSTextField labelWithString:@"Name:"];
-    NSTextField *nameField = [[NSTextField alloc] init];
-    nameField.stringValue = initialName ?: @"";
-
-    NSTextField *urlLabel = [NSTextField labelWithString:@"Stream URL:"];
-    NSTextField *urlField = [[NSTextField alloc] init];
-    urlField.stringValue = initialStreamURL ?: @"";
-
-    NSTextField *homeLabel = [NSTextField labelWithString:@"Home page URL (optional):"];
-    NSTextField *homeField = [[NSTextField alloc] init];
-    homeField.stringValue = initialHomePageURL ?: @"";
-
-    CGFloat y = 3 * (rowHeight + labelHeight + rowGap) - labelHeight;
-    for (NSArray *pair in @[@[nameLabel, nameField], @[urlLabel, urlField], @[homeLabel, homeField]]) {
-        NSTextField *label = pair[0];
-        NSTextField *field = pair[1];
-        label.frame = NSMakeRect(0, y, fieldWidth, labelHeight);
-        [container addSubview:label];
-        y -= (rowHeight + 2);
-        field.frame = NSMakeRect(0, y, fieldWidth, rowHeight);
-        [container addSubview:field];
-        y -= rowGap;
-    }
-
-    alert.accessoryView = container;
-    [alert layout];
-    [alert.window setInitialFirstResponder:nameField];
-
-    if ([alert runModal] != NSAlertFirstButtonReturn) return NO;
-
-    [nameField validateEditing];
-    [urlField validateEditing];
-    [homeField validateEditing];
-
-    NSCharacterSet *ws = [NSCharacterSet whitespaceAndNewlineCharacterSet];
-    if (outName)        *outName        = [nameField.stringValue stringByTrimmingCharactersInSet:ws];
-    if (outStreamURL)   *outStreamURL   = [urlField.stringValue stringByTrimmingCharactersInSet:ws];
-    if (outHomePageURL) *outHomePageURL = [homeField.stringValue stringByTrimmingCharactersInSet:ws];
-    return YES;
-}
-
-// Modal single-line prompt. NSAlert is the only sheet-free way to ask for text
-// that works both in the standalone window and inside the prefs page.
-- (NSString *)promptForText:(NSString *)title
-                    message:(NSString *)message
-               initialValue:(NSString *)initial {
-    std::string value = initial.UTF8String ?: "";
-    if (!navidrome::promptForText(title.UTF8String ?: "", message.UTF8String ?: "", value)) return nil;
-    return @(value.c_str());
 }
 
 - (void)doubleClicked:(id)sender {
@@ -1813,7 +812,6 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
         node.isAllSongs) {
         [self addNodesToPlaylist:@[node] play:YES];
     } else {
-        // Toggle expand/collapse
         if ([_outlineView isItemExpanded:node])
             [_outlineView collapseItem:node];
         else
@@ -1821,17 +819,12 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// NSOutlineViewDataSource
-// ---------------------------------------------------------------------------
-
 - (NSInteger)outlineView:(NSOutlineView *)ov numberOfChildrenOfItem:(id)item {
     if (item == nil) {
         return (NSInteger)(_isSearching ? _filteredNodes.count : _rootNodes.count);
     }
     NavidromeNode *node = (NavidromeNode *)item;
     if (node.isLeaf) return 0;
-    // If not yet loaded, show 1 (will trigger loading when expanded)
     if (!node.childrenLoaded && !node.isLoading) return 1;
     return (NSInteger)node.children.count;
 }
@@ -1843,7 +836,6 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
     }
     NavidromeNode *node = (NavidromeNode *)item;
     if (!node.childrenLoaded && !node.isLoading && index == 0) {
-        // Return a temporary node while we trigger loading
         return [NavidromeNode loadingNode];
     }
     return node.children[(NSUInteger)index];
@@ -1853,10 +845,6 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
     NavidromeNode *node = (NavidromeNode *)item;
     return !node.isLeaf;
 }
-
-// ---------------------------------------------------------------------------
-// NSOutlineViewDelegate
-// ---------------------------------------------------------------------------
 
 - (NSView *)outlineView:(NSOutlineView *)ov
      viewForTableColumn:(NSTableColumn *)tableColumn
@@ -1869,7 +857,6 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
         cell.identifier = tableColumn.identifier;
     }
 
-    // Style placeholders differently
     if (node.type == NavidromeNodeTypeLoading || node.type == NavidromeNodeTypeError) {
         cell.textColor = [NSColor secondaryLabelColor];
         cell.stringValue = [tableColumn.identifier isEqualToString:@"name"] ? node.displayName : @"";
@@ -1878,9 +865,6 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
 
     cell.textColor = [NSColor labelColor];
 
-    // Row-text pieces (track-number prefix, ★ marker, rating stars, ⏱ bookmark,
-    // M:SS duration) come from the shared formatter — Windows joins them into
-    // its single tree column, this splits them across name / sub / dur.
     navidrome::NodeDisplay d = navidrome::nodeDisplay([node coreNode]);
 
     if ([tableColumn.identifier isEqualToString:@"name"]) {
@@ -1918,13 +902,6 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
 
 @end
 
-// ---------------------------------------------------------------------------
-// Standalone window wrapper for the File menu and library_viewer.activate().
-// Each call creates a fresh browser controller and wraps it in an NSWindow.
-// The window+controller pair is retained in a static set until the window
-// closes, at which point it's released. Multiple windows can coexist.
-// ---------------------------------------------------------------------------
-
 @interface NavidromeBrowserWindowOwner : NSObject <NSWindowDelegate>
 @property (nonatomic, strong) NSWindow *window;
 @property (nonatomic, strong) NavidromeBrowserController *vc;
@@ -1944,7 +921,7 @@ void NavidromeShowStandaloneBrowser(void) {
 
         NavidromeBrowserWindowOwner *owner = [NavidromeBrowserWindowOwner new];
         owner.vc = [NavidromeBrowserController new];
-        owner.vc.standalone = YES;   // enables the Enter = queue+play+close shortcut
+        owner.vc.standalone = YES;
 
         NSWindow *win = [[NSWindow alloc]
                          initWithContentRect:NSMakeRect(0, 0, 520, 600)
@@ -1967,10 +944,6 @@ void NavidromeShowStandaloneBrowser(void) {
     });
 }
 
-// The modal single-line prompt behind -promptForText:message:initialValue: and
-// the AudioMuse-AI prompts (NavidromeAudioMuse.h). NSAlert is the only
-// sheet-free way to ask for text that works both in the standalone window and
-// inside the prefs page. The result is trimmed.
 bool navidrome::promptForText(const char* title, const char* label, std::string& inOut) {
     NSAlert *alert = [[NSAlert alloc] init];
     alert.messageText = @(title);
@@ -1985,8 +958,6 @@ bool navidrome::promptForText(const char* title, const char* label, std::string&
     [alert.window setInitialFirstResponder:input];
 
     if ([alert runModal] != NSAlertFirstButtonReturn) return false;
-    // Flush the field editor into stringValue — clicking OK doesn't necessarily
-    // end editing, so without this the last typed characters are lost.
     [input validateEditing];
     NSString *trimmed = [input.stringValue stringByTrimmingCharactersInSet:
                          [NSCharacterSet whitespaceAndNewlineCharacterSet]];

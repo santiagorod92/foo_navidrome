@@ -1,5 +1,5 @@
 .PHONY: help test test-clean mac-test mac-test-clean \
-	win-build win-build-patch win-build-minor win-build-major win-build-launch win-install win-test win-logs win-ui-smoke win-ui \
+	win-build win-build-release-log win-build-patch win-build-minor win-build-major win-build-launch win-install win-test win-logs win-ui-smoke win-ui \
 	mac-build mac-build-patch mac-build-minor mac-build-major mac-build-no-install mac-install mac-release mac-ci-build mac-logs \
 	win-vm-setup win-vm-fetch win-vm-install win-vm-test \
 	mac-vm mac-vm-vnc mac-vm-open mac-vm-smoke mac-vm-ui mac-vm-test mac-vm-release mac-vm-build mac-vm-build-test \
@@ -9,15 +9,6 @@
 XWIN_SDK ?= $(HOME)/.local/share/xwin/sdk
 BUILD_WIN := build-win
 BUILD_MAC := build-mac
-
-# Target naming: <os>-<action>. The OS prefix (win- / mac-) is the only thing
-# that varies; the action after it means the same on both platforms, wired to
-# whichever script performs those steps for that OS.
-#   win-*  -> Windows component, cross-compiled on Linux (clang-cl + wine)
-#   mac-*  -> native macOS component (xcodebuild)
-#   win-vm-*  -> Windows component built + runtime-tested in a VM on macOS
-#   mac-vm-*  -> macOS component runtime-tested in a local macOS VM on Linux (../macos-devbox)
-#   win11-*   -> Windows component runtime-tested in a local Windows 11 VM on Linux (../windows-devbox)
 
 help:
 	@echo "foo_navidrome — make targets"
@@ -32,6 +23,7 @@ help:
 	@echo "  win-build-minor       stamp last release + minor, then cross-compile"
 	@echo "  win-build-major       stamp last release + major, then cross-compile"
 	@echo "  win-build-launch      same as win-build, then relaunch local Wine foobar2000 to load it"
+	@echo "  win-build-release-log build+relaunch with release logging (log in the profile, WARN+; verbose via Advanced prefs)"
 	@echo "  win-install           install built DLL into local Wine foobar2000 + package"
 	@echo "  win-logs              follow the local Wine debug log, colourised (run beside win-build-launch)"
 	@echo "  win-ui-smoke          UI smoke test in the local Wine foobar2000: open browser, expand, play, assert log (needs win-build-launch'd DLL)"
@@ -84,11 +76,6 @@ help:
 	@echo ""
 	@echo "  clean                 remove local build-win/ artifacts"
 
-# --- Unit tests (tests/*.cpp + src/core/*.cpp) ---
-# One test suite, per-host toolchain. scripts/run-unit-tests.sh is the single
-# source of truth for the compile command; the local build scripts
-# (win-build-local.sh / mac-dev-build.sh) call it too, before building the
-# component. See CLAUDE.md > Development > Unit tests.
 test:
 	XWIN_SDK="$(XWIN_SDK)" ./scripts/run-unit-tests.sh win
 
@@ -103,7 +90,6 @@ mac-test-clean:
 	rm -rf $(BUILD_MAC)/tests
 	$(MAKE) mac-test
 
-# --- Windows component, local cross-compile (Linux host) ---
 win-build:
 	./scripts/win-build-local.sh
 
@@ -119,14 +105,15 @@ win-build-major:
 win-build-launch:
 	./scripts/win-build-local.sh --launch
 
+win-build-release-log:
+	./scripts/win-build-local.sh --release-log --launch
+
 win-install:
 	./scripts/install-windows.sh
 
 win-logs:
 	./scripts/navidrome-logs.sh $(ARGS)
 
-# UI smoke tests: scripts/ui-test.sh (Wine, input posted by tools/wclick.c) and
-# scripts/mac-vm/mac-ui-test.sh (macOS VM, mvm VNC input) — same scenario, log assertions.
 win-ui-smoke:
 	./scripts/ui-test.sh smoke
 
@@ -136,7 +123,6 @@ win-ui:
 win-test:
 	./scripts/win-test.sh $(ARGS)
 
-# --- macOS native component ---
 mac-build:
 	./scripts/mac-dev-build.sh
 
@@ -165,7 +151,6 @@ mac-ci-build:
 mac-logs:
 	./scripts/navidrome-logs.sh $(ARGS)
 
-# --- Windows-on-macOS VM testing (scripts/win-vm/) ---
 win-vm-setup:
 	./scripts/win-vm/setup-mac-toolchain.sh
 
@@ -178,16 +163,9 @@ win-vm-install:
 win-vm-test:
 	./scripts/win-vm/win-vm-test.sh $(ARGS)
 
-# --- macOS-on-Linux VM testing (../macos-devbox, `mvm`) ---
-# The VM itself (install, snapshots, deploy, screenshots) is the sibling macos-devbox repo;
-# only the foo_navidrome-specific steps live here. Any other mvm command passes through:
-# `make mac-vm-ssh`, `make mac-vm-shot`, `make mac-vm-snapshot ARGS=before-x`, ...
 MVM ?= $(abspath ../macos-devbox/mvm)
 COMPONENT ?= $(firstword $(shell ls -t foo_navidrome*.fb2k-component 2>/dev/null))
 
-# mac-vm opens the guest's screen (the container's noVNC page) in the browser once the guest has
-# booted, then waits for its session and deploys. VNC=0 skips the browser tab. Same flow as
-# foo_ui_panels' Makefile (both drive the one ../macos-devbox VM).
 VNC ?= 1
 MVM_ENV = $(dir $(MVM))mvm.env
 
@@ -197,16 +175,11 @@ mac-vm:
 	$(MVM) up --wait
 	$(MAKE) mac-vm-release
 
-# Just the VM + its screen: boot (no-op if already up), open noVNC, wait for the desktop session.
 mac-vm-vnc:
 	$(MVM) up
 	$(MAKE) --no-print-directory mac-vm-open
 	$(MVM) up --wait
 
-# The guest's screen in the browser. Not before the guest is past OpenCore's boot picker: the
-# picker boots the default disk after a short timeout, but any input cancels that timeout and a
-# freshly connected noVNC tab sends pointer events — the VM would then sit at the picker. So wait
-# for the guest's sshd (macOS is up), then open. Ports: mvm.env / environment, else the defaults.
 mac-vm-open:
 	@eval "$$( [ -f "$(MVM_ENV)" ] && grep -E '^MVM_(WEB|SSH)_PORT=' "$(MVM_ENV)" )"; \
 	  web=http://127.0.0.1:$${MVM_WEB_PORT:-8006}; ssh=$${MVM_SSH_PORT:-50922}; \
@@ -225,10 +198,6 @@ mac-vm-test:
 mac-vm-release:
 	$(MVM) deploy --gh santiagorod92/foo_navidrome$(if $(TAG),@$(TAG)) --launch
 
-# Build the macOS component in the guest (xcodebuild) and pull the packaged
-# .fb2k-component back to the repo root. No version bump. Needs Xcode in the
-# guest once (`mvm xcode Xcode_15.x.xip`, then `mvm snapshot xcode`).
-# ARGS=--clean wipes the guest build tree first.
 mac-vm-smoke:
 	./scripts/mac-vm/mac-vm-build.sh --debug-log --no-unit-tests
 	./scripts/mac-vm/mac-ui-test.sh smoke
@@ -245,30 +214,20 @@ mac-vm-build-test:
 mac-vm-%:
 	$(MVM) $* $(ARGS)
 
-# --- Windows 11 VM on Linux (../windows-devbox, `wvm`) ---
-# Real Windows for what Wine can't show (Dark Mode, DPI scaling, native theming); the Wine targets
-# above stay the fast loop. The VM itself (unattended install, snapshots, deploy, screenshots) is
-# the sibling windows-devbox repo; the foo_navidrome scenario is scripts/win11/win11-ui-test.sh.
-# Any other wvm command passes through: `make win11-shot`, `make win11-dpi ARGS=144`, ...
 WVM ?= $(abspath ../windows-devbox/wvm)
 WVM_ENV = $(dir $(WVM))wvm.env
 
-# Boot, open the screen, wait for SSH + the desktop, deploy the latest release. VNC=0 skips the tab.
 win11:
 	$(WVM) up
 	@if [ "$(VNC)" != 0 ]; then $(MAKE) --no-print-directory win11-open; fi
 	$(WVM) up --wait
 	$(MAKE) win11-release
 
-# Just the VM + its screen: boot (no-op if already up), open the VNC viewer, wait for the desktop.
 win11-vnc:
 	$(WVM) up
 	$(MAKE) --no-print-directory win11-open
 	$(WVM) up --wait
 
-# The guest's screen (dockur's noVNC page) in the browser, once the container's web viewer answers.
-# Unlike the macOS guest there's no boot picker to disturb, so no need to wait for the OS itself —
-# the tab shows the install/boot as it happens. Port: wvm.env / environment, else the default.
 win11-open:
 	@eval "$$( [ -f "$(WVM_ENV)" ] && grep -E '^WVM_WEB_PORT=' "$(WVM_ENV)" )"; \
 	  web=http://127.0.0.1:$${WVM_WEB_PORT:-8007}; \
@@ -277,7 +236,6 @@ win11-open:
 	  curl -fs -o /dev/null "$$web" || { echo "VM screen not answering at $$web ($(WVM) logs)"; exit 1; }; \
 	  $(WVM) web
 
-# Local x64 build (debug log on) into the guest, relaunched.
 win11-test:
 	./scripts/win-build-local.sh --no-test
 	$(WVM) deploy build-win/foo_navidrome.dll --launch
@@ -285,7 +243,6 @@ win11-test:
 win11-release:
 	$(WVM) deploy --gh santiagorod92/foo_navidrome$(if $(TAG),@$(TAG)) --launch
 
-# Copy foo_navidrome's settings (server, account, ...) from the Wine profile into the guest.
 win11-seed:
 	./scripts/win11/win11-ui-test.sh seed
 
@@ -302,7 +259,6 @@ win11-logs:
 win11-%:
 	$(WVM) $* $(ARGS)
 
-# --- Local AudioMuse-AI test stack (dev/audiomuse/, scripts/audiomuse-dev.sh) ---
 audiomuse-up:
 	./scripts/audiomuse-dev.sh up
 

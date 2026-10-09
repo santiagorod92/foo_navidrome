@@ -18,11 +18,8 @@
 
 namespace {
 
-// How often the synced-line highlight follows the playback position. on_playback_time is only
-// once a second — too coarse for line changes — so a timer polls playback_get_position().
 constexpr NSTimeInterval kTickSeconds = 0.2;
 
-// Registered while the panel is on screen; all callbacks arrive on the main thread.
 class LyricsPlayCallback : public play_callback_impl_base {
 public:
     explicit LyricsPlayCallback(NavidromeLyricsController *owner)
@@ -39,8 +36,7 @@ public:
 private:
     __weak NavidromeLyricsController *m_owner;
 };
-
-} // namespace
+}
 
 @implementation NavidromeLyricsController {
     NSScrollView *_scroll;
@@ -48,11 +44,11 @@ private:
     NSTimer *_timer;
     std::unique_ptr<LyricsPlayCallback> _callback;
 
-    std::string _uri;              // track currently shown ("" = none)
+    std::string _uri;
     navidrome::Lyrics _lyrics;
     std::vector<NSRange> _lineRanges;
     int _activeLine;
-    NSUInteger _generation;        // bumps per track change; stale fetches are dropped
+    NSUInteger _generation;
 }
 
 - (void)loadView {
@@ -112,8 +108,6 @@ private:
     [_timer invalidate];
 }
 
-// --- Playback -------------------------------------------------------------------------------
-
 - (void)trackChanged:(metadb_handle_ptr)track {
     const std::string uri = track.is_valid() ? std::string(track->get_path()) : std::string();
     if (uri == _uri) return;
@@ -160,8 +154,6 @@ private:
     [self highlightLine:navidrome::activeLyricLine(_lyrics, (long long)(pos * 1000.0))];
 }
 
-// --- Rendering ------------------------------------------------------------------------------
-
 - (NSDictionary *)attributesActive:(BOOL)active {
     NSMutableParagraphStyle *para = [NSMutableParagraphStyle new];
     para.alignment = NSTextAlignmentCenter;
@@ -189,8 +181,6 @@ private:
     if (!err.empty()) { [self showMessage:@"Couldn't load lyrics (see console log)"]; return; }
     if (lyrics.empty()) { [self showMessage:@"No lyrics on the server for this track"]; return; }
 
-    // Unsynced lyrics read as plain text, so they get the full label colour; synced ones start
-    // dimmed and the current line is lit by -highlightLine:.
     NSMutableDictionary *base = [[self attributesActive:NO] mutableCopy];
     if (!lyrics.synced) base[NSForegroundColorAttributeName] = [NSColor labelColor];
     NSMutableAttributedString *text = [NSMutableAttributedString new];

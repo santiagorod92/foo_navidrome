@@ -21,6 +21,7 @@
 #include <vector>
 
 namespace navidrome {
+
 namespace {
 
 std::wstring utf8ToWide(const std::string& value) {
@@ -159,8 +160,7 @@ std::vector<std::pair<std::string, std::string>> parseHeaders(
     }
     return result;
 }
-
-} // namespace
+}
 
 bool EsLyricBridge::isEsLyricInstalled() {
     return isDirectory(profileNativePath("eslyric-data"));
@@ -184,5 +184,4 @@ std::string EsLyricBridge::installOrUpdate(
         return "Failed to write ESLyric searcher script";
     return {};
 }
-
-} // namespace navidrome
+}

@@ -1,18 +1,15 @@
 #pragma once
-// Shared by BrowserFetchTests.cpp and BrowserActionsTests.cpp.
 #include "../src/core/NavidromeBrowserModel.h"
 
 #include <set>
 #include <string>
 #include <vector>
 
-// A recording IBrowserClient: every call appends its name to `calls` and
-// returns one canned item so the dispatch can be asserted without a network.
 struct FakeBrowserClient : navidrome::IBrowserClient {
     std::vector<std::string> calls;
-    std::string error;                 // set non-empty to simulate a failure
-    std::vector<std::string> groupIds; // set 2+ to exercise the library grouping
-    navidrome::Lyrics lyrics;          // what getLyrics returns on success
+    std::string error;
+    std::vector<std::string> groupIds;
+    navidrome::Lyrics lyrics;
 
     template <class T> std::vector<T> one(const char* name, std::string& e, T v) {
         calls.push_back(name);
@@ -151,7 +148,6 @@ struct FakeBrowserClient : navidrome::IBrowserClient {
         return { {"1", "Music"}, {"2", "Podcasts"} };
     }
 
-    // set of ids that fail setStarred/setRating, to exercise the partial-failure path
     std::set<std::string> failIds;
 
     bool setStarred(bool starred, const std::string& id, navidrome::StarKind kind,

@@ -2,11 +2,6 @@
 
 namespace navidrome {
 
-// The searcher script has no version of its own — it reports foo_navidrome's
-// COMPONENT_VERSION (scripts/version.sh → version_generated.h), threaded through
-// at write time via config.componentVersion (buildEsLyricConfigJs). That way
-// ESLyric's displayed searcher version always matches the installed build
-// instead of a literal that has to be bumped by hand on every release.
 inline constexpr char kEsLyricScriptSource[] = R"SCRIPT(import { config } from '../lib/foo_navidrome/config.js';
 
 export function getConfig(cfg) {
@@ -158,5 +153,4 @@ export function getLyrics(meta, man) {
     });
 }
 )SCRIPT";
-
-} // namespace navidrome
+}

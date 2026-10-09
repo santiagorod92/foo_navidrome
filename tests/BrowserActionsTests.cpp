@@ -7,16 +7,10 @@
 
 namespace {
 
-// ---------------------------------------------------------------------------
-// applyStarredToNodes / applyRatingToNodes / Play Similar / Random Mix — the
-// shared logic behind the Windows + macOS star/rate menu items and the
-// "Play Similar" / "Random Mix" context-menu actions.
-// ---------------------------------------------------------------------------
 TEST_CASE(testStarRatingSimilarRandom) {
     using navidrome::BrowserNode;
     using navidrome::BrowserNodePtr;
 
-    // --- applyStarredToNodes: kind dispatch + in-place mutation ---
     {
         FakeBrowserClient fc;
         navidrome::Song s; s.id = "song1";
@@ -38,7 +32,6 @@ TEST_CASE(testStarRatingSimilarRandom) {
               "applyStarredToNodes maps node type to the right StarKind");
     }
 
-    // --- applyStarredToNodes: partial failure keeps going, reports first error ---
     {
         FakeBrowserClient fc;
         fc.failIds = { "bad" };
@@ -54,7 +47,6 @@ TEST_CASE(testStarRatingSimilarRandom) {
               "a failed node's starred flag is left unchanged");
     }
 
-    // --- applyRatingToNodes ---
     {
         FakeBrowserClient fc;
         navidrome::Song s; s.id = "song1";
@@ -65,7 +57,6 @@ TEST_CASE(testStarRatingSimilarRandom) {
         check(fc.calls.back() == "setRating:song1:4", "applyRatingToNodes forwards stars + id");
     }
 
-    // --- isSimilarEligible ---
     {
         BrowserNode song; song.type = BrowserNode::Song; song.id = "x";
         BrowserNode noId; noId.type = BrowserNode::Song;
@@ -75,7 +66,6 @@ TEST_CASE(testStarRatingSimilarRandom) {
         check(!navidrome::isSimilarEligible(genre), "Genre is not Play-Similar eligible");
     }
 
-    // --- fetchSimilarSongs / fetchRandomMix: fetch + map to song nodes ---
     {
         FakeBrowserClient fc;
         std::string err;
@@ -115,5 +105,4 @@ TEST_CASE(testInstantMixDropsSeed) {
     check(navidrome::withoutSongId(nodes, "zzz").size() == nodes.size(),
           "withoutSongId leaves the list alone when the seed isn't in it");
 }
-
-} // namespace
+}

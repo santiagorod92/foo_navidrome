@@ -1,46 +1,22 @@
 name: Release
 
-# Push to main -> version (semantic-release --dry-run: is there a release, which version?) ->
-# build-windows (x86/x64/ARM64EC of that commit, stamped with that version) -> release
-# (macOS unit tests + xcodebuild + semantic-release publishing the tag and the GitHub release)
-# -> merge-component (Windows DLLs into the release asset) -> notify-n8n. Nothing is published
-# unless both platforms built.
-#
-# main is protected (changes only through pull requests), so nothing here pushes to it: no
-# release commit, no CHANGELOG.md/version.txt write-back — only the v<version> tag and the
-# GitHub release, whose notes are the changelog. Every build stamps the version itself
-# (mac-ci-build.sh passes it to xcodebuild; build-windows.yml takes it as an input).
 on:
   push:
     branches: [main]
-  # Manual run: the gate below only looks at a push's top commit, so a release-worthy commit
-  # pushed under a docs:/test:/ci: one is only released by dispatching this workflow.
   workflow_dispatch:
 
-# semantic-release creates the tag and the GitHub release (and comments on released issues/PRs).
 permissions:
   contents: write
   issues: write
   pull-requests: write
 
-# Cancel in-flight releases if a new push lands (prevents two concurrent
-# semantic-release runs racing on the same tag).
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  # --------------------------------------------------------------------------
-  # Will this push cut a release, and as which version? A dry run publishes nothing; the
-  # exec plugin's verifyReleaseCmd writes next_version to $GITHUB_OUTPUT (empty: no release,
-  # so every later job is skipped).
-  # --------------------------------------------------------------------------
   version:
     runs-on: ubuntu-latest
-    # Skip commit types that .releaserc.json's commit-analyzer already treats as
-    # "no release" (chore/docs/style/test/ci) — no point burning a full macOS +
-    # Windows build just to have semantic-release no-op at the end. Only checks the
-    # top commit of the push (head_commit); a manual dispatch always runs.
     if: >-
       github.event_name == 'workflow_dispatch' || (
       !startsWith(github.event.head_commit.message, 'chore:') &&
@@ -60,7 +36,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 0           # semantic-release needs full history + tags
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -81,12 +57,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx semantic-release --dry-run
 
-  # --------------------------------------------------------------------------
-  # Windows x86 + x64 + ARM64EC of the commit being released, BEFORE anything is published:
-  # a Windows compile failure stops the release instead of shipping a mac-only one. The build
-  # lives in the reusable build-windows.yml (also dispatchable on its own for local test
-  # builds via win-test.sh).
-  # --------------------------------------------------------------------------
   build-windows:
     needs: version
     if: needs.version.outputs.next_version != ''
@@ -100,48 +70,27 @@ jobs:
     if: needs.version.outputs.next_version != ''
     runs-on: macos-14
 
-    # Expose the version semantic-release resolved (written to $GITHUB_OUTPUT by
-    # mac-ci-build.sh's prepareCmd) so merge-component can add the Windows DLLs to the
-    # same release. Empty when no release was published this run.
     outputs:
       released_version: ${{ steps.semantic_release.outputs.released_version }}
 
     steps:
-      # ----------------------------------------------------------------------
-      # Lay out the sibling-directory tree foo_navidrome expects:
-      #
-      #   {GITHUB_WORKSPACE}/
-      #     pfc/                              ← marc2k3/pfc
-      #     foobar2000/
-      #       SDK/, helpers/, shared/,        ← marc2k3/foobar2000-sdk
-      #       foobar2000_component_client/
-      #       helpers-mac/                    ← (if present in SDK repo)
-      #       foo_navidrome/                  ← this repo
-      # ----------------------------------------------------------------------
       - name: Checkout foo_navidrome
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.sha }}   # the commit version + build-windows worked on
-          fetch-depth: 0           # semantic-release needs full history
-          persist-credentials: true # it pushes the release tag (tags aren't branch-protected)
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
           path: foobar2000/foo_navidrome
 
       - name: Checkout foobar2000 SDK bundle
         uses: actions/checkout@v6
         with:
-          # reupen/foobar2000-sdk-unmodified is the unmodified official SDK
-          # mirror; it includes helpers-mac/ which marc2k3/foobar2000-sdk
-          # (aka javascript-panel/foobar2000-sdk via redirect) does not ship.
           repository: reupen/foobar2000-sdk-unmodified
           path: _sdk-staging
 
       - name: Move SDK subdirs into the expected sibling layout
         run: |
           set -euo pipefail
-          # marc2k3/foobar2000-sdk ships its content under a nested foobar2000/
-          # subdir (mirroring the official SDK zip). SDK + helpers + shared +
-          # foobar2000_component_client + helpers-mac all live there.
-          # pfc, libPPUI, columns_ui-sdk are at the staging root.
           SDK_INNER="_sdk-staging/foobar2000"
           for d in SDK helpers shared foobar2000_component_client helpers-mac; do
             if [ -d "$SDK_INNER/$d" ]; then
@@ -149,12 +98,10 @@ jobs:
               echo "moved $SDK_INNER/$d -> foobar2000/$d"
             fi
           done
-          # pfc lives at the workspace root (sibling of foobar2000/)
           if [ -d "_sdk-staging/pfc" ]; then
             mv "_sdk-staging/pfc" "pfc"
             echo "moved _sdk-staging/pfc -> pfc"
           fi
-          # Verify everything we need is present before continuing
           for d in foobar2000/SDK foobar2000/helpers foobar2000/helpers-mac \
                    foobar2000/shared foobar2000/foobar2000_component_client pfc; do
             if [ ! -d "$d" ]; then
@@ -168,16 +115,9 @@ jobs:
           done
           rm -rf _sdk-staging
 
-      # ----------------------------------------------------------------------
-      # Toolchain
-      # ----------------------------------------------------------------------
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode.app
 
-      # Native-clang build+run of the shared logic unit tests (SubsonicTypes.h +
-      # MediaEnrichmentLogic.cpp), the macOS half of the same suite CI already
-      # runs on the Windows runner (build-windows.yml). Gates the release: a
-      # regression in the shared helpers fails here before xcodebuild.
       - name: Build and run logic unit tests (native macOS)
         working-directory: foobar2000/foo_navidrome
         run: make mac-test
@@ -196,9 +136,6 @@ jobs:
             @semantic-release/exec@6 \
             @semantic-release/github@9
 
-      # ----------------------------------------------------------------------
-      # Release
-      # ----------------------------------------------------------------------
       - name: Run semantic-release
         id: semantic_release
         working-directory: foobar2000/foo_navidrome
@@ -215,14 +152,6 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  # --------------------------------------------------------------------------
-  # Fold the Windows DLLs build-windows produced into the macOS zip semantic-release attached,
-  # so the release ships ONE foo_navidrome_<ver>.fb2k-component that runs on macOS, Windows
-  # x86, Windows x64, and natively on Windows ARM (the layout official components use:
-  # mac/<bundle> + <x86 dll at root> + x64/<dll> + arm64ec/<dll> in the same zip; foobar picks
-  # the right binary at load time, preferring arm64ec/ on ARM and falling back to x64
-  # emulation if absent).
-  # --------------------------------------------------------------------------
   merge-component:
     needs: [release, build-windows]
     if: needs.release.outputs.released_version != ''
@@ -242,16 +171,11 @@ jobs:
           set -euo pipefail
           ASSET="foo_navidrome_${VERSION}.fb2k-component"
 
-          # Pull down the mac-only zip semantic-release just attached. It
-          # already contains mac/foo_navidrome.component (ad-hoc signed).
           gh release download "v${VERSION}" \
             --repo "$GITHUB_REPOSITORY" \
             --pattern "$ASSET" \
             --dir .
 
-          # The win artifact ships the raw DLLs at dist/foo_navidrome.dll (x86),
-          # dist/x64/foo_navidrome.dll (x64) and dist/arm64ec/foo_navidrome.dll
-          # (native Windows-on-ARM) — see build-windows.yml.
           test -f dist/foo_navidrome.dll
           test -f dist/x64/foo_navidrome.dll
           test -f dist/arm64ec/foo_navidrome.dll
@@ -260,33 +184,15 @@ jobs:
           cp dist/x64/foo_navidrome.dll x64/foo_navidrome.dll
           cp dist/arm64ec/foo_navidrome.dll arm64ec/foo_navidrome.dll
 
-          # Grow the existing zip with the Windows entries: x86 DLL at the root,
-          # x64 DLL under x64/, native ARM DLL under arm64ec/ (foobar2000 on ARM
-          # prefers arm64ec/, else runs x64 via emulation). `zip -g` appends
-          # without rewriting the mac/ entries, so the macOS bundle's bytes (and
-          # its ad-hoc code signature) stay byte-for-byte intact.
           zip -g "$ASSET" foo_navidrome.dll x64/foo_navidrome.dll arm64ec/foo_navidrome.dll
           echo "merged multi-platform component contents:"
           unzip -l "$ASSET"
 
-          # Replace the mac-only asset with the merged one (same filename), and
-          # relabel it to reflect multi-platform support.
           gh release upload "v${VERSION}" \
             "${ASSET}#foo_navidrome ${VERSION} (macOS + Windows x86/x64/ARM64)" \
             --clobber --repo "$GITHUB_REPOSITORY"
           echo "uploaded multi-platform $ASSET to release v${VERSION}"
 
-  # --------------------------------------------------------------------------
-  # Notify the n8n workflow that publishes this release to the foobar2000.org
-  # components admin panel (componentsadmin?action=add-release&component_id=331).
-  # n8n holds the foobar2000.org login + does the actual upload; this step only
-  # ships it the public release metadata (no credentials involved here).
-  #
-  # Runs on the self-hosted homelab runner (github-runner LXC, infra-foundations
-  # github_runner role): the webhook URL resolves to the LAN NPM -> n8n, bypassing
-  # Cloudflare entirely. GitHub-hosted runners previously hit the CF edge, where
-  # bot challenge (cf-mitigated: challenge) + DNS/cert gaps blocked the POST.
-  # --------------------------------------------------------------------------
   notify-n8n:
     needs: [release, merge-component]
     if: needs.release.outputs.released_version != ''
@@ -302,7 +208,6 @@ jobs:
           set -euo pipefail
           ASSET="foo_navidrome_${VERSION}.fb2k-component"
 
-          # The homelab runner has no `gh` CLI - fetch release metadata via the API.
           RELEASE_JSON=$(curl -sf \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
@@ -312,12 +217,6 @@ jobs:
             '.assets[] | select(.name == $name) | .url')
           CHANGELOG=$(printf '%s' "$RELEASE_JSON" | jq -r .body)
 
-          # foobar2000.org's changelog field only supports plain "* item" bullet
-          # lines (see /componentsadmin/help-changelog: "does not and will not
-          # support any advanced formatting") - semantic-release's markdown
-          # (## [version](compare-url) header, ### section headers, per-item
-          # ([hash](commit-url)) links) renders as ugly literal text there.
-          # Strip it down to section labels + bare bullets.
           CHANGELOG_CLEAN=$(printf '%s' "$CHANGELOG" | perl -0pe '
             s/^## \[.*?\].*\n//m;
             s/^### /\n/mg;

@@ -1,20 +1,5 @@
 name: Build Windows
 
-# Builds the Windows foo_navidrome.dll for x64 + x86 (Win32) + ARM64EC and
-# packages them into a single .fb2k-component (x86 at the zip root, x64 under
-# x64/, ARM64EC under arm64ec/ — the layout foobar2000 v2 expects). foobar2000
-# on ARM prefers the native arm64ec/ binary; if it's absent it falls back to
-# running x64 via emulation. Two entry points:
-#
-#   * workflow_call  — invoked by release.yml to attach the component to a
-#                      GitHub release (caller passes the tag ref + version).
-#   * workflow_dispatch — on-demand test builds (e.g. via win-test.sh), which
-#                      download the resulting artifact and install it into a
-#                      local Wine foobar2000 without cutting a release.
-#
-# Either way the job uploads a `windows-component` artifact containing the
-# packaged .fb2k-component plus the raw x86 (root) and x64/ DLLs.
-
 on:
   workflow_call:
     inputs:
@@ -45,10 +30,6 @@ on:
 
 jobs:
   build:
-    # windows-2022 ships VS 2022 (v143) with the ATL/MFC component preinstalled.
-    # windows-latest moved to VS 2026, which has no ATL — building there meant a
-    # slow `vs_installer modify` on every run. Pinning to windows-2022 gets ATL
-    # for free; WTL (atlapp.h, not in any VS image) is vendored in the repo.
     runs-on: windows-2022
 
     outputs:
@@ -56,15 +37,12 @@ jobs:
       asset-name: ${{ steps.pkg.outputs.asset_name }}
 
     steps:
-      # Sibling-directory layout the vcxproj expects, minus helpers-mac (Windows
-      # doesn't need it). When called from release.yml, inputs.ref is the tag;
-      # for a dispatch it falls back to the selected branch (github.ref).
       - name: Checkout foo_navidrome
         uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref || github.ref }}
           path: foobar2000/foo_navidrome
-          fetch-depth: 0   # tags, so scripts/version.sh can stamp a dispatch build 1.21.1-dev.3+<sha>
+          fetch-depth: 0
 
       - name: Checkout foobar2000 SDK bundle
         uses: actions/checkout@v6
@@ -83,8 +61,6 @@ jobs:
               echo "moved $SDK_INNER/$d -> foobar2000/$d"
             fi
           done
-          # pfc is referenced directly; libPPUI / columns_ui-sdk are pulled in
-          # transitively by the SDK helper projects. Stage whatever is present.
           for d in pfc libPPUI columns_ui-sdk; do
             if [ -d "_sdk-staging/$d" ]; then
               mv "_sdk-staging/$d" "$d"
@@ -104,35 +80,14 @@ jobs:
           done
           rm -rf _sdk-staging
 
-      # Work around an incomplete upstream SDK sync (reupen/foobar2000-sdk-unmodified
-      # SDK-2026-09-17): pfc's other.cpp/win-objects.cpp now reference
-      # pfc_crashHook/pfc_winFormatSystemErrorMessageHook as extern "C", and
-      # foobar2000/shared/wrap_pfc_hooks.h defines them — but nothing in the
-      # shared project's own sources #includes that header, so ARM64EC linking
-      # of shared.vcxproj fails with unresolved externals (x64/Win32 don't hit
-      # this — see the pfc-Mac Gotcha for how this was diagnosed). Until
-      # upstream wires the include themselves, append it to stdafx.cpp (a
-      # single-TU file already part of every shared build) — matches the
-      # header's own single-definition contract. Safe to drop once upstream
-      # fixes it themselves (the extra #include becomes a harmless no-op collision
-      # only if they also add one to stdafx.cpp specifically, which the build
-      # would then flag — revisit if this step ever needs removing).
       - name: Work around missing wrap_pfc_hooks.h include in the SDK's shared project
         shell: bash
         run: |
           set -euo pipefail
-          # printf, not echo >>: stdafx.cpp has no trailing newline, so a bare
-          # `echo >>` glues onto the existing #include line instead of adding
-          # a new one (confirmed in a real CI log — the "patched" cat showed
-          # one corrupted line, and the #include silently never took effect).
           printf '\n#include "wrap_pfc_hooks.h"\n' >> foobar2000/shared/stdafx.cpp
           echo "patched foobar2000/shared/stdafx.cpp:"
           cat foobar2000/shared/stdafx.cpp
 
-      # main.cpp reads COMPONENT_VERSION from version_generated.h when present
-      # (else falls back to "1.0.0"). The Windows vcxproj has no version-header
-      # build phase, so synthesize it: the release's version when release.yml passes
-      # one, else scripts/version.sh's git describe (same resolver as local builds).
       - name: Resolve version + generate version_generated.h
         shell: bash
         working-directory: foobar2000/foo_navidrome
@@ -144,13 +99,6 @@ jobs:
           echo "VERSION=$V" >> "$GITHUB_ENV"
           echo "version_generated.h -> COMPONENT_VERSION \"$V\""
 
-      # The SDK helpers/shared projects include WTL headers (<atlapp.h>, etc.),
-      # which ship in no Visual Studio image. WTL is vendored in the repo
-      # (third_party/wtl) so there's no per-run download. Drop a root
-      # Directory.Build.targets that prepends its Include dir to IncludePath for
-      # every project in the build (SDK + ours) — MSBuild auto-imports that file
-      # from the workspace root the .vcxproj files sit under. (ATL itself is
-      # already present via the windows-2022 image.)
       - name: Wire vendored WTL into the include path
         shell: pwsh
         run: |
@@ -158,8 +106,6 @@ jobs:
           $wtl = "$env:GITHUB_WORKSPACE\foobar2000\foo_navidrome\third_party\wtl\Include"
           if (-not (Test-Path "$wtl\atlapp.h")) { Write-Error "vendored WTL missing: $wtl\atlapp.h"; exit 1 }
           Write-Host "WTL include: $wtl"
-          # Directory.Build.targets is imported last (after the Cpp targets have
-          # built IncludePath), so prepending here reliably wins.
           @"
           <Project>
             <PropertyGroup>
@@ -179,14 +125,6 @@ jobs:
           $sln = "$PWD\"
           $log = "$env:RUNNER_TEMP\msbuild.log"
           $dist = "$PWD\dist"
-          # .fb2k-component arch layout: 32-bit (x86) DLL at the zip root,
-          # 64-bit under x64/, native Windows-on-ARM under arm64ec/. Build each
-          # arch into its own OutDir so the foo_navidrome.dll don't clobber each
-          # other.
-          # arm64ec/ is the native Windows-on-ARM binary; foobar2000 prefers it
-          # over the x64 one on ARM (x64 otherwise runs via emulation). The
-          # windows-2022 image ships the v143 ARM64 tools + ATL ARM64, and the
-          # SDK projects already define Release|ARM64EC, so no extra setup.
           $targets = @(
             @{ Platform = 'x64';     ZipSub = 'x64'     },
             @{ Platform = 'ARM64EC'; ZipSub = 'arm64ec' },
@@ -194,10 +132,6 @@ jobs:
           )
           foreach ($t in $targets) {
             $out = "$PWD\out\$($t.Platform)\"
-            # Retarget every project to v143 — the SDK projects pin v142 (VS
-            # 2019), which windows-2022 no longer ships, while ATL is
-            # preinstalled for v143. A global override unifies the SDK projects
-            # and ours onto the one toolset present with ATL.
             msbuild src\platform\win\foo_navidrome.vcxproj `
               /p:Configuration=Release `
               /p:Platform=$($t.Platform) `
@@ -220,9 +154,6 @@ jobs:
             Write-Host "built $($t.Platform) -> $destDir\foo_navidrome.dll"
           }
 
-      # Standalone host-side unit tests for the cover-art / ESLyric config
-      # logic in MediaEnrichmentLogic.cpp — pure stdlib, no foobar2000 SDK
-      # dependency, so it builds and runs directly on the runner.
       - name: Build and run MediaEnrichmentLogic unit tests
         shell: pwsh
         working-directory: foobar2000/foo_navidrome
@@ -246,9 +177,6 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      # foobar2000 v2 .fb2k-component layout: 32-bit (x86) DLL at the zip root,
-      # 64-bit under x64/, ARM64EC under arm64ec/ (mac/ carries the macOS bundle,
-      # added by the release merge step). Package all Windows arches into one zip.
       - name: Package .fb2k-component
         id: pkg
         shell: pwsh
@@ -258,17 +186,12 @@ jobs:
           $dist = "$PWD\dist"
           $asset = "foo_navidrome_win_$env:VERSION.fb2k-component"
           $zip = "$dist\$asset"
-          # Archive the root x86 DLL plus the x64/ subfolder; rename the .zip to
-          # .fb2k-component.
           Compress-Archive -Path "$dist\foo_navidrome.dll","$dist\x64","$dist\arm64ec" -DestinationPath "$dist\_tmp.zip" -Force
           Move-Item "$dist\_tmp.zip" $zip -Force
           "asset_name=$asset"            | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           "artifact_name=windows-component" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           Write-Host "packaged: $zip"
 
-      # Upload both the packaged component and the raw DLLs so consumers can
-      # pick: release.yml's merge step grabs the raw x86 + x64 DLLs; win-test.sh
-      # drops the x64 DLL straight into the Wine user-components dir.
       - name: Upload component artifact
         uses: actions/upload-artifact@v6
         with:

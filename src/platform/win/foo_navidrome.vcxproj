@@ -157,6 +157,10 @@
     <ClCompile Include="NavidromeInputWin.cpp" />
     <ClCompile Include="NavidromeLibraryServiceWin.cpp" />
     <ClCompile Include="BrowserWindow.cpp" />
+    <ClCompile Include="BrowserWindowActions.cpp" />
+    <ClCompile Include="BrowserPrompts.cpp" />
+    <ClCompile Include="RadioPrefsWin.cpp" />
+    <ClCompile Include="LibrariesPrefsWin.cpp" />
     <ClCompile Include="NavidromeUiElementWin.cpp" />
     <ClCompile Include="..\..\core\NavidromeBrowserModel.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
@@ -175,12 +179,19 @@
   <ItemGroup>
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="..\..\core\SubsonicTypes.h" />
+    <ClInclude Include="..\..\core\SubsonicModels.h" />
+    <ClInclude Include="..\..\core\SubsonicErrors.h" />
+    <ClInclude Include="..\..\core\TrackUri.h" />
+    <ClInclude Include="..\..\core\LibraryFilter.h" />
+    <ClInclude Include="..\..\core\Json.h" />
+    <ClInclude Include="..\..\core\SubsonicParsers.h" />
     <ClInclude Include="..\..\core\NavidromeBrowserModel.h" />
     <ClInclude Include="..\..\core\NavidromeBrowserEnqueue.h" />
     <ClInclude Include="..\..\core\SubsonicCore.h" />
     <ClInclude Include="..\..\core\NavidromeDebugLog.h" />
     <ClInclude Include="SubsonicClientWin.h" />
     <ClInclude Include="BrowserWindow.h" />
+    <ClInclude Include="BrowserPrompts.h" />
     <ClInclude Include="WinUi.h" />
     <ClInclude Include="..\..\core\MediaEnrichmentLogic.h" />
     <ClInclude Include="EsLyricBridge.h" />

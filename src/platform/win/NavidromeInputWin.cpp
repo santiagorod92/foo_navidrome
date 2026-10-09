@@ -13,18 +13,8 @@
 #include <cstdlib>
 #include <cstring>
 
-// ---------------------------------------------------------------------------
-// Windows input_singletrack handler for the navidrome://track/<id>?... scheme,
-// mirroring the macOS NavidromeInput.mm. On decode_initialize() it resolves the
-// current HTTP stream URL from SubsonicClientWin and — when custom headers are
-// configured (e.g. Cloudflare Access service tokens) — opens the stream itself
-// via http_client with those headers, handing the resulting file::ptr to a
-// nested decoder. Without custom headers it falls back to letting foobar open
-// the URL directly (Content-Type sniffing), as before.
-// ---------------------------------------------------------------------------
-
-// Defined in NavidromePluginWin.cpp
 namespace navidrome {
+
     extern cfg_string cfg_stream_format;
 }
 
@@ -35,7 +25,7 @@ constexpr size_t      kPrefixLen = 18;
 
 class navidrome_input_win : public input_stubs {
 public:
-    void open(service_ptr_t<file> /*hint*/, const char* p_path,
+    void open(service_ptr_t<file> , const char* p_path,
               t_input_open_reason reason, abort_callback&) {
         if (reason == input_open_info_write) throw exception_tagging_unsupported();
         m_path = p_path;
@@ -51,9 +41,6 @@ public:
         if (m_year > 0)        info.meta_set("date",   pfc::format_int(m_year));
         if (m_duration > 0)    info.set_length(m_duration);
         if (!m_suffix.empty()) info.info_set("codec", m_suffix.c_str());
-        // Server-side per-user state, snapshotted into the URI at enqueue time.
-        // Left unset when absent so old URIs and unrated tracks render as empty
-        // rather than "0" in a custom column.
         if (m_rating > 0)      info.meta_set(navidrome::kRatingTag, pfc::format_int(m_rating));
         if (m_starred)         info.meta_set(navidrome::kStarredTag, "1");
     }
@@ -70,9 +57,6 @@ public:
         m_resolved_url = url.c_str();
         NAVIDROME_LOG("Input", "stream URL = " + navidrome::dbg::scrubAuth(url));
 
-        // When custom headers are configured, open the stream ourselves so the
-        // headers ride along; otherwise hand a null file and let foobar open the
-        // URL (preserving the original Content-Type-based decoder selection).
         file::ptr httpFile;
         auto headers = navidrome::SubsonicClientWin::customHeaderLines();
         if (!headers.empty()) {
@@ -83,11 +67,6 @@ public:
             httpFile = req->run(url.c_str(), p_abort);
         }
 
-        // Our own file has no audio extension in the URL, so give the decoder a
-        // suffix-based hint (track.<suffix>) to pick the codec; it still reads
-        // bytes from httpFile, not from the hint path. When a transcoding format
-        // is configured the server sends that codec, not the track's own —
-        // hinting the original suffix would pick the wrong decoder.
         std::string effSuffix = navidrome::effectiveStreamSuffix(
             navidrome::cfg_stream_format.get().c_str(), m_suffix);
         const char* hint = m_resolved_url.c_str();
@@ -107,9 +86,6 @@ public:
             }
             m_decoder->initialize(0, p_flags, p_abort);
         } catch (const exception_io_not_found&) {
-            // Server said the track is gone — blacklist for the rest of this
-            // session so a later shuffle/repeat/Random Mix hit doesn't retry
-            // a doomed GET. Transient errors (timeout/network) don't land here.
             navidrome::brokenTrackRegistry().markBroken(m_song_id);
             NAVIDROME_WARN("Input", "id=" + m_song_id
                            + " not found on server — marking broken for this session");
@@ -168,7 +144,7 @@ private:
     std::string  m_path, m_song_id, m_cover_art_id, m_title, m_artist, m_album, m_suffix;
     pfc::string8 m_resolved_url;
     int          m_track = 0, m_year = 0;
-    int          m_rating = 0;      // 0 = unrated (also: param absent)
+    int          m_rating = 0;
     bool         m_starred = false;
     double       m_duration = 0.0;
     service_ptr_t<input_decoder> m_decoder;
@@ -177,18 +153,12 @@ private:
 static input_singletrack_factory_t<navidrome_input_win, input_entry::flag_redirect>
     g_navidrome_input_win_factory;
 
-// ---------------------------------------------------------------------------
-// fb2k::skipTrack (SDK 2.26+) — preflight check the core runs before a
-// playlist advance/shuffle/Random Mix actually opens a track. Returning false
-// here skips it without ever attempting the decode, for ids decode_initialize
-// already proved dead this session (see BrokenTrackRegistry in SubsonicTypes.h).
-// ---------------------------------------------------------------------------
 class navidrome_skip_track_win : public fb2k::skipTrack {
 public:
     bool testTrack(const fb2k::skipTrackParam& p) override {
         if (p.track.is_empty()) return true;
         std::string id = navidrome::trackIdFromURI(p.track->get_path());
-        if (id.empty()) return true;  // not one of ours
+        if (id.empty()) return true;
         if (navidrome::brokenTrackRegistry().isBroken(id)) {
             NAVIDROME_WARN("Input", "skipTrack: skipping known-broken id=" + id);
             return false;
@@ -198,5 +168,4 @@ public:
 };
 
 FB2K_SERVICE_FACTORY(navidrome_skip_track_win);
-
-} // namespace
+}

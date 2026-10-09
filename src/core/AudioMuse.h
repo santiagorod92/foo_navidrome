@@ -1,21 +1,4 @@
 #pragma once
-// AudioMuse-AI client (https://github.com/NeptuneHub/AudioMuse-AI) — issue #16.
-//
-// AudioMuse-AI analyses the Navidrome library on its own server and answers
-// "songs like this" questions over a small JSON/HTTP API. Its item ids are the
-// media server's own song ids (it translates internally per configured server),
-// so every result maps straight back onto a Navidrome song via getSong.view.
-//
-// Three endpoints are used, each a POST with a JSON body:
-//   - Text Search       POST /api/clap/search        {"query", "limit"} -> results[]
-//   - Instant Playlist  POST /chat/api/chatPlaylist  {"userInput", "n"} -> response.query_results[]
-//   - Song Alchemy      POST /api/alchemy            {"items":[{id,op,type}], "n"} -> results[]
-// "Instant Mix" is deliberately NOT here: the AudioMuse-AI Navidrome plugin
-// already answers getSimilarSongs2.view, so it goes through SubsonicCore.
-//
-// Header-only and SDK-free (no extra entry in any build's source list); the
-// one platform piece is IJsonPoster (an HTTP POST). Unit-tested in
-// tests/AudioMuseTests.cpp.
 #include "NavidromeBrowserModel.h"
 #include "SubsonicCore.h"
 #include "NavidromeDebugLog.h"
@@ -25,12 +8,11 @@
 #include <vector>
 
 namespace navidrome {
+
 namespace audiomuse {
 
 constexpr int kDefaultCount = 50;
 constexpr int kMaxCount     = 500;
-// Text search and alchemy are a vector lookup; the instant playlist runs an
-// LLM agent loop on the AudioMuse side that routinely takes a minute or more.
 constexpr int kSearchTimeoutMs   = 60000;
 constexpr int kPlaylistTimeoutMs = 300000;
 
@@ -39,9 +21,6 @@ inline int clampCount(int n) {
     return n > kMaxCount ? kMaxCount : n;
 }
 
-// Preferences > Tools > Navidrome > AudioMuse-AI. `server` is AudioMuse's own
-// name for the media server (only needed when it has several configured);
-// `token` is an AudioMuse API token, sent as a Bearer header when non-empty.
 struct Settings {
     std::string url;
     std::string token;
@@ -50,7 +29,6 @@ struct Settings {
     bool configured() const { return !url.empty(); }
 };
 
-// One song in an AudioMuse answer. `id` is a Navidrome song id.
 struct Track {
     std::string id;
     std::string title;
@@ -58,30 +36,18 @@ struct Track {
     std::string album;
 };
 
-// One Song Alchemy seed: a song or an artist, added to the blend or (subtract)
-// pushed away from it.
 struct AlchemySeed {
     std::string id;
     bool artist   = false;
     bool subtract = false;
 };
 
-// The platform's HTTP POST: one attempt, `Content-Type: application/json`,
-// `Authorization: Bearer <token>` when the token is non-empty, none of the
-// Navidrome custom headers. On a non-2xx answer `error` is set AND `body` still
-// holds the response, so errorMessage() can show AudioMuse's own explanation.
 struct IJsonPoster {
     virtual ~IJsonPoster() = default;
     virtual HttpResult postJson(const std::string& url, const std::string& body,
                                 const std::string& bearerToken, int timeoutMs) = 0;
 };
 
-// ---------------------------------------------------------------------------
-// Request bodies
-// ---------------------------------------------------------------------------
-
-// A JSON string literal (quotes included). Control characters are \u-escaped;
-// UTF-8 passes through untouched.
 inline std::string jsonQuote(const std::string& s) {
     std::string out;
     out.reserve(s.size() + 2);
@@ -107,7 +73,6 @@ inline std::string jsonQuote(const std::string& s) {
     return out;
 }
 
-// base + path with exactly one '/' between them. "" when base is empty.
 inline std::string endpointURL(const std::string& base, const char* path) {
     if (base.empty()) return {};
     std::string b = base;
@@ -142,10 +107,6 @@ inline std::string alchemyBody(const std::vector<AlchemySeed>& seeds, int n,
            serverField(server) + "}";
 }
 
-// ---------------------------------------------------------------------------
-// Responses
-// ---------------------------------------------------------------------------
-
 enum class Kind { TextSearch, InstantPlaylist, Alchemy };
 
 inline const char* kindName(Kind k) {
@@ -157,8 +118,6 @@ inline const char* kindName(Kind k) {
     return "?";
 }
 
-// AudioMuse's error body carries `error_message` (registry text) and `error`
-// (legacy one-liner). Falls back to the transport's own description.
 inline std::string errorMessage(const HttpResult& r) {
     std::string parseErr;
     const json::Value root = json::parse(r.body, parseErr);
@@ -170,9 +129,6 @@ inline std::string errorMessage(const HttpResult& r) {
     return "request failed";
 }
 
-// The song list of one answer. Text search / alchemy rows name the artist
-// "author", the instant playlist's rows "artist". Rows without an id are
-// dropped (AudioMuse already drops songs it can't map to the server).
 inline std::vector<Track> parseTracks(const std::string& body, Kind kind, std::string& outError) {
     outError.clear();
     std::string parseErr;
@@ -196,12 +152,10 @@ inline std::vector<Track> parseTracks(const std::string& body, Kind kind, std::s
         out.push_back(std::move(t));
     }
     if (out.empty() && kind == Kind::InstantPlaylist) {
-        // A failed agent run still answers 200, with the reason in its log.
         const std::string& msg = root["response"]["message"].asString();
         if (!root["error"].asString().empty()) outError = root["error"].asString();
         else if (msg.empty()) outError = "AudioMuse-AI found no songs";
         else {
-            // The log is long; its last non-empty line is the verdict.
             std::string last;
             std::size_t start = 0;
             while (start <= msg.size()) {
@@ -217,8 +171,6 @@ inline std::vector<Track> parseTracks(const std::string& body, Kind kind, std::s
     return out;
 }
 
-// POST, then parse. Not retried: the instant playlist is an LLM run that can
-// cost the user real money per call, and the other two are interactive.
 inline std::vector<Track> request(IJsonPoster& http, const Settings& settings, Kind kind,
                                   const std::string& body, std::string& outError) {
     outError.clear();
@@ -266,14 +218,6 @@ inline std::vector<Track> alchemy(IJsonPoster& http, const Settings& s,
     return request(http, s, Kind::Alchemy, alchemyBody(seeds, s.count, s.server), outError);
 }
 
-// ---------------------------------------------------------------------------
-// Back to Navidrome
-// ---------------------------------------------------------------------------
-
-// AudioMuse rows lack what a playable navidrome:// URI needs (suffix for the
-// decoder hint, duration, album/cover ids), so each id is looked up with
-// getSong.view. A song the server no longer has is skipped and counted in
-// `unresolved`; order is preserved. Background thread only — one request per id.
 inline std::vector<BrowserNodePtr> resolveTracks(IBrowserClient& client,
                                                  const std::vector<Track>& tracks,
                                                  std::size_t& unresolved) {
@@ -293,9 +237,6 @@ inline std::vector<BrowserNodePtr> resolveTracks(IBrowserClient& client,
     return out;
 }
 
-// Song Alchemy seeds from browser nodes: songs and artists are ADDed, anything
-// else (albums, playlists, categories) is ignored. `label` names the result:
-// the first seed's name, plus "+ N more".
 inline std::vector<AlchemySeed> seedsFromNodes(const std::vector<BrowserNodePtr>& nodes,
                                                std::string& label) {
     std::vector<AlchemySeed> seeds;
@@ -313,19 +254,16 @@ inline std::vector<AlchemySeed> seedsFromNodes(const std::vector<BrowserNodePtr>
     return seeds;
 }
 
-// The foobar2000 playlist name a result lands in, e.g. "AudioMuse: rainy jazz".
 inline std::string playlistName(Kind kind, const std::string& subject) {
     const std::string prefix = kind == Kind::Alchemy ? "AudioMuse Alchemy" : "AudioMuse";
     if (subject.empty()) return prefix;
     std::string s = subject;
     if (s.size() > 60) {
         std::size_t cut = 57;
-        // Back off to a UTF-8 lead byte so a multi-byte character isn't split.
         while (cut > 0 && (static_cast<unsigned char>(s[cut]) & 0xC0) == 0x80) --cut;
         s = s.substr(0, cut) + "...";
     }
     return prefix + ": " + s;
 }
-
-} // namespace audiomuse
-} // namespace navidrome
+}
+}

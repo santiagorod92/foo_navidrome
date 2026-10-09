@@ -1,18 +1,13 @@
 #!/usr/bin/env bash
-# mac-ui-test.sh — scripted UI smoke test of foo_navidrome in the local macOS VM (../macos-devbox,
-# `mvm`). The macOS twin of scripts/ui-test.sh (Wine): it drives the real foobar2000 through the
-# guest's screen (mvm click/type/key = VNC input), then asserts on the component's debug log in the
-# guest (/tmp/foo_navidrome_debug.log), the process and macOS crash reports.
-#
-# Log assertions need a NAVIDROME_DEBUG_LOG build: `make mac-vm-build ARGS=--debug-log` (which
-# `make mac-vm-smoke` does for you). With a release build the scenario still runs and checks the
-# process / crash reports / screenshots, and says the log checks were skipped.
-#
-#   mac-ui-test.sh smoke [COMPONENT]   deploy (default: newest mac .fb2k-component here), relaunch,
-#                                      File > Open Navidrome Browser, expand the first artist,
-#                                      play its first album (Enter), assert, screenshot
-#   mac-ui-test.sh browser             open the browser in the running foobar2000
-#   mac-ui-test.sh log [N]             last N lines of the guest's debug log
+usage() {
+  cat <<'USAGE'
+Usage: mac-ui-test.sh <command>
+  smoke [COMPONENT]   deploy, relaunch, browse, play, assert, screenshot
+  browser             open the browser in the running foobar2000
+  log [N]             last N lines of the guest's debug log
+USAGE
+}
+
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
@@ -21,11 +16,7 @@ MVM="${MVM:-$(cd "$REPO/.." && pwd)/macos-devbox/mvm}"
 GLOG=/tmp/foo_navidrome_debug.log
 SHOTS="$REPO/build/ui-test"
 
-# Screen coordinates (1920x1080 guest framebuffer): the "File" menu title, right of the
-# "foobar2000" app menu. Everything else is keyboard-driven so it doesn't depend on layout.
 FILE_MENU_X=162; FILE_MENU_Y=11
-# Browser root rows: 12 fixed category nodes (All Songs … Now Playing) precede the first artist.
-# Keep in step with navidrome::BrowserNode's category list.
 CATEGORY_ROWS=12
 
 say()  { printf '\033[1;36m==> %s\033[0m\n' "$*"; }
@@ -45,7 +36,7 @@ shot_to() {
 HAVE_LOG=0
 mark() { MARK="$(g "wc -c < $GLOG 2>/dev/null || echo 0" | tr -d ' ')"; }
 since_mark() { g "tail -c +$(( ${MARK:-0} + 1 )) $GLOG 2>/dev/null" || true; }
-expect() {  # REGEX SECS DESCRIPTION
+expect() {
   [ "$HAVE_LOG" = 1 ] || return 0
   local deadline=$(( SECONDS + $2 ))
   until since_mark | grep -Eq -- "$1"; do
@@ -60,7 +51,7 @@ open_browser() {
   g "osascript -e 'tell application \"foobar2000\" to activate'" >/dev/null
   sleep 1
   "$MVM" click "$FILE_MENU_X" "$FILE_MENU_Y"; sleep 1
-  "$MVM" type "Open N"; keys enter   # menu type-select: "Open Navidrome Browser"
+  "$MVM" type "Open N"; keys enter
   sleep 2
 }
 
@@ -101,7 +92,6 @@ smoke() {
   sleep 1
   shot_to "$SHOTS/mac-browser-$(date +%Y%m%d-%H%M%S).png" >/dev/null && ok "screenshot (browser)"
 
-  # Children: "Top Songs", "Similar Artists", then the albums.
   say "play its first album (Down x3, Enter = replace playlist + play)"
   mark
   keys down; keys down; keys down; keys enter
@@ -109,8 +99,6 @@ smoke() {
   expect 'decode_initialize' 30 "playback reached the navidrome:// input"
   expect 'decoder ready' 30 "decoder opened the stream"
 
-  # The lyrics panel only exists when "Navidrome Lyrics" is in the layout (Default UI) — report,
-  # don't fail, when it isn't.
   if [ "$HAVE_LOG" = 1 ]; then
     sleep 4
     if since_mark | grep -Eq 'Lyrics'; then
@@ -138,5 +126,5 @@ case "${1:-}" in
   smoke)   shift; smoke "$@" ;;
   browser) open_browser ;;
   log)     g "tail -n ${2:-40} $GLOG" ;;
-  *) sed -n '2,15p' "$0"; exit 2 ;;
+  *) usage; exit 2 ;;
 esac

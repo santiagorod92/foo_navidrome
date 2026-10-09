@@ -9,10 +9,6 @@
 
 namespace navidrome {
 
-// Snapshot of the credentials/config needed to make a Subsonic request,
-// captured once up front so background work (cover art fetches on a
-// abort_callback thread, ESLyric config generation) isn't racing live edits
-// to the cfg_string globals.
 struct SubsonicRequestContext {
     std::string serverUrl;
     std::string username;
@@ -21,11 +17,6 @@ struct SubsonicRequestContext {
     std::string customHeaders;
 };
 
-// Windows Subsonic API client. A thin facade over the shared navidrome::
-// SubsonicCore (which owns every request body): this class supplies a
-// WinHTTP-backed IHttpTransport + a cfg_*-backed ISettingsProvider, keeps the
-// Windows-only binary/cover-art/download paths, and forwards the API surface.
-// Mirrors the ObjC SubsonicClient used on macOS.
 class SubsonicClientWin {
 public:
     static SubsonicClientWin& get();
@@ -33,105 +24,58 @@ public:
     bool isConfigured() const;
     SubsonicRequestContext snapshot() const;
     bool ping(std::string& outError);
+    bool serverInfo(ServerInfo& out, std::string& outError);
 
-    // Classified outcome of the most recent request (transport + Subsonic
-    // status). Lets a caller tell "credentials rejected" (surface to the user)
-    // from "connection reset" (transient) without string-matching outError.
     const Error& lastError() const { return m_core->lastError(); }
 
-    // Music folders / "libraries" (getMusicFolders.view). A single-library
-    // server reports exactly one. Result is cached for the session after the
-    // first successful call (invalidate with refreshMusicFolders()).
     std::vector<MusicFolder> getMusicFolders(std::string& outError);
-    // Same list, served from the session cache — fetches once on demand, then
-    // returns the cached copy (empty if that fetch failed). Used by the browse
-    // methods to decide the multi-library fan-out, and by the prefs UI.
     std::vector<MusicFolder> cachedMusicFolders();
     void refreshMusicFolders();
-    // Library ids the browser should show as top-level "group by library" nodes.
-    // A 2+ library server ALWAYS groups (independent of the "Only include
-    // selected libraries" checkbox); the checkbox only narrows which libraries
-    // appear, and only when 2+ are ticked. Returns {} for a single-library
-    // server, or when the filter is on with exactly one library ticked (that's a
-    // single-library scope, shown flat via the internal fan-out). Browser
-    // groups when this has 2+ entries.
     std::vector<std::string> libraryGroupingIds();
 
     std::vector<Artist>  getArtists(std::string& outError);
-    // Artists of one specific library (getArtists.view?musicFolderId=). Backs the
-    // per-library tree nodes shown when 2+ libraries are selected in the filter.
     std::vector<Artist>  getArtistsForLibrary(const std::string& libraryId,
                                               std::string& outError);
-    // scopeLibraryId (optional): when set, the album list is pinned to that one
-    // library instead of the whole selected set — used under a per-library node.
     std::vector<Album>   getAlbumsForArtist(const std::string& artistId,
                                             std::string& outError,
                                             const std::string& scopeLibraryId = "");
     std::vector<Song>    getSongsForAlbum(const std::string& albumId, std::string& outError);
     SearchResults        search(const std::string& query, std::string& outError);
 
-    // Smart lists — getAlbumList2.view. Backs the browser's category nodes.
     std::vector<Album>   getAlbumList(AlbumListType type, int size, std::string& outError);
-    // Starred tracks (getStarred2.view).
     std::vector<Song>    getStarredSongs(std::string& outError);
 
-    // Genres (getGenres.view) and their tracks (getSongsByGenre.view). Back the
-    // browser's "Genres" category node.
     std::vector<Genre>   getGenres(std::string& outError);
     std::vector<Song>    getSongsForGenre(const std::string& genre, int count,
                                           std::string& outError);
 
-    // Similar songs (getSimilarSongs2.view) for an artist, album or song id —
-    // getSimilarSongs2 recommendations, used by Instant Mix.
     std::vector<Song>    getSimilarSongs(const std::string& itemId, int count,
                                          std::string& outError);
 
-    // A random batch of tracks (getRandomSongs.view). Backs the "Random Mix"
-    // smart-list node.
     std::vector<Song>    getRandomSongs(int count, std::string& outError);
-    // Whole (filtered) library, paged search3 — backs the "All Songs" node.
     std::vector<Song>    getAllSongs(std::string& outError);
 
-    // Biography + last.fm-derived similar artists (getArtistInfo2.view). Backs
-    // the "Artist Info" context-menu action and the "Similar Artists" child node.
     ArtistInfo            getArtistInfo(const std::string& artistId, std::string& outError);
-    // Top tracks for an artist (getTopSongs.view, keyed by artist NAME). Backs
-    // the "Top Songs" child node.
     std::vector<Song>    getTopSongs(const std::string& artistName, int count,
                                      std::string& outError);
-    // One song's lyrics (by id, legacy artist/title fallback). Backs
-    // navidrome_lyrics_api; ESLyric fetches its own through the searcher script.
     Lyrics               getLyrics(const std::string& songId, const std::string& artist,
                                    const std::string& title, std::string& outError);
 
-    // Favorites + ratings. Per-user server-side state, so it shows up in the
-    // Navidrome web UI and every other Subsonic client.
     bool setStarred(bool starred, const std::string& itemId, StarKind kind,
                     std::string& outError);
-    // rating 1-5; 0 clears the rating.
     bool setRating(int rating, const std::string& songId, std::string& outError);
 
-    // Single song lookup (getSong.view). Used to refresh the per-user rating of
-    // a track that is already playing, without re-browsing its album. Returns
-    // false and sets outError when the song can't be read.
     bool getSong(const std::string& songId, Song& out, std::string& outError);
 
-    // Server-side playlists
     std::vector<Playlist> getPlaylists(std::string& outError);
     std::vector<Song>     getPlaylistSongs(const std::string& playlistId,
                                            std::string& outError);
-    // Creates a playlist and returns its id ("" on failure — check outError,
-    // which stays empty when the server just didn't echo an id back).
-    // songIds may be empty to create an empty playlist.
     std::string createPlaylist(const std::string& name,
                                const std::vector<std::string>& songIds,
                                std::string& outError);
-    // Appends songs to an existing playlist (updatePlaylist.view songIdToAdd).
     bool addToPlaylist(const std::string& playlistId,
                        const std::vector<std::string>& songIds,
                        std::string& outError);
-    // Removes entries by their zero-based position. Indexes are applied
-    // highest-first so earlier removals can't shift the later ones.
     bool removeFromPlaylist(const std::string& playlistId,
                             const std::vector<int>& indexes,
                             std::string& outError);
@@ -139,12 +83,7 @@ public:
                         std::string& outError);
     bool deletePlaylist(const std::string& playlistId, std::string& outError);
 
-    // Internet radio stations (getInternetRadioStations.view + CRUD). Playback
-    // uses RadioStation::streamUrl directly.
     std::vector<RadioStation> getRadioStations(std::string& outError);
-    // Creates a station. Subsonic's create endpoint doesn't echo the new
-    // station's id back (unlike createPlaylist.view), so this returns "" on
-    // success — check outError, not the returned string.
     std::string createRadioStation(const std::string& streamUrl, const std::string& name,
                                    const std::string& homePageUrl, std::string& outError);
     bool updateRadioStation(const std::string& id, const std::string& streamUrl,
@@ -152,53 +91,33 @@ public:
                             std::string& outError);
     bool deleteRadioStation(const std::string& id, std::string& outError);
 
-    // Podcasts (getPodcasts.view + subscribe/unsubscribe). getPodcastChannels
-    // is the cheap list call; getPodcastEpisodes scopes to one channel. Same
-    // empty-id-on-success caveat as createRadioStation.
     std::vector<PodcastChannel> getPodcastChannels(std::string& outError);
     std::vector<PodcastEpisode> getPodcastEpisodes(const std::string& channelId,
                                                     std::string& outError);
     std::string createPodcastChannel(const std::string& url, std::string& outError);
     bool        deletePodcastChannel(const std::string& id, std::string& outError);
 
-    // Who's currently listening, server-wide (getNowPlaying.view).
     std::vector<NowPlayingEntry> getNowPlaying(std::string& outError);
 
-    // Saved resume positions (getBookmarks.view). createBookmark is an upsert —
-    // Subsonic overwrites any existing bookmark for the same song.
     std::vector<Bookmark> getBookmarks(std::string& outError);
     bool createBookmark(const std::string& songId, double positionMs,
                         const std::string& comment, std::string& outError);
     bool deleteBookmark(const std::string& songId, std::string& outError);
 
-    // Kicks off (or reports progress of) a server-side library scan. Both
-    // endpoints return the same shape, so both are parsed the same way; a
-    // failed request leaves ScanStatus at its default (scanning=false).
     ScanStatus startScan(std::string& outError);
     ScanStatus getScanStatus(std::string& outError);
 
-    // Scrobble a play: submission=false marks "now playing", submission=true
-    // registers the play (play count, Last.fm / ListenBrainz relay).
     bool scrobble(const std::string& songId, bool submission, std::string& outError);
 
-    // Carries the configured transcoding preferences (format / maxBitRate).
     std::string streamURL(const std::string& songId);
-    // download.view — always the original file, never transcoded.
     std::string downloadURL(const std::string& songId);
     std::string coverArtURL(const std::string& id, int size = 0);
     std::string coverArtURL(const SubsonicRequestContext& context,
                             const std::string& id, int size = 0) const;
 
-    // User-configured extra HTTP headers ("Name: Value" lines) applied to every
-    // request — API, cover art and audio stream. Shared so the WinHTTP clients
-    // and the navidrome:// input handler all send the same set.
     static std::vector<std::string> customHeaderLines();
-    // Same headers joined as a single CRLF-delimited wide string for
-    // WinHttpAddRequestHeaders (empty if none configured).
     static std::wstring customHeadersWide();
 
-    // Binary fetch for cover art: reads the whole body only on HTTP 200 and a
-    // recognized image payload, capped at maxBytes, honoring abort_callback.
     struct BinaryFetchResult {
         FetchClass cls;
         std::uint32_t httpStatus;
@@ -210,9 +129,6 @@ public:
                                     std::size_t maxBytes,
                                     class abort_callback& abort) const;
 
-    // Streams a URL straight to disk — no size cap and no content sniffing, so
-    // it suits full-quality track downloads that must not sit in memory.
-    // destPath is a native wide path; the file is replaced if it exists.
     bool httpDownloadToFile(const std::string& url, const std::wstring& destPath,
                             std::string& outError) const;
 
@@ -220,11 +136,8 @@ private:
     SubsonicClientWin();
     ~SubsonicClientWin();
 
-    // Order matters: the transport + settings provider must outlive the core,
-    // which holds references to them.
     std::unique_ptr<IHttpTransport>    m_transport;
     std::unique_ptr<ISettingsProvider> m_settingsProvider;
     std::unique_ptr<SubsonicCore>      m_core;
 };
-
-} // namespace navidrome
+}

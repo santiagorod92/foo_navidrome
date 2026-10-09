@@ -1,6 +1,3 @@
-// Unit tests: lyrics — the LRC / structuredLyrics parsers and active-line lookup
-// (SubsonicTypes.h), SubsonicCore::getLyrics's by-id → legacy fallback, and the
-// cached lyricsForTrackURI() behind the macOS panel and navidrome_lyrics_api.
 #include "TestHarness.h"
 #include "../src/core/SubsonicCore.h"
 #include "../src/core/NavidromeBrowserModel.h"
@@ -56,7 +53,6 @@ TEST_CASE(testStructuredLyricsParsing) {
     check(all.size() == 2 && !all[1].synced && all[1].lines[1].text == "plain b" &&
           all[1].lines[1].startMs == -1, "plain set kept with no timing");
 
-    // Single structuredLyrics object collapsed from a one-element array.
     auto one = navidrome::parseLyricsList(parseJson(
         R"({"lyricsList":{"structuredLyrics":{"synced":true,"line":{"start":0,"value":"solo"}}}})"));
     check(one.size() == 1 && one[0].lines.size() == 1 && one[0].lines[0].text == "solo",
@@ -94,11 +90,10 @@ TEST_CASE(testLyricsCache) {
     check(!c.get("1", out) && c.get("3", out), "oldest evicted at capacity");
 }
 
-// --- SubsonicCore::getLyrics ------------------------------------------------
 struct LyricsTransport : navidrome::IHttpTransport {
     std::vector<std::string> urls;
     std::vector<std::pair<std::string, std::string>> routes;
-    int notFoundById = 0;   // answer getLyricsBySongId with HTTP 404 this many times
+    int notFoundById = 0;
 
     navidrome::HttpResult getOnce(const std::string& url) override {
         urls.push_back(url);
@@ -123,6 +118,19 @@ struct LyricsSettings : navidrome::ISettingsProvider {
     navidrome::SubsonicSettings load() const override { return s; }
 };
 
+const char* kPingOpenSubsonic =
+    R"({"subsonic-response":{"status":"ok","version":"1.16.1","type":"navidrome","openSubsonic":true}})";
+const char* kExtensionsWithLyrics =
+    R"({"subsonic-response":{"status":"ok","openSubsonicExtensions":[)"
+    R"({"name":"songLyrics","versions":[1]},{"name":"transcodeOffset","versions":[1]}]}})";
+const char* kExtensionsNoLyrics =
+    R"({"subsonic-response":{"status":"ok","openSubsonicExtensions":[{"name":"formPost","versions":[1]}]}})";
+
+void withLyricsExtension(LyricsTransport& tx) {
+    tx.routes.insert(tx.routes.begin(), { {"ping.view", kPingOpenSubsonic},
+                                          {"getOpenSubsonicExtensions.view", kExtensionsWithLyrics} });
+}
+
 size_t countUrls(const LyricsTransport& tx, const char* needle) {
     size_t n = 0;
     for (const auto& u : tx.urls) if (u.find(needle) != std::string::npos) ++n;
@@ -134,22 +142,26 @@ TEST_CASE(testSubsonicCoreLyrics) {
         {"synced":true,"line":[{"start":0,"value":"synced line"}]}]}}})";
     const std::string legacy = R"({"subsonic-response":{"status":"ok","lyrics":{"value":"plain line"}}})";
 
-    // By-id hit: synced lyrics, no legacy request.
     {
         LyricsTransport tx; LyricsSettings cfg;
         tx.routes = { {"getLyricsBySongId.view", byId}, {"getLyrics.view", legacy} };
+        withLyricsExtension(tx);
         navidrome::SubsonicCore core(tx, cfg);
         std::string err;
         auto l = core.getLyrics("song 1", "A", "T", err);
         check(err.empty() && l.synced && l.lines.size() == 1 && l.lines[0].text == "synced line",
               "by-id lyrics returned");
-        check(tx.urls.size() == 1 && tx.urls[0].find("id=song%201") != std::string::npos,
+        check(countUrls(tx, "getLyricsBySongId.view") == 1 && countUrls(tx, "id=song%201") == 1 &&
+              countUrls(tx, "getLyrics.view") == 0,
               "one by-id request, id percent-encoded");
+        core.getLyrics("song 2", "A", "T", err);
+        check(countUrls(tx, "ping.view") == 1 && countUrls(tx, "getOpenSubsonicExtensions.view") == 1,
+              "capabilities probed once per server, then cached");
     }
-    // HTTP 404 on by-id: fall back to artist/title, and stop probing by-id on this server.
     {
         LyricsTransport tx; LyricsSettings cfg;
         tx.routes = { {"getLyrics.view", legacy} };
+        withLyricsExtension(tx);
         tx.notFoundById = 1;
         navidrome::SubsonicCore core(tx, cfg);
         std::string err;
@@ -163,25 +175,46 @@ TEST_CASE(testSubsonicCoreLyrics) {
         core.getLyrics("s3", "A", "T", err);
         check(countUrls(tx, "getLyricsBySongId.view") == 2, "a different server is probed again");
     }
-    // Any other by-id failure is an error, not a fallback.
     {
         LyricsTransport tx; LyricsSettings cfg;
         tx.routes = { {"getLyricsBySongId.view",
                        R"({"subsonic-response":{"status":"failed","error":{"code":70,"message":"gone"}}})"} };
+        withLyricsExtension(tx);
         navidrome::SubsonicCore core(tx, cfg);
         std::string err;
         auto l = core.getLyrics("s1", "A", "T", err);
         check(l.empty() && err == "gone" && countUrls(tx, "getLyrics.view") == 0,
               "Subsonic error surfaced, no legacy request");
     }
-    // Legacy path needs artist + title.
     {
         LyricsTransport tx; LyricsSettings cfg;
         tx.notFoundById = 1;
         navidrome::SubsonicCore core(tx, cfg);
         std::string err;
-        check(core.getLyrics("s1", "", "T", err).empty() && err.empty() && tx.urls.size() == 1,
+        check(core.getLyrics("s1", "", "T", err).empty() && err.empty() &&
+              countUrls(tx, "getLyrics.view") == 0,
               "no artist: no legacy request, no error");
+    }
+    {
+        LyricsTransport tx; LyricsSettings cfg;
+        tx.routes = { {"ping.view", kPingOpenSubsonic},
+                      {"getOpenSubsonicExtensions.view", kExtensionsNoLyrics},
+                      {"getLyrics.view", legacy} };
+        navidrome::SubsonicCore core(tx, cfg);
+        std::string err;
+        auto l = core.getLyrics("s1", "A", "T", err);
+        check(err.empty() && l.lines.size() == 1 && countUrls(tx, "getLyricsBySongId.view") == 0,
+              "OpenSubsonic server without songLyrics: legacy only");
+    }
+    {
+        LyricsTransport tx; LyricsSettings cfg;
+        tx.routes = { {"getLyrics.view", legacy} };
+        navidrome::SubsonicCore core(tx, cfg);
+        std::string err;
+        core.getLyrics("s1", "A", "T", err);
+        check(countUrls(tx, "getLyricsBySongId.view") == 0 &&
+              countUrls(tx, "getOpenSubsonicExtensions.view") == 0,
+              "plain Subsonic: no extension request, no by-id request");
     }
 }
 
@@ -212,5 +245,4 @@ TEST_CASE(testLyricsForTrackURI) {
     check(failing.calls.size() == 2, "failures aren't cached — retried");
     navidrome::lyricsCache().clear();
 }
-
-} // namespace
+}

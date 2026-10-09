@@ -1,14 +1,4 @@
 #!/bin/bash
-# macOS CI build orchestrator — called by semantic-release prepareCmd.
-#
-# Usage: ./mac-ci-build.sh <new-version>
-#
-# 1. Pins the version: passed to xcodebuild as the NAVIDROME_VERSION build setting, which
-#    the "Generate Version Header" phase (scripts/version.sh) prefers over git describe.
-# 2. Builds the Release configuration with xcodebuild.
-# 3. Packages the built .component into a .fb2k-component zip in the repo root.
-#
-# Does NOT install to ~/Library/foobar2000-v2/ (that's mac-dev-build.sh's job).
 
 set -euo pipefail
 
@@ -18,49 +8,23 @@ if [ $# -lt 1 ]; then
 fi
 
 VERSION="$1"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"   # scripts/
-ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"          # repo root (xcodeproj)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 COMPONENT_NAME="foo_navidrome"
 
 cd "$ROOT"
 
-# ---------------------------------------------------------------------------
-# 1. Pin version
-# ---------------------------------------------------------------------------
 export NAVIDROME_VERSION="$VERSION"
 echo "mac-ci-build: version = $VERSION"
 
-# Expose the resolved version to the GitHub Actions step that invoked
-# semantic-release. The downstream Windows build job (needs: release) reads
-# this output to gate on "a release happened" and to check out the matching
-# tag. $GITHUB_OUTPUT is inherited from the wrapping step's environment; it's
-# only set under CI, so this is a no-op for local mac-dev-build runs.
 if [ -n "${GITHUB_OUTPUT:-}" ]; then
     echo "released_version=$VERSION" >> "$GITHUB_OUTPUT"
     echo "mac-ci-build: exported released_version=$VERSION to GITHUB_OUTPUT"
 fi
 
-# ---------------------------------------------------------------------------
-# 2. Build (Release)
-# ---------------------------------------------------------------------------
 echo "mac-ci-build: xcodebuild Release ..."
-# Print full xcodebuild output to /tmp and stream a filtered summary to stdout.
-# On failure, dump the full log so the actual compile error is visible in the
-# GitHub Actions step output (the noisy compile-command echoes mean the error
-# message would otherwise scroll off-screen, hidden behind thousands of lines).
 LOG=/tmp/xcodebuild.log
 set +e
-# mac-workspace.xcconfig silences SDK-side warnings (NDEBUG, SDK header/source noise) for every
-# target in the workspace; read it before adding anything there. The explicit destination
-# avoids "Using the first of multiple matching destinations" and always builds universal.
-# MACOSX_DEPLOYMENT_TARGET on the command line applies to every target in the workspace, ours
-# and the SDK's own projects alike. Those still declare 11.0, and Xcode 26+ rejects it outright
-# ("the range of supported deployment target versions is 12.0 to ..."); the SDK tree is
-# upstream content re-cloned each run, so it can't be patched in place. Setting it here keeps
-# the build working when the runner image moves past macos-14. Keep it in step with
-# MACOSX_DEPLOYMENT_TARGET in foo_navidrome.xcodeproj and scripts/mac-dev-build.sh.
-# MAC_EXTRA_CFLAGS (unset in CI) adds compile flags, e.g. -DNAVIDROME_DEBUG_LOG=1 from
-# `mac-vm-build.sh --debug-log` so the VM UI smoke test can assert on the debug log.
 EXTRA=()
 if [ -n "${MAC_EXTRA_CFLAGS:-}" ]; then
     EXTRA=(OTHER_CFLAGS="\$(inherited) $MAC_EXTRA_CFLAGS")
@@ -80,7 +44,6 @@ xcodebuild \
 XCB_RC=$?
 set -e
 
-# Always show the summary (errors, warnings, notes, BUILD result lines).
 grep -E "error:|warning:|note:|\\*\\* BUILD|ld:|fatal:|FAILED" "$LOG" || true
 
 if [ $XCB_RC -ne 0 ]; then
@@ -89,18 +52,12 @@ if [ $XCB_RC -ne 0 ]; then
     cat "$LOG"
     echo ""
     echo "===== ERROR LINES (rc=$XCB_RC) ====="
-    # Print error context: the error line + 3 lines before for context.
-    # GitHub Actions step output is read bottom-up when a job fails — putting
-    # this LAST means the user sees it without scrolling.
     grep -B 3 -E "error:|fatal error:" "$LOG" || echo "(no error: lines found — search the full log above)"
     echo ""
     echo "===== END (xcodebuild rc=$XCB_RC) ====="
     exit $XCB_RC
 fi
 
-# ---------------------------------------------------------------------------
-# 3. Locate built bundle
-# ---------------------------------------------------------------------------
 COMPONENT="build/derived/Build/Products/Release/${COMPONENT_NAME}.component"
 if [ ! -d "$COMPONENT" ]; then
     echo "ERROR: built bundle not found at $COMPONENT" >&2
@@ -108,15 +65,8 @@ if [ ! -d "$COMPONENT" ]; then
 fi
 echo "mac-ci-build: built $COMPONENT"
 
-# ---------------------------------------------------------------------------
-# 4. Ad-hoc sign (foobar2000 rejects unsigned bundles on load)
-# ---------------------------------------------------------------------------
 codesign --sign - --force --deep "$COMPONENT"
 
-# ---------------------------------------------------------------------------
-# 5. Package into foo_navidrome_<VERSION>.fb2k-component
-#    foobar2000 v2.6+ expects Mac bundles under "mac/" inside the zip.
-# ---------------------------------------------------------------------------
 OUTPUT="${ROOT}/${COMPONENT_NAME}_${VERSION}.fb2k-component"
 TMPDIR_PKG=$(mktemp -d)
 trap 'rm -rf "$TMPDIR_PKG"' EXIT

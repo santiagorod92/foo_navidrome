@@ -1,6 +1,3 @@
-// Unit tests: AudioMuse-AI client (src/core/AudioMuse.h) — request bodies, the
-// three response shapes, error extraction, the POST seam and resolving result
-// ids back to Navidrome songs.
 #include "TestHarness.h"
 #include "../src/core/AudioMuse.h"
 #include "FakeBrowserClient.h"
@@ -14,7 +11,6 @@ namespace {
 
 namespace am = navidrome::audiomuse;
 
-// Records the last POST and answers with a canned result.
 struct FakePoster : am::IJsonPoster {
     std::string url, body, token;
     int timeoutMs = 0;
@@ -165,5 +161,4 @@ TEST_CASE(testAudioMuseResolve) {
         std::string(56, 'x') + "\xC3\xA9\xC3\xA9\xC3\xA9");
     check(longName == "AudioMuse: " + std::string(56, 'x') + "...", "long name cut on a UTF-8 boundary");
 }
-
-} // namespace
+}

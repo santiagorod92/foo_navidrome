@@ -17,15 +17,11 @@
 #include <algorithm>
 #include <cstring>
 
-// ---------------------------------------------------------------------------
-// GUIDs — replace with your own when forking this component
-// ---------------------------------------------------------------------------
 static constexpr GUID guid_cfg_server_url  = { 0xa1b2c3d4, 0x1111, 0x2222, { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01, 0x01 } };
 static constexpr GUID guid_cfg_username    = { 0xa1b2c3d4, 0x1111, 0x2222, { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01, 0x02 } };
 static constexpr GUID guid_cfg_password    = { 0xa1b2c3d4, 0x1111, 0x2222, { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01, 0x03 } };
 static constexpr GUID guid_cfg_salt        = { 0xa1b2c3d4, 0x1111, 0x2222, { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01, 0x04 } };
 static constexpr GUID guid_prefs_page      = { 0xa1b2c3d4, 0x1111, 0x2222, { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01, 0x05 } };
-// tail 0x01,0x06 was guid_mainmenu_group (never registered) — reserved, don't reuse
 static constexpr GUID guid_mainmenu_cmd    = { 0xa1b2c3d4, 0x1111, 0x2222, { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01, 0x07 } };
 static constexpr GUID guid_library_viewer  = { 0xa1b2c3d4, 0x1111, 0x2222, { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01, 0x08 } };
 static constexpr GUID guid_library_prefs   = { 0xa1b2c3d4, 0x1111, 0x2222, { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01, 0x09 } };
@@ -39,56 +35,23 @@ static constexpr GUID guid_cfg_library_filter = { 0xa1b2c3d4, 0x1111, 0x2222, { 
 static constexpr GUID guid_cfg_library_ids  = { 0xa1b2c3d4, 0x1111, 0x2222, { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01, 0x11 } };
 static constexpr GUID guid_libsel_prefs_page = { 0xa1b2c3d4, 0x1111, 0x2222, { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01, 0x12 } };
 static constexpr GUID guid_ui_element_mac_lyrics = { 0xa1b2c3d4, 0x1111, 0x2222, { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01, 0x13 } };
-// Same GUID as the Windows AudioMuse-AI page.
 static constexpr GUID guid_audiomuse_prefs_page = { 0xa1b2c3d4, 0x1111, 0x2222, { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x04, 0x05 } };
 
-// ---------------------------------------------------------------------------
-// Config variables (exported so SubsonicClient.mm can access them)
-// ---------------------------------------------------------------------------
 namespace navidrome {
+
     cfg_string cfg_server_url(guid_cfg_server_url, "http://navidrome.santirod.local:4533/");
     cfg_string cfg_username  (guid_cfg_username,   "");
     cfg_string cfg_password  (guid_cfg_password,   "");
     cfg_string cfg_salt      (guid_cfg_salt,        "fb2k_navidrome");
-    // Extra HTTP headers (one "Name: Value" per line) sent on every request —
-    // API, cover art and audio stream. Used e.g. for Cloudflare Access
-    // service-token headers when Navidrome sits behind a Zero Trust tunnel.
     cfg_string cfg_custom_headers(guid_cfg_custom_headers, "");
-    // Report plays back to Navidrome (play counts, "Recently Played", and any
-    // Last.fm / ListenBrainz relay the server has configured).
-    // Qualified: an unqualified cfg_bool resolves to the legacy
-    // cfg_int_t<bool> (no set()) on the Windows SDK headers, and the two
-    // flavours serialize differently — both platforms must use the same one.
     cfg_var_modern::cfg_bool cfg_scrobble(guid_cfg_scrobble, true);
 
-    // Transcoding preferences, applied to every stream.view request.
-    // cfg_stream_format: "" = let the server decide, "raw" = never transcode,
-    // otherwise a Subsonic format name ("mp3", "opus", "aac", …).
-    // cfg_max_bitrate: kbps ceiling; 0 = unlimited.
-    // Qualified for the same reason as cfg_scrobble — an unqualified cfg_int
-    // resolves to the legacy cfg_int_t<t_int32>, which has no set() and
-    // serializes differently.
     cfg_string cfg_stream_format(guid_cfg_stream_format, "");
     cfg_var_modern::cfg_int cfg_max_bitrate(guid_cfg_max_bitrate, 0);
 
-    // Multi-library filter. cfg_library_filter off (the default) => every
-    // request behaves exactly as before, no getMusicFolders round-trip.
-    // When on, cfg_library_ids is a comma-separated list of getMusicFolders
-    // ids to restrict browsing to; empty or "covers every library" both mean
-    // "no restriction". Qualified cfg_bool for the same reason as cfg_scrobble.
     cfg_var_modern::cfg_bool cfg_library_filter(guid_cfg_library_filter, false);
     cfg_string cfg_library_ids(guid_cfg_library_ids, "");
 }
-
-// ---------------------------------------------------------------------------
-// Scrobbler — reports plays back to Navidrome so play counts, "Recently
-// Played" and any Last.fm / ListenBrainz relay configured server-side reflect
-// what's played through foobar2000.
-//
-// Two calls per track, matching the Subsonic contract: submission=false on
-// start ("now playing"), submission=true once enough of the track has been
-// heard (half its length, capped at 4 minutes — the Last.fm convention).
-// ---------------------------------------------------------------------------
 
 namespace {
 
@@ -117,7 +80,6 @@ public:
         m_tracker.onStop();
     }
 
-    // Unused callbacks (not requested in get_flags, but the interface is pure).
     void on_playback_starting(play_control::t_track_command, bool) override {}
     void on_playback_seek(double) override {}
     void on_playback_pause(bool) override {}
@@ -127,8 +89,6 @@ public:
     void on_volume_change(float) override {}
 
 private:
-    // Fire and forget on a background queue — a slow or unreachable server must
-    // never stall playback, and a failed scrobble isn't worth interrupting for.
     static void scrobbleAsync(std::string songId, BOOL submission) {
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
             navidrome::dbg::runGuarded("Scrobble", "scrobbleAsync", [&]{
@@ -145,10 +105,6 @@ private:
         });
     }
 
-    // One extra request per played track. That's the only moment we can pick up
-    // a rating changed outside foobar (the Navidrome web UI, another client)
-    // without polling every playlist entry — Subsonic has no bulk rating
-    // lookup, so a whole-playlist refresh would be one request per track.
     static void refreshRatingAsync(std::string songId) {
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
             navidrome::dbg::runGuarded("Rating", "refreshRatingAsync", [&]{
@@ -179,15 +135,6 @@ private:
 
 static play_callback_static_factory_t<navidrome_scrobbler> g_navidrome_scrobbler_factory;
 
-// ---------------------------------------------------------------------------
-// Startup refresh — brings every playlist entry up to date once per session, so
-// a rating column can be sorted on. Grouped by album; see CLAUDE.md for why
-// that grouping is what makes it affordable.
-// ---------------------------------------------------------------------------
-
-// One-shot dump of the state that shapes every later trace line — logged once
-// at startup so a bug report's log says which server / transcode / toggles were
-// in effect without a second round-trip.
 static void navidromeLogSessionEnv() {
 #ifdef NAVIDROME_DEBUG_LOG
     navidrome::SessionEnv e;
@@ -206,13 +153,8 @@ static void navidromeLogSessionEnv() {
 static void navidromeRefreshRatingsOnStart() {
     navidromeLogSessionEnv();
 
-    // Main thread: walking the playlists is a main-thread operation.
     navidrome::PlaylistAlbumScan scan = navidrome::scanPlaylistAlbums();
 
-
-    // Nothing of ours in any playlist — the only exit that stays quiet. Every
-    // other one says why, because "hook never fired" and "hook fired and found
-    // nothing" are otherwise indistinguishable from the outside.
     if (scan.entries == 0) return;
 
     if (!navidrome::refreshRatingsOnStartEnabled()) {
@@ -227,8 +169,6 @@ static void navidromeRefreshRatingsOnStart() {
                   " entries, " + std::to_string(scan.albumIds.size()) + " distinct albums, " +
                   std::to_string(scan.ungrouped) + " ungrouped");
 
-    // Skipping coverage silently is how a partial refresh gets mistaken for a
-    // complete one, so the two outcomes that leave entries behind say so.
     if (scan.albumIds.empty()) {
         pfc::string_formatter msg;
         msg << "Navidrome: " << scan.entries << " playlist entry/entries carry no "
@@ -260,8 +200,6 @@ static void navidromeRefreshRatingsOnStart() {
                     updates.push_back(std::move(u));
                 }
             }
-            // One sync for everything: it walks every playlist once, so doing it
-            // per album would repeat that walk for no gain.
             navidrome::syncRatingsToPlaylists(std::move(updates));
 
             pfc::string_formatter msg;
@@ -278,18 +216,13 @@ static void navidromeRefreshRatingsOnStart() {
     });
 }
 
-// initquit, not init_stage_callback: the macOS core never dispatches init
-// stages, and the failure mode is silence (see CLAUDE.md).
 class navidrome_startup_refresh : public initquit {
 public:
     void on_init() override { navidromeRefreshRatingsOnStart(); }
 };
 
 static initquit_factory_t<navidrome_startup_refresh> g_navidrome_startup_refresh_factory;
-
-} // namespace
-// Client calls behind the shared playlist context menu (main.cpp). Background
-// thread only — the menu marshals them off the UI thread itself.
+}
 bool navidrome::setRatingOnServer(const std::string &songId, int rating) {
     @autoreleasepool {
         NSError *err = nil;
@@ -311,10 +244,6 @@ bool navidrome::setStarredOnServer(const std::string &songId, bool starred) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Preferences page (Mac)
-// ---------------------------------------------------------------------------
-
 namespace {
 
 class preferences_page_navidrome : public preferences_page {
@@ -328,17 +257,7 @@ public:
 };
 
 FB2K_SERVICE_FACTORY(preferences_page_navidrome);
-
-} // namespace
-
-// ---------------------------------------------------------------------------
-// Radio Stations preferences sub-page — list/add/edit/delete the server's
-// configured internet radio stations without opening the browser tree.
-// Nested under guid_prefs_page (the main Navidrome credentials page), not
-// guid_tools, so it shows as a child of "Navidrome" rather than a sibling.
-// Entirely self-contained: own fetch, own NSTableView, calls SubsonicClient's
-// radio CRUD methods directly — no dependency on NavidromeBrowserController.
-// ---------------------------------------------------------------------------
+}
 
 @interface NavidromeRadioPrefsController : NSViewController <NSTableViewDataSource, NSTableViewDelegate>
 @end
@@ -351,8 +270,6 @@ FB2K_SERVICE_FACTORY(preferences_page_navidrome);
 }
 
 - (instancetype)init {
-    // No XIB — build UI programmatically in loadView, same as
-    // NavidromePreferencesController.
     self = [super initWithNibName:nil bundle:nil];
     return self;
 }
@@ -492,6 +409,9 @@ FB2K_SERVICE_FACTORY(preferences_page_navidrome);
                                                                                     name:name
                                                                              homePageUrl:homePageUrl
                                                                                    error:&err];
+        if (!result)
+            NAVIDROME_WARN("UI", "create radio station \"" + std::string(name.UTF8String ?: "") +
+                                 "\": " + std::string(err.localizedDescription.UTF8String ?: "unknown error"));
         dispatch_async(dispatch_get_main_queue(), ^{
             if (result) [self refresh];
             else self->_statusLabel.stringValue = [NSString stringWithFormat:@"Failed: %@",
@@ -527,6 +447,9 @@ FB2K_SERVICE_FACTORY(preferences_page_navidrome);
                                                                name:name
                                                         homePageUrl:homePageUrl
                                                               error:&err];
+        if (!ok)
+            NAVIDROME_WARN("UI", "update radio station " + std::string(stationId.UTF8String ?: "") +
+                                 ": " + std::string(err.localizedDescription.UTF8String ?: "unknown error"));
         dispatch_async(dispatch_get_main_queue(), ^{
             if (ok) [self refresh];
             else self->_statusLabel.stringValue = [NSString stringWithFormat:@"Failed: %@",
@@ -556,6 +479,9 @@ FB2K_SERVICE_FACTORY(preferences_page_navidrome);
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         NSError *err = nil;
         BOOL ok = [SubsonicClient.sharedClient deleteRadioStation:stationId error:&err];
+        if (!ok)
+            NAVIDROME_WARN("UI", "delete radio station " + std::string(stationId.UTF8String ?: "") +
+                                 ": " + std::string(err.localizedDescription.UTF8String ?: "unknown error"));
         dispatch_async(dispatch_get_main_queue(), ^{
             if (ok) [self refresh];
             else self->_statusLabel.stringValue = [NSString stringWithFormat:@"Failed: %@",
@@ -564,10 +490,6 @@ FB2K_SERVICE_FACTORY(preferences_page_navidrome);
     });
 }
 
-// Modal 3-field prompt (name / stream URL / home page URL). Duplicated from
-// NavidromeBrowserController rather than shared — this page has no other
-// dependency on the browser controller and the two are never built together
-// in a way that would make sharing it free.
 - (BOOL)promptForRadioStationWithTitle:(NSString *)title
                                    name:(NSString **)outName
                               streamURL:(NSString **)outStreamURL
@@ -649,24 +571,11 @@ public:
     }
     const char *get_name() override { return "Radio Stations"; }
     GUID get_guid() override { return guid_radio_prefs_page; }
-    // Nested under the main Navidrome credentials page, not guid_tools — a
-    // child sub-page under "Navidrome" rather than a sibling of it.
     GUID get_parent_guid() override { return guid_prefs_page; }
 };
 
 FB2K_SERVICE_FACTORY(preferences_page_navidrome_radio);
-
-} // namespace
-
-// ---------------------------------------------------------------------------
-// Preferences › Media Library › Navidrome › Libraries — multi-library filter.
-// Nested under the main Navidrome credentials page (guid_prefs_page). A
-// checkbox ("Only include selected libraries") bound to cfg_library_filter,
-// plus a checkbox list of the server's getMusicFolders entries writing
-// cfg_library_ids. Both are written live (no apply model, same as the Radio
-// Stations page). Inert until the server reports 2+ libraries — see
-// navidrome::effectiveMusicFolderIds.
-// ---------------------------------------------------------------------------
+}
 
 @interface NavidromeLibrarySelectionPrefsController
     : NSViewController <NSTableViewDataSource, NSTableViewDelegate>
@@ -795,13 +704,11 @@ FB2K_SERVICE_FACTORY(preferences_page_navidrome_radio);
     BOOL on = _filterCheckbox.state == NSControlStateValueOn;
     navidrome::cfg_library_filter.set(on);
     if (!on) {
-        // Turning the filter off clears the selection rather than parking it
-        // — the row checks and cfg_library_ids reset to empty.
         [_selectedIds removeAllObjects];
         navidrome::cfg_library_ids.set("");
     }
     [SubsonicClient.sharedClient refreshMusicFolders];
-    [self recomputeEnabled];   // reloadData re-renders the rows unchecked
+    [self recomputeEnabled];
 }
 
 - (IBAction)rowToggled:(NSButton *)sender {
@@ -853,7 +760,6 @@ public:
     }
     const char *get_name() override { return "Libraries"; }
     GUID get_guid() override { return guid_libsel_prefs_page; }
-    // Child sub-page under "Navidrome", same as the Radio Stations page.
     GUID get_parent_guid() override { return guid_prefs_page; }
 };
 
@@ -870,10 +776,6 @@ public:
 };
 
 FB2K_SERVICE_FACTORY(preferences_page_navidrome_audiomuse);
-
-// ---------------------------------------------------------------------------
-// Main menu: File > Open Navidrome Browser
-// ---------------------------------------------------------------------------
 
 class mainmenu_navidrome : public mainmenu_commands {
 public:
@@ -915,12 +817,6 @@ public:
 
 FB2K_SERVICE_FACTORY(mainmenu_navidrome);
 
-// ---------------------------------------------------------------------------
-// Library viewer — exposes the browser to the foobar Media Library system.
-// On macOS the visible surface is the preferences sub-page below, registered
-// under guid_media_library, which mirrors how Album List / ReFacets show up.
-// ---------------------------------------------------------------------------
-
 class library_viewer_navidrome : public library_viewer {
 public:
     GUID get_preferences_page() override { return guid_library_prefs; }
@@ -933,14 +829,7 @@ public:
 };
 
 static library_viewer_factory_t<library_viewer_navidrome> g_library_viewer_navidrome_factory;
-
-} // namespace
-
-// ---------------------------------------------------------------------------
-// Media Library preferences sub-page — embeds the browser directly so users
-// see Artists/Albums/Songs without opening a separate window. The page IS
-// the browser. A fresh NavidromeBrowserController is created per page mount.
-// ---------------------------------------------------------------------------
+}
 
 namespace {
 
@@ -956,19 +845,6 @@ public:
 
 FB2K_SERVICE_FACTORY(preferences_page_navidrome_library);
 
-// ---------------------------------------------------------------------------
-// Native layout panel — lets the browser be docked inside the main window
-// layout (Preferences > Display > Layout > Edit Layout > add "Navidrome"),
-// as a third mount point alongside the standalone window and the Media
-// Library prefs sub-page above. Same VC-per-mount rule applies: the layout
-// system may instantiate() more than once (e.g. multiple splits/tabs), so
-// each call must return a fresh NavidromeBrowserController, never a shared
-// singleton.
-// ---------------------------------------------------------------------------
-
-// The layout editor is plain text and its built-in names are lowercase (`playlist`,
-// `playback-controls`), so match ignoring case and accept a hyphenated alias next to the
-// display name (no space to get wrong).
 static bool matchesLayoutName(const char *name, std::initializer_list<const char *> names) {
     if (name == nullptr) return false;
     for (const char *n : names)
@@ -978,7 +854,7 @@ static bool matchesLayoutName(const char *name, std::initializer_list<const char
 
 class ui_element_mac_navidrome : public ui_element_mac {
 public:
-    service_ptr instantiate(service_ptr /*arg*/) override {
+    service_ptr instantiate(service_ptr ) override {
         return fb2k::wrapNSObject([NavidromeBrowserController new]);
     }
     bool match_name(const char *name) override {
@@ -990,11 +866,9 @@ public:
 
 FB2K_SERVICE_FACTORY(ui_element_mac_navidrome);
 
-// "Navidrome Lyrics" layout panel — the Mac's lyrics display (no ESLyric on macOS). Fresh
-// controller per instantiate(), same rule as the browser panel above.
 class ui_element_mac_navidrome_lyrics : public ui_element_mac {
 public:
-    service_ptr instantiate(service_ptr /*arg*/) override {
+    service_ptr instantiate(service_ptr ) override {
         return fb2k::wrapNSObject([NavidromeLyricsController new]);
     }
     bool match_name(const char *name) override {
@@ -1005,5 +879,4 @@ public:
 };
 
 FB2K_SERVICE_FACTORY(ui_element_mac_navidrome_lyrics);
-
-} // namespace
+}

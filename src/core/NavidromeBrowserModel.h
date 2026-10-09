@@ -1,19 +1,9 @@
 #pragma once
-// Shared browser tree model — the Navidrome browser's node type, the smart-list
-// category list, the Subsonic-model -> node mappers and the row-label
-// formatting, all in one place so the Windows (CTreeViewCtrl) and macOS
-// (NSOutlineView) views run identical logic.
-//
-// SDK-free and UI-toolkit-free: pure C++ over the structs in SubsonicTypes.h,
-// so it compiles into the component on every platform and into the standalone
-// unit-test host (tests/Browser*Tests.cpp). The child-fetch
-// dispatch and the deep song collector that build on top of this live in
-// NavidromeBrowserModel.cpp behind the IBrowserClient seam; the SDK-coupled
-// enqueue step lives in NavidromeBrowserEnqueue.h / main.cpp.
 
 #include "SubsonicTypes.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <functional>
 #include <memory>
@@ -22,88 +12,66 @@
 
 namespace navidrome {
 
-// ---------------------------------------------------------------------------
-// Tree node
-// ---------------------------------------------------------------------------
 struct BrowserNode {
     enum Type {
         Artist, Album, Song, Category, Playlist, Genre, Radio, Library,
         PodcastChannel,
         Loading, Error,
     };
-    // Smart-list roots shown above the artist list; each maps to one Subsonic
-    // endpoint (see fetchChildren in NavidromeBrowserModel.cpp). Canonical
-    // order — the two platforms previously declared these in slightly
-    // different orders (harmless only because the raw value is never
-    // persisted); this is the single source of truth.
     enum CategoryKind {
-        CatStarred,          // getStarred2.view              -> songs
-        CatRecentlyAdded,    // getAlbumList2 newest           -> albums
-        CatMostPlayed,       // getAlbumList2 frequent         -> albums
-        CatRecentlyPlayed,   // getAlbumList2 recent           -> albums
-        CatRandom,           // getAlbumList2 random           -> albums
-        CatGenres,           // getGenres.view                 -> genres
-        CatPlaylists,        // getPlaylists.view              -> playlists
-        CatBookmarks,        // getBookmarks.view              -> songs
-        CatRadio,            // getInternetRadioStations.view  -> stations
-        CatPodcasts,         // getPodcasts.view                -> channels
-        CatNowPlaying,       // getNowPlaying.view              -> songs
-        // Per-artist synthetic children, injected by fetchChildren's Artist
-        // case rather than shown in buildCategoryNodes — id/subtitle carry the
-        // parent artist's id/name (see makeArtistSubNode).
-        CatArtistTopSongs,        // getTopSongs.view (by artist name) -> songs
-        CatArtistSimilarArtists,  // getArtistInfo2.view similarArtist -> artists
-        // The whole library as one enqueueable row. Never expanded (see
-        // isLeaf) — tens of thousands of tree items would stall either view.
-        CatAllSongs,              // search3.view "" paged         -> songs
+        CatStarred,
+        CatRecentlyAdded,
+        CatMostPlayed,
+        CatRecentlyPlayed,
+        CatRandom,
+        CatGenres,
+        CatPlaylists,
+        CatBookmarks,
+        CatRadio,
+        CatPodcasts,
+        CatNowPlaying,
+        CatArtistTopSongs,
+        CatArtistSimilarArtists,
+        CatAllSongs,
     };
 
     Type         type       = Loading;
-    CategoryKind category    = CatStarred;   // category nodes only
+    CategoryKind category    = CatStarred;
     std::string  id;
     std::string  displayName;
-    std::string  subtitle;    // artist name for albums/songs; "N tracks" for playlist/genre
-    std::string  album;       // album name for songs
-    std::string  albumId;     // album id (song nodes; startup refresh)
-    std::string  libraryId;   // set on artist nodes shown under a Library node
+    std::string  subtitle;
+    std::string  album;
+    std::string  albumId;
+    std::string  libraryId;
     std::string  coverArtId;
-    std::string  suffix;      // codec suffix (mp3/flac/...) for songs
+    std::string  suffix;
     int          track      = 0;
     int          year       = 0;
     double       duration   = 0.0;
-    bool         starred    = false;   // server-side favorite
-    int          rating     = 0;       // 0 = unrated, else 1-5
-    double       bookmarkPositionMs = 0.0; // > 0 when this song has a saved resume position
-    std::string  infoText;    // secondary annotation: podcast episode status, or
-                               // "user · Nm ago" for a Now Playing row; "" otherwise
+    bool         starred    = false;
+    int          rating     = 0;
+    double       bookmarkPositionMs = 0.0;
+    std::string  infoText;
 
     bool         childrenLoaded = false;
     bool         isLoading       = false;
     std::vector<std::shared_ptr<BrowserNode>> children;
 
-    // Opaque back-pointer to the platform view item (Win32 HTREEITEM, or a
-    // retained Cocoa box). Never dereferenced here — the view layer owns it.
     void*        viewHandle = nullptr;
 };
 
 using BrowserNodePtr = std::shared_ptr<BrowserNode>;
 
-// "All Songs" is enqueue-only: Add/Play/double-click resolve it through
-// collectSongsDeep, but it never shows its children in the tree.
 inline bool isAllSongsNode(const BrowserNode& n) {
     return n.type == BrowserNode::Category && n.category == BrowserNode::CatAllSongs;
 }
 
-// Songs / radio stations / placeholders / "All Songs" never expand.
 inline bool isLeaf(const BrowserNode& n) {
     return n.type == BrowserNode::Song || n.type == BrowserNode::Radio ||
            n.type == BrowserNode::Loading || n.type == BrowserNode::Error ||
            isAllSongsNode(n);
 }
 
-// ---------------------------------------------------------------------------
-// Subsonic model -> node
-// ---------------------------------------------------------------------------
 inline std::string trackCountSubtitle(int songCount) {
     return songCount == 1 ? "1 track" : std::to_string(songCount) + " tracks";
 }
@@ -145,7 +113,7 @@ inline BrowserNodePtr makeSongNode(const Song& s, double bookmarkPositionMs = 0.
     n->starred        = s.starred;
     n->rating         = s.rating;
     n->bookmarkPositionMs = bookmarkPositionMs;
-    n->childrenLoaded = true;   // songs are always leaves
+    n->childrenLoaded = true;
     return n;
 }
 
@@ -161,7 +129,7 @@ inline BrowserNodePtr makePlaylistNode(const Playlist& p) {
 inline BrowserNodePtr makeGenreNode(const Genre& g) {
     auto n = std::make_shared<BrowserNode>();
     n->type        = BrowserNode::Genre;
-    n->id          = g.name;   // getSongsByGenre keys off the name, not an id
+    n->id          = g.name;
     n->displayName = g.name;
     n->subtitle    = trackCountSubtitle(g.songCount);
     return n;
@@ -173,7 +141,7 @@ inline BrowserNodePtr makeRadioNode(const RadioStation& s) {
     n->id             = s.id;
     n->displayName    = s.name;
     n->subtitle       = s.homePageUrl;
-    n->childrenLoaded = true;   // radio stations are always leaves
+    n->childrenLoaded = true;
     return n;
 }
 
@@ -187,10 +155,6 @@ inline BrowserNodePtr makePodcastChannelNode(const PodcastChannel& c) {
     return n;
 }
 
-// A podcast episode reuses the Song shape. `id` is only set once the server
-// has finished downloading it (status == "completed") — until then it's left
-// empty so collectSongIdsDeep's existing "skip id-less nodes" filter makes it
-// unplayable/unenqueueable with no extra platform code; infoText shows why.
 inline BrowserNodePtr makePodcastEpisodeNode(const PodcastEpisode& e) {
     auto n = std::make_shared<BrowserNode>();
     n->type           = BrowserNode::Song;
@@ -219,9 +183,6 @@ inline BrowserNodePtr makeCategoryNode(BrowserNode::CategoryKind kind,
     return n;
 }
 
-// Per-artist synthetic children (see fetchChildren's Artist case). id carries
-// the artist id, subtitle the artist name — getTopSongs.view needs the name,
-// getArtistInfo2.view needs the id, and both live on the one node either way.
 inline BrowserNodePtr makeArtistSubNode(BrowserNode::CategoryKind kind, const std::string& title,
                                         const std::string& artistId, const std::string& artistName) {
     auto n = makeCategoryNode(kind, title);
@@ -246,11 +207,6 @@ inline BrowserNodePtr errorNode(const std::string& msg) {
     return n;
 }
 
-// ---------------------------------------------------------------------------
-// Category list
-// ---------------------------------------------------------------------------
-// Smart-list roots, shown above the artist list. Each expands lazily like any
-// other node, so opening the browser still costs exactly one getArtists call.
 inline std::vector<BrowserNodePtr> buildCategoryNodes() {
     struct Entry { BrowserNode::CategoryKind kind; const char* title; };
     static const Entry kCategories[] = {
@@ -274,9 +230,6 @@ inline std::vector<BrowserNodePtr> buildCategoryNodes() {
     return out;
 }
 
-// Maps an AlbumListType-backed category to the smart list it fetches. The
-// non-album-list categories (Starred/Genres/Playlists/Bookmarks/Radio) are
-// handled separately in fetchChildren.
 inline AlbumListType albumListTypeForCategory(BrowserNode::CategoryKind kind) {
     switch (kind) {
         case BrowserNode::CatMostPlayed:     return AlbumListType::Frequent;
@@ -286,10 +239,6 @@ inline AlbumListType albumListTypeForCategory(BrowserNode::CategoryKind kind) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Row display
-// ---------------------------------------------------------------------------
-// M:SS, matching the macOS formatDuration and foobar's own short form.
 inline std::string formatDurationMMSS(double seconds) {
     int s = static_cast<int>(seconds);
     char buf[16];
@@ -297,18 +246,13 @@ inline std::string formatDurationMMSS(double seconds) {
     return buf;
 }
 
-// Structured display pieces for one row. The single-column Win32 tree
-// concatenates name + ratingStars + bookmarkText; the 3-column Cocoa outline
-// puts name / (subtitle + ratingStars [+ bookmarkText]) / durationText in its
-// three columns. Keeping the pieces separate lets one function feed both
-// without changing either platform's rendered result.
 struct NodeDisplay {
-    std::string name;          // track-number prefix + favorite marker + title
-    std::string subtitle;      // raw node subtitle (artist / "N tracks" / home URL)
-    std::string ratingStars;   // "" when unrated, else N x U+2605
-    std::string bookmarkText;  // "" unless a resume position is set, else "U+23F1 m:ss"
-    std::string durationText;  // "" when duration is 0, else M:SS
-    std::string infoText;      // "" unless set, else podcast status / "user · Nm ago"
+    std::string name;
+    std::string subtitle;
+    std::string ratingStars;
+    std::string bookmarkText;
+    std::string durationText;
+    std::string infoText;
 };
 
 inline NodeDisplay nodeDisplay(const BrowserNode& n) {
@@ -317,7 +261,6 @@ inline NodeDisplay nodeDisplay(const BrowserNode& n) {
     d.name = n.displayName;
     if (n.type == BrowserNode::Song && n.track > 0)
         d.name = std::to_string(n.track) + ". " + d.name;
-    // Category rows carry their own icon in the title already.
     if (n.starred && n.type != BrowserNode::Category)
         d.name = "★ " + d.name;
 
@@ -342,8 +285,6 @@ inline NodeDisplay nodeDisplay(const BrowserNode& n) {
     return d;
 }
 
-// The Win32 single-column label: everything the tree can show, in one string.
-// Reproduces the old BrowserWindow::labelFor byte-for-byte.
 inline std::string singleColumnLabel(const BrowserNode& n) {
     NodeDisplay d = nodeDisplay(n);
     std::string label = d.name;
@@ -353,23 +294,12 @@ inline std::string singleColumnLabel(const BrowserNode& n) {
     return label;
 }
 
-// ---------------------------------------------------------------------------
-// Client seam
-// ---------------------------------------------------------------------------
-// The subset of the Subsonic client the browser tree needs, as an abstract
-// interface so the fetch dispatch below is written once. Each platform supplies
-// a thin adapter: WinBrowserClient over SubsonicClientWin (Windows/BrowserWindow.cpp),
-// MacBrowserClient over the ObjC SubsonicClient (Mac/MacSubsonicBrowserClient.mm).
-// `outError` is a human-readable string (empty on success) — the same shape both
-// clients already return from these calls; the richer navidrome::Error stays
-// available through each client's own lastError().
 struct IBrowserClient {
     virtual ~IBrowserClient() = default;
 
     virtual std::vector<Artist>       getArtists(std::string& outError) = 0;
     virtual std::vector<Artist>       getArtistsForLibrary(const std::string& libraryId,
                                                            std::string& outError) = 0;
-    // scopeLibraryId empty => not pinned to a single library.
     virtual std::vector<Album>        getAlbumsForArtist(const std::string& artistId,
                                                          const std::string& scopeLibraryId,
                                                          std::string& outError) = 0;
@@ -386,138 +316,87 @@ struct IBrowserClient {
                                                   std::string& outError) = 0;
     virtual std::vector<RadioStation> getRadioStations(std::string& outError) = 0;
     virtual std::vector<Bookmark>     getBookmarks(std::string& outError) = 0;
-    // Podcasts: getPodcastChannels is the cheap list call, getPodcastEpisodes
-    // scopes to one channel (its own lazy expand). Subscribe/unsubscribe go
-    // straight to the platform facade from the UI handler, same as radio
-    // station create/update/delete — only the read path needs abstracting
-    // here since it's what the shared fetchChildren() dispatch uses.
     virtual std::vector<PodcastChannel> getPodcastChannels(std::string& outError) = 0;
     virtual std::vector<PodcastEpisode> getPodcastEpisodes(const std::string& channelId,
                                                             std::string& outError) = 0;
     virtual std::vector<NowPlayingEntry> getNowPlaying(std::string& outError) = 0;
-    // "Instant Mix" (getSimilarSongs2) and "Random Mix" — both back a
-    // context-menu action, not a browsable node (see CLAUDE.md gotcha on why
-    // Random Mix isn't a category).
     virtual std::vector<Song>         getSimilarSongs(const std::string& itemId, int count,
                                                       std::string& outError) = 0;
     virtual std::vector<Song>         getRandomSongs(int count, std::string& outError) = 0;
-    // Every song in the (filtered) library — backs the "All Songs" node.
     virtual std::vector<Song>         getAllSongs(std::string& outError) = 0;
-    // Biography + similar artists (getArtistInfo2.view) — backs "Artist Info"
-    // and the "Similar Artists" child node, and top tracks (getTopSongs.view,
-    // keyed by artist NAME) — backs the "Top Songs" child node.
     virtual ArtistInfo                 getArtistInfo(const std::string& artistId,
                                                       std::string& outError) = 0;
     virtual std::vector<Song>         getTopSongs(const std::string& artistName, int count,
                                                   std::string& outError) = 0;
-    // One song's lyrics (getLyricsBySongId.view, legacy getLyrics.view by
-    // artist + title as fallback) — backs the macOS lyrics panel and
-    // navidrome_lyrics_api. Go through lyricsForTrackURI() for the cache.
     virtual Lyrics                     getLyrics(const std::string& songId, const std::string& artist,
                                                  const std::string& title, std::string& outError) = 0;
 
-    // Multi-library grouping. groupingLibraryIds() returns 2+ ids only when the
-    // tree should show a Library level (see the Decisions note in CLAUDE.md);
-    // musicFolders() names them.
     virtual std::vector<std::string>  groupingLibraryIds() = 0;
     virtual std::vector<MusicFolder>  musicFolders() = 0;
 
-    // Favorites and ratings. `outError` is empty (and the call returns true) on
-    // success, matching the read methods above.
     virtual bool setStarred(bool starred, const std::string& itemId, StarKind kind,
                             std::string& outError) = 0;
     virtual bool setRating(int stars, const std::string& songId,
                            std::string& outError) = 0;
 
-    // One song by id (getSong.view) — turns AudioMuse-AI result ids into
-    // playable song nodes (audiomuse::resolveTracks).
     virtual bool getSong(const std::string& songId, Song& out, std::string& outError) = 0;
 };
 
-// The tree's root list: category nodes always, then either one Library node per
-// grouping id (multi-library server) or a flat artist list. Mirrors the old
-// BrowserWindow::loadArtists / -loadArtists worker body. On a flat-list fetch
-// error, `outError` is set and no category nodes are returned (the view shows
-// the error) — matching the previous behaviour.
 std::vector<BrowserNodePtr> buildRootNodes(IBrowserClient& client, std::string& outError);
 
-// Lyrics for a navidrome://track/<id>?... URI (title/artist come from the URI,
-// for the legacy fallback), through the session-wide lyricsCache(). A URI that
-// isn't ours returns empty with no request. A failed request sets outError and
-// is NOT cached, so the next attempt retries. Background thread only.
 Lyrics lyricsForTrackURI(IBrowserClient& client, const std::string& uri, std::string& outError);
 LyricsCache& lyricsCache();
 
-// Children of one expandable node (artist -> albums, album -> songs, category ->
-// its smart list, library -> its artists, ...). On success the fetched song
-// nodes' server-side rating/favorite are pushed onto matching playlist entries
-// via navidrome::syncRatingsToPlaylists. On error `outError` is set and the
-// result is empty. Background thread only.
 std::vector<BrowserNodePtr> fetchChildren(IBrowserClient& client,
                                           const BrowserNode& node,
                                           std::string& outError);
 
-// Walk any expandable node down to its songs (and radio stations), reusing
-// already-loaded children and fetching the rest through fetchChildren.
 void collectSongsDeep(IBrowserClient& client, const BrowserNodePtr& node,
-                      std::vector<BrowserNodePtr>& out);
-// collectSongsDeep over a multi-selection. A song an earlier selected node
-// already produced is dropped from later ones (an artist and one of its albums
-// selected together queue that album once), but repeats *within* one node are
-// kept — a server playlist may list the same track twice on purpose.
+                      std::vector<BrowserNodePtr>& out, std::string* error = nullptr);
 std::vector<BrowserNodePtr> collectSelectionSongs(IBrowserClient& client,
-                                                  const std::vector<BrowserNodePtr>& nodes);
-// collectSelectionSongs, then the non-empty song ids.
+                                                  const std::vector<BrowserNodePtr>& nodes,
+                                                  std::string* error = nullptr);
+
+constexpr long long kBrowserTreeMaxAgeMs = 30LL * 60 * 1000;
+
+inline long long browserNowMs() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+inline bool browserTreeIsStale(long long loadedAtMs, long long nowMs) {
+    return loadedAtMs <= 0 || nowMs - loadedAtMs >= kBrowserTreeMaxAgeMs;
+}
+
+inline bool shouldReloadAfterEmptyCollect(bool gotSongs, bool hadError, bool treeStale) {
+    return !gotSongs && (hadError || treeStale);
+}
+
+std::string queueProblemMessage(bool gotSongs, const std::string& error, bool reloaded);
 std::vector<std::string> collectSongIdsDeep(IBrowserClient& client,
                                             const std::vector<BrowserNodePtr>& nodes);
 
-// Push the server-side rating / favorite carried by any Song nodes in `nodes`
-// onto matching playlist entries (via navidrome::syncRatingsToPlaylists), so a
-// value changed elsewhere catches up as soon as the user looks at the album.
-// Costs no request — the values arrived with the browse response. Non-Song and
-// id-less nodes are skipped. fetchChildren() already calls this on its result;
-// the browser views call it directly for search results and rate/star actions.
 void syncBrowserNodesToPlaylists(const std::vector<BrowserNodePtr>& nodes);
 
-// ---------------------------------------------------------------------------
-// Favorites, ratings, Instant Mix and Random Mix
-// ---------------------------------------------------------------------------
-// Star/rate a batch of nodes and report how many succeeded. `done` counts
-// individual successes even when `error` is set (the first failure's message
-// only — a mid-batch failure doesn't stop the remaining nodes, mirroring the
-// existing playlist-mutation convention of "best effort, report the first
-// error"). Nodes that fail are left with their pre-call starred/rating value.
 struct StarRatingResult {
     std::size_t done = 0;
     std::string error;
 };
 
-// Stars/unstars every Song, Album or Artist node in `targets`, pushing the
-// change back onto matching playlist entries via syncBrowserNodesToPlaylists.
-// Mutates each successful node's `starred` field in place. Callers filter
-// `targets` from the raw selection first (Song/Album/Artist only — Subsonic
-// has no favorite concept for other node types) and run this off the UI
-// thread; it makes one blocking HTTP call per target.
 StarRatingResult applyStarredToNodes(IBrowserClient& client,
                                      const std::vector<BrowserNodePtr>& targets,
                                      bool starred);
 
-// Rates every Song node in `targets` (1-5, or 0 to clear), the same way.
-// Ratings are a song-level Subsonic concept — callers filter to Song nodes
-// before calling this, same convention as applyStarredToNodes.
 StarRatingResult applyRatingToNodes(IBrowserClient& client,
                                     const std::vector<BrowserNodePtr>& targets,
                                     int stars);
 
-// True for the node types Instant Mix accepts as a seed.
 inline bool isSimilarEligible(const BrowserNode& n) {
     return !n.id.empty() &&
            (n.type == BrowserNode::Artist || n.type == BrowserNode::Album ||
             n.type == BrowserNode::Song);
 }
 
-// `nodes` without any song whose id is `songId` — Instant Mix drops its seed
-// song from getSimilarSongs2's answer, since the seed already heads the mix.
 inline std::vector<BrowserNodePtr> withoutSongId(std::vector<BrowserNodePtr> nodes,
                                                  const std::string& songId) {
     nodes.erase(std::remove_if(nodes.begin(), nodes.end(),
@@ -526,28 +405,16 @@ inline std::vector<BrowserNodePtr> withoutSongId(std::vector<BrowserNodePtr> nod
     return nodes;
 }
 
-// Fetches similar tracks (getSimilarSongs2.view) for one artist/album/song id —
-// last.fm-derived, or AudioMuse-AI's with its Navidrome plugin — and maps them
-// to song nodes, ready to enqueue. Background thread only.
 std::vector<BrowserNodePtr> fetchSimilarSongs(IBrowserClient& client,
                                               const std::string& itemId, int count,
                                               std::string& outError);
 
-// Fetches a fresh batch of random tracks and maps them to song nodes, ready to
-// enqueue. Background thread only.
 std::vector<BrowserNodePtr> fetchRandomMix(IBrowserClient& client, int count,
                                            std::string& outError);
 
-// The whole library as albums, for navidrome_library_api::list_albums (both platforms): every
-// album of every artist, in artist-list order, each completed from its artist when the server
-// left a field empty (artist name/id; cover id falls back to the album id). `aborted` is polled
-// between artists. False = the artist list itself failed (`outError` set) or aborted; a single
-// artist's album request failing just skips that artist. Background thread only.
 bool listLibraryAlbums(IBrowserClient& client, const std::function<bool()>& aborted,
                        const std::function<void(const Album&)>& onAlbum, std::string& outError);
 
-// Every song of every album of one artist, as song nodes ready to enqueue (play_artist).
 std::vector<BrowserNodePtr> collectArtistSongs(IBrowserClient& client, const std::string& artistId,
                                                std::string& outError);
-
-} // namespace navidrome
+}

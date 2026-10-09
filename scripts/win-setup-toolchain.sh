@@ -1,22 +1,8 @@
 #!/usr/bin/env bash
-# win-setup-toolchain.sh — one-time setup for the native Linux -> Windows x64
-# cross-compile toolchain used by win-build-local.sh.
-#
-# foobar2000 runs under Wine on Linux, loading Windows .dll components. The
-# component uses ATL/WTL + WinHTTP, which clang-cl compiles against a Windows
-# SDK/CRT/ATL fetched by `xwin` plus WTL headers — no MSVC, no Wine needed for
-# building (Wine only runs foobar). This installs everything win-build-local.sh
-# checks for. Safe to re-run (idempotent-ish): it skips downloads already done.
-#
-# Installs / provisions:
-#   - llvm clang lld          (pacman; provides clang-cl, lld-link, llvm-lib)
-#   - xwin SDK/CRT/ATL  -> ~/.local/share/xwin/sdk   (--include-atl)
-#   - WTL headers       -> ~/.local/share/wtl/Include
-#   - foobar2000 SDK    -> ../foobar2000 + ../pfc + ../libPPUI   (siblings)
 
 set -euo pipefail
 
-REPO="$(cd "$(dirname "$0")/.." && pwd)"   # repo root (scripts/ lives one level down)
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
 PARENT="$(cd "$REPO/.." && pwd)"
 XWIN_SDK="$HOME/.local/share/xwin/sdk"
 WTL_DIR="$HOME/.local/share/wtl"
@@ -26,7 +12,6 @@ SDK_REPO="https://github.com/reupen/foobar2000-sdk-unmodified"
 
 say() { echo "==> $*"; }
 
-# 1. LLVM toolchain ---------------------------------------------------------
 if ! command -v clang-cl >/dev/null || ! command -v lld-link >/dev/null; then
   say "installing llvm clang lld via pacman (needs sudo) ..."
   sudo pacman -S --needed --noconfirm llvm clang lld
@@ -34,7 +19,6 @@ else
   say "clang-cl / lld-link already present"
 fi
 
-# 2. xwin: Windows SDK + CRT + ATL -----------------------------------------
 if [ ! -f "$XWIN_SDK/crt/include/atlbase.h" ]; then
   say "fetching xwin $XWIN_VER ..."
   tmp="$(mktemp -d)"
@@ -49,7 +33,6 @@ else
   say "xwin SDK (with ATL) already at $XWIN_SDK"
 fi
 
-# 3. WTL headers ------------------------------------------------------------
 if [ ! -f "$WTL_DIR/Include/atlapp.h" ]; then
   say "downloading WTL 10 ..."
   tmp="$(mktemp -d)"
@@ -62,7 +45,6 @@ else
   say "WTL already at $WTL_DIR/Include"
 fi
 
-# 4. foobar2000 SDK siblings ------------------------------------------------
 if [ ! -f "$PARENT/foobar2000/helpers/foobar2000+atl.h" ]; then
   say "cloning foobar2000 SDK into sibling layout ..."
   stg="$PARENT/_sdk-staging"

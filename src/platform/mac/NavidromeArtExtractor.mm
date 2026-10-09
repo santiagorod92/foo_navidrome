@@ -4,14 +4,11 @@
 #import "../../core/NavidromeDebugLog.h"
 #include <SDK/album_art.h>
 
-// ---------------------------------------------------------------------------
-// album_art_extractor_instance — fetches cover art for one track from Navidrome
-// ---------------------------------------------------------------------------
 class navidrome_art_instance : public album_art_extractor_instance {
 public:
     navidrome_art_instance(const char* artId) : m_artId(artId) {}
 
-    album_art_data_ptr query(const GUID& p_what, abort_callback& /*p_abort*/) override {
+    album_art_data_ptr query(const GUID& p_what, abort_callback& ) override {
         if (p_what != album_art_ids::cover_front)
             throw exception_album_art_not_found();
 
@@ -20,9 +17,6 @@ public:
         if (!url) throw exception_album_art_not_found();
 
         NSError *err = nil;
-        // Fetch through SubsonicClient so the configured custom headers (e.g.
-        // Cloudflare Access tokens) are applied — a bare dataWithContentsOfURL:
-        // would send none and get blocked behind a Zero Trust tunnel.
         NSData *data = [SubsonicClient.sharedClient dataForURL:url error:&err];
         if (!data || data.length == 0) {
             NAVIDROME_WARN("Art", std::string("no art for id=") + m_artId.c_str() +
@@ -39,23 +33,15 @@ private:
     pfc::string8 m_artId;
 };
 
-// ---------------------------------------------------------------------------
-// album_art_extractor — foobar2000 calls is_our_path() for every track it
-// needs art for. Returning true from is_our_path() guarantees open() is
-// called, which is more reliable than album_art_fallback for HTTP streams.
-// ---------------------------------------------------------------------------
 class navidrome_art_extractor : public album_art_extractor {
 public:
-    bool is_our_path(const char* p_path, const char* /*p_ext*/) override {
+    bool is_our_path(const char* p_path, const char* ) override {
         return navidrome::isNavidromeArtPath(p_path);
     }
 
-    album_art_extractor_instance_ptr open(file_ptr /*p_file*/,
+    album_art_extractor_instance_ptr open(file_ptr ,
                                           const char* p_path,
-                                          abort_callback& /*p_abort*/) override {
-        // coverArt param (album / Folder.jpg id embedded at enqueue time) wins,
-        // then the id param, then the <id> segment of a navidrome://track/<id>
-        // URI — all three via the shared resolver so both platforms agree.
+                                          abort_callback& ) override {
         std::string artId = navidrome::resolveArtId(p_path ? p_path : "");
         if (artId.empty()) {
             NAVIDROME_WARN("Art", std::string("open: no art id resolvable from ")

@@ -1,5 +1,3 @@
-// Unit tests: MediaEnrichmentLogic.h/.cpp — URL/URI codec, cover-art URL, HTTP
-// classification, the LRU CoverCache, ESLyric config generation and MD5.
 #include "TestHarness.h"
 #include "../src/core/MediaEnrichmentLogic.h"
 #include "../src/core/SubsonicTypes.h"
@@ -215,9 +213,6 @@ TEST_CASE(testCache) {
     check(!cache.get("https://server", "user", "cover-0").empty(),
         "recently touched entry survives eviction");
 
-    // Overwriting an existing key must adjust the byte counter down by the old
-    // size before adding the new one — an underflow there would make every
-    // later put() think the cache is over budget and evict spuriously.
     cache.clear();
     cache.put("https://s", "u", "k", {1, 2, 3});
     cache.put("https://s", "u", "k", {9});
@@ -227,8 +222,6 @@ TEST_CASE(testCache) {
     check(!cache.get("https://s", "u", "k").empty(),
         "an overwrite keeps the byte counter sane (no spurious eviction)");
 
-    // Byte-total eviction (48 MiB budget) is a separate path from the 32-entry
-    // cap and otherwise has no coverage. The literal mirrors CoverCache::kMaxBytes.
     cache.clear();
     const std::size_t kMaxBytes = 48u * 1024u * 1024u;
     cache.put("https://s", "u", "big", std::vector<std::uint8_t>(kMaxBytes, 1));
@@ -277,16 +270,11 @@ TEST_CASE(testConfig) {
 }
 
 TEST_CASE(testMd5KnownAnswers) {
-    // The MD5 primitive is the module's one platform-specific line (WinCrypt vs
-    // CommonCrypto). A known-answer test on the empty string is a cheap canary
-    // for that primitive being mis-wired on a new toolchain.
     const auto emptyToken = navidrome::buildCoverArtUrl(
         "https://s", "u", "", "", "cid", 0);
     check(emptyToken.find("t=d41d8cd98f00b204e9800998ecf8427e") != std::string::npos,
         "md5(\"\") matches the well-known digest");
 
-    // Same credentials through buildCoverArtUrl and buildEsLyricConfigJs must
-    // yield an identical token — both are md5(password + salt).
     const auto url = navidrome::buildCoverArtUrl("https://s", "u", "pw", "st", "cid", 0);
     const auto at = url.find("&t=") + 3;
     const auto token = url.substr(at, url.find('&', at) - at);
@@ -300,10 +288,6 @@ TEST_CASE(testMd5KnownAnswers) {
 TEST_CASE(testCrossParserParity) {
     using navidrome::resolveArtId;
     using navidrome::trackIdFromURI;
-    // resolveArtId (art extractor) and trackIdFromURI (scrobbler) are separate
-    // implementations that both pull <id> out of navidrome://track/<id>.
-    // CLAUDE.md flags scheme drift between the two as a live trap — pin them to
-    // the same decoded output for ids that exercise the decoder.
     const char* ids[] = {"plain", "a/b", "a%2Fb", "中文+plus", "x?y"};
     for (const char* id : ids) {
         const auto uri = "navidrome://track/" + navidrome::uriEncode(id);
@@ -317,11 +301,8 @@ TEST_CASE(testCrossParserParity) {
     check(resolveArtId(withQuery) == "a/b" && trackIdFromURI(withQuery) == "a/b",
         "a trailing query string is stripped by both parsers before decoding");
 
-    // resolveArtId's id= query branch and queryParamFromURI are two more query
-    // parsers that must decode a parameter the same way.
     check(resolveArtId("navidrome://track/ignored?id=a%2Fb") ==
           navidrome::queryParamFromURI("navidrome://track/ignored?id=a%2Fb", "id"),
         "the id= query branch decodes the same as queryParamFromURI");
 }
-
-} // namespace
+}

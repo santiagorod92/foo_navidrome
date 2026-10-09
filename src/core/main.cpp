@@ -7,6 +7,7 @@
 #include "NavidromeAudioMuse.h"
 #include "NavidromeLibraryPlatform.h"
 #include "NavidromeDebugLog.h"
+#include "NavidromeDiagnostics.h"
 #include "SubsonicTypes.h"
 #include <SDK/metadb.h>
 #include <SDK/playlist.h>
@@ -18,6 +19,8 @@
 #include <SDK/threaded_process.h>
 #include <SDK/menu.h>
 #include <SDK/popup_message.h>
+#include <SDK/initquit.h>
+#include <SDK/coreversion.h>
 #include <helpers/advconfig_impl.h>
 #include <chrono>
 #include <unordered_map>
@@ -47,13 +50,6 @@ VALIDATE_COMPONENT_FILENAME("foo_navidrome.dll");
 
 FOOBAR2000_IMPLEMENT_CFG_VAR_DOWNGRADE;
 
-// ---------------------------------------------------------------------------
-// Playlist rating sync — see NavidromePlaylistSync.h for the rationale.
-// ---------------------------------------------------------------------------
-
-// The startup refresh costs one request per distinct album, which can't be
-// bounded in advance, so it needs an off switch. advconfig gives both platforms
-// the checkbox for one line — a cfg_bool would mean two preference dialogs.
 static constexpr GUID guid_advcfg_refresh_on_start =
     { 0xa1b2c3d4, 0x1111, 0x2222, { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01, 0x0e } };
 
@@ -66,12 +62,151 @@ bool navidrome::refreshRatingsOnStartEnabled() {
     return cfg_refresh_ratings_on_start.get();
 }
 
+static constexpr GUID guid_advcfg_verbose_log =
+    { 0xa1b2c3d4, 0x1111, 0x2222, { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x05, 0x01 } };
+
+static advconfig_checkbox_factory cfg_verbose_log(
+    "Navidrome: verbose logging (for bug reports)",
+    guid_advcfg_verbose_log, advconfig_branch::guid_branch_tools,
+    0.0, false);
+
+namespace navidrome {
+
+    extern cfg_string cfg_server_url;
+    extern cfg_string cfg_stream_format;
+    extern cfg_string cfg_custom_headers;
+    extern cfg_string cfg_library_ids;
+    extern cfg_var_modern::cfg_int  cfg_max_bitrate;
+    extern cfg_var_modern::cfg_bool cfg_scrobble;
+    extern cfg_var_modern::cfg_bool cfg_library_filter;
+}
+
+#ifndef _WIN32
+#  include <sys/sysctl.h>
+#endif
+
 namespace {
 
-// Writes one song's state into a file_info. Returns false when nothing changed,
-// so the caller can skip the hint — an unchanged forced hint is a pointless
-// metadb write and a pointless repaint. Absent rather than "0" is what unrated
-// has to look like, so a custom column renders empty instead of a zero.
+std::string osVersion() {
+#ifdef _WIN32
+    using RtlGetVersionFn = LONG (WINAPI*)(OSVERSIONINFOW*);
+    OSVERSIONINFOW v{}; v.dwOSVersionInfoSize = sizeof(v);
+    if (HMODULE ntdll = GetModuleHandleW(L"ntdll.dll"))
+        if (auto fn = reinterpret_cast<RtlGetVersionFn>(GetProcAddress(ntdll, "RtlGetVersion")))
+            if (fn(&v) == 0)
+                return std::to_string(v.dwMajorVersion) + "." + std::to_string(v.dwMinorVersion) +
+                       "." + std::to_string(v.dwBuildNumber);
+    return "unknown";
+#else
+    char buf[64] = {};
+    size_t len = sizeof(buf);
+    if (sysctlbyname("kern.osproductversion", buf, &len, nullptr, 0) == 0) return buf;
+    return "unknown";
+#endif
+}
+
+std::string wineVersion() {
+#ifdef _WIN32
+    using WineVersionFn = const char* (*)();
+    if (HMODULE ntdll = GetModuleHandleW(L"ntdll.dll"))
+        if (auto fn = reinterpret_cast<WineVersionFn>(GetProcAddress(ntdll, "wine_get_version")))
+            return fn();
+#endif
+    return {};
+}
+
+const char* buildArch() {
+#if defined(_M_ARM64EC)
+    return "ARM64EC";
+#elif defined(_M_X64) || defined(__x86_64__)
+    return "x64";
+#elif defined(_M_IX86) || defined(__i386__)
+    return "x86";
+#elif defined(__aarch64__) || defined(_M_ARM64)
+    return "arm64";
+#else
+    return "unknown";
+#endif
+}
+
+const char* platformName() {
+#ifdef _WIN32
+    return "Windows";
+#else
+    return "macOS";
+#endif
+}
+
+std::size_t csvCount(const char* csv) {
+    std::size_t n = 0;
+    bool inItem = false;
+    for (const char* p = csv; *p; ++p) {
+        if (*p == ',') { inItem = false; continue; }
+        if (!inItem && *p != ' ') { ++n; inItem = true; }
+    }
+    return n;
+}
+
+class NavidromeLogInit : public initquit {
+public:
+    void on_init() override {
+#ifndef NAVIDROME_DEBUG_LOG
+        try {
+            const pfc::string8 native =
+                filesystem::g_get_native_path(core_api::pathInProfile("foo_navidrome.log"));
+            navidrome::dbg::Logger::get().configure(native.c_str());
+        } catch (const std::exception& e) {
+            console::printf("Navidrome: can't open the component log: %s", e.what());
+        }
+#endif
+        navidrome::dbg::Logger::get().setVerboseProbe([] { return cfg_verbose_log.get(); });
+        NAVIDROME_NOTE("Env", std::string("foo_navidrome ") + COMPONENT_VERSION + " on " +
+                       core_version_info::g_get_version_string() + ", " + platformName() + " " +
+                       osVersion() + " (" + buildArch() + ")" +
+                       (wineVersion().empty() ? "" : ", Wine " + wineVersion()) +
+                       ", verbose=" + (cfg_verbose_log.get() ? "on" : "off"));
+    }
+};
+static initquit_factory_t<NavidromeLogInit> g_navidrome_log_init;
+}
+
+std::string navidrome::componentLogPath() { return dbg::Logger::get().path(); }
+
+std::string navidrome::collectDiagnostics() {
+    DiagnosticsInfo d;
+    d.componentVersion = COMPONENT_VERSION;
+    d.foobarVersion    = core_version_info::g_get_version_string();
+    d.platform         = platformName();
+    d.osVersion        = osVersion();
+    d.arch             = buildArch();
+    d.wineVersion      = wineVersion();
+
+    d.configured = libraryIsConfigured();
+    d.serverUrl  = cfg_server_url.get().c_str();
+    if (d.configured) {
+        std::string err;
+        d.serverReached = libraryServerInfo(d.server, err);
+        d.serverError   = err;
+    }
+
+    d.transcodeFormat = cfg_stream_format.get().c_str();
+    d.maxBitrate      = static_cast<int>(cfg_max_bitrate.get());
+    d.scrobble        = cfg_scrobble.get();
+    d.startupRefresh  = refreshRatingsOnStartEnabled();
+    d.customHeaders   = cfg_custom_headers.get().length() > 0;
+    d.libraryFilter   = cfg_library_filter.get();
+    d.libraryCount    = csvCount(cfg_library_ids.get().c_str());
+    d.audioMuse       = cfg_audiomuse_url.get().length() > 0;
+    d.verboseLogging  = dbg::Logger::get().verbose();
+
+    NAVIDROME_LOG("Env", std::string("diagnostics collected, server ") +
+                  (d.configured ? (d.serverReached ? "reachable" : "unreachable") : "not configured"));
+    d.logLines = dbg::Logger::get().recentLines();
+    return buildDiagnostics(d);
+}
+
+namespace {
+
 bool applyRatingFields(file_info& info, const navidrome::RatingUpdate& u) {
     auto have = [&info](const char* field) -> const char* {
         return info.meta_get_count_by_name(field) > 0 ? info.meta_get(field, 0) : nullptr;
@@ -96,8 +231,7 @@ bool applyRatingFields(file_info& info, const navidrome::RatingUpdate& u) {
     put(navidrome::kStarredTag, wantStarred);
     return true;
 }
-
-} // namespace
+}
 
 void navidrome::syncRatingsToPlaylists(std::vector<RatingUpdate> updates) {
     if (updates.empty()) return;
@@ -120,7 +254,7 @@ void navidrome::syncRatingsToPlaylists(std::vector<RatingUpdate> updates) {
             for (t_size i = 0; i < items.get_count(); ++i) {
                 metadb_handle_ptr handle = items[i];
                 const std::string songId = navidrome::trackIdFromURI(handle->get_path());
-                if (songId.empty()) continue;   // not one of ours
+                if (songId.empty()) continue;
                 auto it = bySongId.find(songId);
                 if (it == bySongId.end()) continue;
 
@@ -128,8 +262,6 @@ void navidrome::syncRatingsToPlaylists(std::vector<RatingUpdate> updates) {
                 if (!handle->get_info(info)) continue;
                 if (!applyRatingFields(info, it->second)) continue;
 
-                // Forced, because a normal hint is skipped when the file hasn't
-                // changed by timestamp — and ours never does, it's a URI.
                 hints->add_hint_forced(handle, info, filestats_invalid, true);
                 ++touched;
             }
@@ -150,21 +282,16 @@ navidrome::PlaylistAlbumScan navidrome::scanPlaylistAlbums() {
         pm->playlist_get_all_items(pl, items);
         for (t_size i = 0; i < items.get_count(); ++i) {
             const std::string path = items[i]->get_path();
-            if (navidrome::trackIdFromURI(path).empty()) continue;   // not one of ours
+            if (navidrome::trackIdFromURI(path).empty()) continue;
             scan.entries++;
 
             const std::string albumId = navidrome::queryParamFromURI(path, "albumId");
-            if (albumId.empty()) { scan.ungrouped++; continue; }  // written before albumId existed
+            if (albumId.empty()) { scan.ungrouped++; continue; }
             if (seen.insert(albumId).second) scan.albumIds.push_back(albumId);
         }
     }
     return scan;
 }
-
-// ---------------------------------------------------------------------------
-// Browser enqueue — see NavidromeBrowserEnqueue.h. SDK-only, so it isn't
-// written once per platform.
-// ---------------------------------------------------------------------------
 
 void navidrome::seekWhenReady(double positionSeconds) {
     std::thread([positionSeconds]() {
@@ -183,8 +310,6 @@ void navidrome::seekWhenReady(double positionSeconds) {
 
 namespace {
 
-// navidrome:// handles (radio: raw stream URLs) for `nodes`, with metadb hints
-// pushed so the rows render without a network round-trip.
 metadb_handle_list makeTrackHandles(
         const std::vector<navidrome::BrowserNodePtr>& nodes,
         const std::function<std::string(const std::string&)>& radioUrl) {
@@ -198,9 +323,6 @@ metadb_handle_list makeTrackHandles(
         playable_location_impl loc;
 
         if (node->type == BrowserNode::Radio) {
-            // Raw stream URL — bypasses navidrome:// entirely; foobar's stock
-            // HTTP input plays it (and any Shoutcast/Icecast metadata) with no
-            // involvement from our input handler.
             const std::string url = radioUrl ? radioUrl(node->id) : std::string();
             if (url.empty()) continue;
             loc.set_path(url.c_str());
@@ -242,9 +364,6 @@ metadb_handle_list makeTrackHandles(
         if (node->track > 0)            info.meta_set("tracknumber", pfc::format_int(node->track));
         if (node->year > 0)             info.meta_set("date",   pfc::format_int(node->year));
         if (node->duration > 0)         info.set_length(node->duration);
-        // The hint pre-populates metadb, so get_info() is not called for a
-        // freshly enqueued track — the rating has to be set here too or the
-        // column stays empty until an info reload.
         if (node->rating > 0)           info.meta_set(navidrome::kRatingTag, pfc::format_int(node->rating));
         if (node->starred)              info.meta_set(navidrome::kStarredTag, "1");
         hints->add_hint(handle, info, filestats_invalid, true);
@@ -253,11 +372,6 @@ metadb_handle_list makeTrackHandles(
     return tracks;
 }
 
-// Make `pl` active + playing and start playback at `first`, honoring the
-// user's Playback > Order setting. track_command_play asks the active playback
-// order for the starting track; the focus biases in-order modes to `first`.
-// (playlist_execute_default_action would instead pin that exact track and
-// ignore the order.)
 void playFrom(t_size pl, t_size first) {
     auto pm = playlist_manager::get();
     pm->set_active_playlist(pl);
@@ -265,8 +379,12 @@ void playFrom(t_size pl, t_size first) {
     pm->playlist_set_focus_item(pl, first);
     playback_control::get()->start(playback_control::track_command_play);
 }
+}
 
-} // namespace
+void navidrome::showBrowserQueueError(const std::string& msg) {
+    console::printf("Navidrome Browser: %s", msg.c_str());
+    popup_message::g_show(msg.c_str(), "Navidrome Browser", popup_message::icon_error);
+}
 
 std::size_t navidrome::enqueueBrowserNodes(
         const std::vector<BrowserNodePtr>& nodes,
@@ -291,7 +409,6 @@ std::size_t navidrome::enqueueBrowserNodes(
     if (play && tracks.get_count() > 0) {
         playFrom(pl, insertPos);
 
-        // Resume a saved position when this was a single bookmarked song.
         if (nodes.size() == 1 && nodes[0] && nodes[0]->bookmarkPositionMs > 0)
             navidrome::seekWhenReady(nodes[0]->bookmarkPositionMs / 1000.0);
     }
@@ -312,12 +429,6 @@ std::size_t navidrome::playNodesInNewPlaylist(const std::vector<BrowserNodePtr>&
     return tracks.get_count();
 }
 
-// ---------------------------------------------------------------------------
-// Playlist context menu — rate / star without going back to the browser tree.
-// Pure SDK apart from the two client calls, so it isn't written twice. Hides
-// itself when nothing in the selection is one of ours.
-// ---------------------------------------------------------------------------
-
 namespace {
 
 static constexpr GUID guid_ctx_group =
@@ -326,7 +437,6 @@ static constexpr GUID guid_ctx_group =
 static contextmenu_group_popup_factory g_ctx_group(
     guid_ctx_group, contextmenu_groups::root, "Navidrome", 0.0);
 
-// 0-5 set that rating (0 clears it), 6 stars, 7 unstars.
 constexpr unsigned kRatingItems = 6;
 constexpr unsigned kItemStar    = 6;
 constexpr unsigned kItemUnstar  = 7;
@@ -341,10 +451,8 @@ public:
         if (index == kItemStar)   { out = "Star";      return; }
         if (index == kItemUnstar) { out = "Unstar";    return; }
         if (index == 0)           { out = "No rating"; return; }
-        // No "Rating:" prefix — the submenu is already called Navidrome and the
-        // stars say the rest.
         pfc::string_formatter name;
-        for (unsigned i = 0; i < index; ++i) name << "\xE2\x98\x85";   // ★
+        for (unsigned i = 0; i < index; ++i) name << "\xE2\x98\x85";
         out = name;
     }
 
@@ -361,8 +469,6 @@ public:
         return g;
     }
 
-    // Returning false hides the item, so a playlist of local files never shows
-    // a Navidrome submenu.
     bool context_get_display(unsigned index, metadb_handle_list_cref data,
                              pfc::string_base& out, unsigned& flags,
                              const GUID& caller) override {
@@ -378,15 +484,11 @@ public:
     void context_command(unsigned index, metadb_handle_list_cref data,
                          const GUID& caller) override {
         (void)caller;
-        // Seed from what the entries currently show, then change only the field
-        // this command is about — setRating must not clear a star, and vice
-        // versa. Reading metadb is main-thread work, so it happens here rather
-        // than in the worker.
         std::vector<navidrome::RatingUpdate> updates;
         for (t_size i = 0; i < data.get_count(); ++i) {
             navidrome::RatingUpdate u;
             u.songId = navidrome::trackIdFromURI(data[i]->get_path());
-            if (u.songId.empty()) continue;   // local file in a mixed playlist
+            if (u.songId.empty()) continue;
 
             file_info_impl info;
             if (data[i]->get_info(info)) {
@@ -409,23 +511,16 @@ public:
                                        : navidrome::setStarredOnServer(u.songId, u.starred);
                 if (ok) done.push_back(std::move(u));
             }
-            // Only what the server accepted reaches the playlist, so a failed
-            // call leaves the old value visible instead of a hopeful one.
             navidrome::syncRatingsToPlaylists(std::move(done));
         }).detach();
     }
 };
 
 static contextmenu_item_factory_t<navidrome_context_menu> g_navidrome_context_menu;
-
-} // namespace
-
-// ---------------------------------------------------------------------------
-// Instant Mix + AudioMuse-AI (issue #16) — see NavidromeAudioMuse.h. All SDK,
-// so written once here; the platform supplies only the POST and the prompt.
-// ---------------------------------------------------------------------------
+}
 
 namespace navidrome {
+
 static constexpr GUID guid_cfg_audiomuse_url =
     { 0xa1b2c3d4, 0x1111, 0x2222, { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x04, 0x01 } };
 static constexpr GUID guid_cfg_audiomuse_token =
@@ -438,9 +533,8 @@ static constexpr GUID guid_cfg_audiomuse_count =
 cfg_string cfg_audiomuse_url(guid_cfg_audiomuse_url, "");
 cfg_string cfg_audiomuse_token(guid_cfg_audiomuse_token, "");
 cfg_string cfg_audiomuse_server(guid_cfg_audiomuse_server, "");
-// Qualified for the same reason as cfg_max_bitrate (CLAUDE.md gotcha).
 cfg_var_modern::cfg_int cfg_audiomuse_count(guid_cfg_audiomuse_count, audiomuse::kDefaultCount);
-} // namespace navidrome
+}
 
 navidrome::audiomuse::Settings navidrome::audioMuseSettings() {
     audiomuse::Settings s;
@@ -458,9 +552,6 @@ void reportError(const char* title, const std::string& msg) {
     popup_message::g_show(msg.c_str(), title, popup_message::icon_error);
 }
 
-// Runs `fetch` (worker thread, under a progress window with Abort) and hands
-// its song nodes to `done` on the main thread. An empty result with an error
-// is reported here; `done` only ever sees a non-empty list.
 using FetchFn = std::function<std::vector<navidrome::BrowserNodePtr>(
     threaded_process_status&, abort_callback&, std::string&)>;
 using DoneFn = std::function<void(std::vector<navidrome::BrowserNodePtr>)>;
@@ -474,8 +565,6 @@ void runWithProgress(const char* title, std::string what, FetchFn fetch, DoneFn 
     auto cb = threaded_process_callback_lambda::create();
     cb->m_run = [state, fetch, what](threaded_process_status& status, abort_callback& abort) {
         status.set_item(what.c_str());
-        // threaded_process turns exception_aborted into on_done(aborted=true);
-        // anything else becomes a reported error rather than a crash.
         try {
             state->nodes = fetch(status, abort, state->error);
         } catch (const exception_aborted&) {
@@ -501,7 +590,6 @@ void runWithProgress(const char* title, std::string what, FetchFn fetch, DoneFn 
         core_api::get_main_window(), title);
 }
 
-// AudioMuse ids -> playable song nodes, with progress (one getSong per id).
 std::vector<navidrome::BrowserNodePtr> resolveWithProgress(
         const std::vector<navidrome::audiomuse::Track>& tracks,
         threaded_process_status& status, abort_callback& abort, std::string& err) {
@@ -544,8 +632,7 @@ void runAudioMuse(navidrome::audiomuse::Kind kind, std::string subject,
             NAVIDROME_LOG("AudioMuse", "playlist \"" + name + "\": " + std::to_string(n) + " tracks");
         });
 }
-
-} // namespace
+}
 
 void navidrome::audioMuseTextSearchPrompt() {
     static std::string last;
@@ -579,13 +666,8 @@ void navidrome::audioMuseAlchemy(std::vector<audiomuse::AlchemySeed> seeds, std:
 
 namespace {
 
-// Instant Mix lands in its own playlist, replaced by every mix, so it never
-// grows the user's playlists (issue #16: "I don't listen from static playlists").
 constexpr const char* kInstantMixPlaylist = "Instant Mix";
 
-// Main thread. Fill the Instant Mix playlist with `seed` (when a song was the
-// seed) followed by `similar`, and play it from the seed. When the seed is the
-// track already playing, playback isn't restarted: the mix is built around it.
 void playInstantMix(metadb_handle_ptr seed, const std::vector<navidrome::BrowserNodePtr>& similar) {
     auto pm = playlist_manager::get();
     const metadb_handle_list mix = makeTrackHandles(similar, nullptr);
@@ -607,8 +689,6 @@ void playInstantMix(metadb_handle_ptr seed, const std::vector<navidrome::Browser
     }
 
     if (seedPlaying && playingFromMix) {
-        // Re-mixing from a track of the current mix: keep that entry (so
-        // playback carries on and "next" follows it), replace the rest.
         pm->playlist_remove_items(pl, pfc::bit_array_not(pfc::bit_array_one(playingIdx)));
         pm->playlist_add_items(pl, mix, pfc::bit_array_false());
     } else {
@@ -623,20 +703,15 @@ void playInstantMix(metadb_handle_ptr seed, const std::vector<navidrome::Browser
                   (seed.is_valid() ? " after the seed" : "") + (seedPlaying ? " (seed playing)" : ""));
 
     if (seedPlaying) {
-        // The playing track now sits at the head of this playlist, so "next"
-        // continues into the mix without interrupting it.
         pm->set_playing_playlist(pl);
         pm->playlist_set_focus_item(pl, 0);
         return;
     }
     pm->set_playing_playlist(pl);
-    if (seed.is_valid()) pm->playlist_execute_default_action(pl, 0);   // the seed itself first
-    else                 playFrom(pl, 0);                               // album/artist seed
+    if (seed.is_valid()) pm->playlist_execute_default_action(pl, 0);
+    else                 playFrom(pl, 0);
 }
 
-// Fetch similar songs for `seedId` (a song, album or artist id) under the
-// progress window, then playInstantMix. The seed song itself is dropped from
-// the answer — it already heads the mix.
 void runInstantMix(metadb_handle_ptr seed, std::string seedId, std::string title) {
     const int count = navidrome::audiomuse::clampCount(static_cast<int>(navidrome::cfg_audiomuse_count.get()));
     NAVIDROME_LOG("UI", "Instant Mix: seed=" + seedId + " count=" + std::to_string(count));
@@ -653,7 +728,6 @@ void runInstantMix(metadb_handle_ptr seed, std::string seedId, std::string title
         [seed](std::vector<navidrome::BrowserNodePtr> nodes) { playInstantMix(seed, nodes); });
 }
 
-// Playlist context menu: the first of our tracks in the selection is the seed.
 void startInstantMix(metadb_handle_list_cref data) {
     for (t_size i = 0; i < data.get_count(); ++i) {
         const std::string seedId = navidrome::trackIdFromURI(data[i]->get_path());
@@ -666,8 +740,7 @@ void startInstantMix(metadb_handle_list_cref data) {
         return;
     }
 }
-
-} // namespace
+}
 
 void navidrome::startInstantMix(const BrowserNodePtr& seed) {
     if (!seed || !isSimilarEligible(*seed)) return;
@@ -681,7 +754,6 @@ void navidrome::startInstantMix(const BrowserNodePtr& seed) {
 
 namespace {
 
-// Song Alchemy seeds from a context selection: every Navidrome track, ADDed.
 void startAlchemy(metadb_handle_list_cref data) {
     std::vector<navidrome::audiomuse::AlchemySeed> seeds;
     std::string label;
@@ -734,7 +806,6 @@ public:
         for (t_size i = 0; i < data.get_count() && !anyOurs; ++i)
             anyOurs = !navidrome::trackIdFromURI(data[i]->get_path()).empty();
         if (!anyOurs) return false;
-        // Alchemy needs the AudioMuse server; hide it until one is set.
         if (index == kItemAlchemy && !navidrome::audioMuseSettings().configured()) return false;
         get_item_name(index, out);
         return true;
@@ -749,7 +820,6 @@ public:
 
 static contextmenu_item_factory_t<navidrome_mix_context_menu> g_navidrome_mix_context_menu;
 
-// File > AudioMuse-AI > Text Search... / Instant Playlist...
 static constexpr GUID guid_mainmenu_audiomuse_group =
     { 0xa1b2c3d4, 0x1111, 0x2222, { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x04, 0x10 } };
 static constexpr GUID guid_mainmenu_audiomuse_search =
@@ -787,15 +857,10 @@ public:
 };
 
 FB2K_SERVICE_FACTORY(navidrome_audiomuse_mainmenu);
-
-} // namespace
+}
 
 namespace {
 
-// Lets other components (e.g. a custom skin's own rating UI) set a rating on a navidrome://
-// track without going through metadb_io_v2 (fails: "Tagging of this file format is not
-// supported" — there's no real file to tag). Same seed-then-change-one-field approach as
-// navidrome_context_menu::context_command above, minus the starred branch (not this API's job).
 class navidrome_rating_api_impl : public navidrome::navidrome_rating_api {
 public:
     bool is_navidrome_track(const metadb_handle_ptr& track) override {
@@ -825,9 +890,6 @@ public:
 
 static service_factory_single_t<navidrome_rating_api_impl> g_navidrome_rating_api_factory;
 
-// Publishes the server's library (albums, cover art, play album/artist) to other components —
-// first consumer: foo_ui_panels' album browser / cover flow. Written once over the platform
-// seams in NavidromeLibraryPlatform.h, so both platforms behave the same.
 class navidrome_library_api_impl : public navidrome::navidrome_library_api {
 public:
     bool is_configured() override { return navidrome::libraryIsConfigured(); }
@@ -900,8 +962,6 @@ private:
 
 static service_factory_single_t<navidrome_library_api_impl> g_navidrome_library_api_factory;
 
-// Publishes a track's lyrics to other components (foo_ui_panels' skins) — same cached lookup
-// as the macOS lyrics panel (navidrome::lyricsForTrackURI over the platform browser client).
 class navidrome_lyrics_api_impl : public navidrome::navidrome_lyrics_api {
 public:
     bool is_navidrome_track(const metadb_handle_ptr& track) override {
@@ -930,5 +990,4 @@ public:
 };
 
 static service_factory_single_t<navidrome_lyrics_api_impl> g_navidrome_lyrics_api_factory;
-
-} // namespace
+}

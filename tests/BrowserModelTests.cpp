@@ -1,4 +1,3 @@
-// Unit tests: NavidromeBrowserModel.h — node mappers, category list, row display.
 #include "TestHarness.h"
 #include "../src/core/NavidromeBrowserModel.h"
 
@@ -10,7 +9,6 @@ namespace {
 TEST_CASE(testBrowserModel) {
     using navidrome::BrowserNode;
 
-    // --- category list: canonical order, titles, all Category type ---
     auto cats = navidrome::buildCategoryNodes();
     check(cats.size() == 12, "buildCategoryNodes returns All Songs + the 11 smart lists");
     const BrowserNode::CategoryKind expectedOrder[] = {
@@ -33,7 +31,6 @@ TEST_CASE(testBrowserModel) {
           cats[8]->displayName == "Bookmarks",
           "Bookmarks sits between Playlists and Radio");
 
-    // --- album-list category mapping ---
     check(navidrome::albumListTypeForCategory(BrowserNode::CatRecentlyAdded) ==
           navidrome::AlbumListType::Newest, "RecentlyAdded -> Newest");
     check(navidrome::albumListTypeForCategory(BrowserNode::CatMostPlayed) ==
@@ -43,7 +40,6 @@ TEST_CASE(testBrowserModel) {
     check(navidrome::albumListTypeForCategory(BrowserNode::CatRandom) ==
           navidrome::AlbumListType::Random, "Random -> Random");
 
-    // --- model -> node mappers ---
     navidrome::Song s;
     s.id = "s1"; s.title = "Song"; s.artist = "A"; s.album = "Alb";
     s.albumId = "alb1"; s.suffix = "flac"; s.track = 4; s.year = 2001;
@@ -97,7 +93,6 @@ TEST_CASE(testBrowserModel) {
           !navidrome::isLeaf(*cats[1]),
           "All Songs is an enqueue-only leaf; the other categories still expand");
 
-    // --- row display ---
     navidrome::NodeDisplay d = navidrome::nodeDisplay(*sn);
     check(d.name == "\xE2\x98\x85 4. Song",
           "song row: track-number prefix then favorite marker");
@@ -108,8 +103,6 @@ TEST_CASE(testBrowserModel) {
           d.bookmarkText.find("0:42") != std::string::npos,
           "bookmark position renders as a clock glyph + M:SS");
 
-    // Single-column label (Win32) concatenates the pieces; a category row keeps
-    // its icon and is never given a star prefix.
     check(navidrome::singleColumnLabel(*sn) ==
           "\xE2\x98\x85 4. Song  \xE2\x98\x85\xE2\x98\x85\xE2\x98\x85  " + d.bookmarkText,
           "singleColumnLabel joins name + rating + bookmark with two spaces");
@@ -125,7 +118,6 @@ TEST_CASE(testBrowserModel) {
     check(navidrome::singleColumnLabel(*pn) == "Plain",
           "singleColumnLabel adds nothing when there are no markers");
 
-    // --- podcast episode / now-playing infoText ---
     navidrome::PodcastEpisode pendingEp;
     pendingEp.id = "ep1"; pendingEp.streamId = "s10"; pendingEp.title = "Pending";
     pendingEp.status = "downloading";
@@ -147,5 +139,4 @@ TEST_CASE(testBrowserModel) {
     check(navidrome::singleColumnLabel(nowPlaying) == "  alice \xC2\xB7 3m ago",
           "singleColumnLabel appends infoText (Now Playing's user/time annotation)");
 }
-
-} // namespace
+}

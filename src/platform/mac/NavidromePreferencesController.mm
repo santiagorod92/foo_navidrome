@@ -2,9 +2,11 @@
 #import "SubsonicClient.h"
 #include <SDK/cfg_var.h>
 #include "../../core/NavidromeAudioMuse.h"
+#include "../../core/NavidromeDiagnostics.h"
+#include "../../core/NavidromeDebugLog.h"
 
-// Forward declarations of config vars defined in NavidromePlugin.mm
 namespace navidrome {
+
     extern cfg_string cfg_server_url;
     extern cfg_string cfg_username;
     extern cfg_string cfg_password;
@@ -15,10 +17,6 @@ namespace navidrome {
     extern cfg_var_modern::cfg_int cfg_max_bitrate;
 }
 
-// Transcode format + max-bitrate choices are shared with the Windows prefs UI —
-// navidrome::streamFormatOptions() / navidrome::maxBitrateOptions() in
-// SubsonicTypes.h. `[entry[1]]` is the Subsonic `format=` value ("" = server
-// default, "raw" = original file).
 static NSArray<NSArray *> *NavidromeStreamFormats(void) {
     NSMutableArray<NSArray *> *out = [NSMutableArray array];
     for (const auto &o : navidrome::streamFormatOptions())
@@ -33,12 +31,6 @@ static NSArray<NSNumber *> *NavidromeMaxBitrates(void) {
     return out;
 }
 
-// ---------------------------------------------------------------------------
-// Custom HTTP headers editor — a standalone window opened from the prefs page.
-// Multiline "Name: Value" per line; persisted to cfg_custom_headers. The
-// "Add Cloudflare headers" button inserts the two CF Access service-token
-// header names so the user only pastes the id/secret values.
-// ---------------------------------------------------------------------------
 @interface NavidromeHeadersEditor : NSObject <NSWindowDelegate>
 @property (nonatomic, strong) NSWindow   *window;
 @property (nonatomic, strong) NSTextView *textView;
@@ -135,8 +127,6 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
 - (void)addCloudflare:(id)sender {
     NSMutableString *s = [self.textView.string mutableCopy] ?: [NSMutableString string];
     NSString *lower = s.lowercaseString;
-    // The two names don't overlap, so checking each against the original text
-    // is enough to avoid duplicates on repeated clicks.
     for (NSString *name in @[@"CF-Access-Client-Id", @"CF-Access-Client-Secret"]) {
         if ([lower rangeOfString:name.lowercaseString].location != NSNotFound) continue;
         if (s.length && ![s hasSuffix:@"\n"]) [s appendString:@"\n"];
@@ -166,6 +156,9 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
 @property (nonatomic, strong) NSButton           *scrobbleCheckbox;
 @property (nonatomic, strong) NSButton           *rescanButton;
 @property (nonatomic, strong) NSTextField        *scanStatusLabel;
+@property (nonatomic, strong) NSButton           *diagButton;
+@property (nonatomic, strong) NSButton           *logFolderButton;
+@property (nonatomic, strong) NSTextField        *diagStatusLabel;
 @property (nonatomic, strong) NSPopUpButton      *formatPopup;
 @property (nonatomic, strong) NSPopUpButton      *bitratePopup;
 @end
@@ -173,19 +166,13 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
 @implementation NavidromePreferencesController
 
 - (instancetype)init {
-    // No XIB — build UI programmatically in loadView
     self = [super initWithNibName:nil bundle:nil];
     return self;
 }
 
-// ---------------------------------------------------------------------------
-// Programmatic view
-// ---------------------------------------------------------------------------
-
 - (void)loadView {
     NSView *root = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 400, 260)];
 
-    // Helper: make label
     auto makeLabel = ^NSTextField *(NSString *text) {
         NSTextField *lbl = [NSTextField labelWithString:text];
         lbl.translatesAutoresizingMaskIntoConstraints = NO;
@@ -194,7 +181,6 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
         return lbl;
     };
 
-    // Helper: make text field
     auto makeField = ^NSTextField *(NSString *placeholder) {
         NSTextField *f = [[NSTextField alloc] init];
         f.translatesAutoresizingMaskIntoConstraints = NO;
@@ -203,7 +189,6 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
         return f;
     };
 
-    // Helper: make secure field
     auto makeSecure = ^NSSecureTextField *(NSString *placeholder) {
         NSSecureTextField *f = [[NSSecureTextField alloc] init];
         f.translatesAutoresizingMaskIntoConstraints = NO;
@@ -220,21 +205,18 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
     _usernameField = makeField(@"admin");
     _passwordField = makeSecure(@"••••••");
 
-    // Test button
     _testButton = [NSButton buttonWithTitle:@"Test Connection"
                                      target:self
                                      action:@selector(testConnection:)];
     _testButton.translatesAutoresizingMaskIntoConstraints = NO;
     [root addSubview:_testButton];
 
-    // Custom Headers button
     _headersButton = [NSButton buttonWithTitle:@"Custom Headers…"
                                         target:self
                                         action:@selector(openCustomHeaders:)];
     _headersButton.translatesAutoresizingMaskIntoConstraints = NO;
     [root addSubview:_headersButton];
 
-    // Scrobbling toggle
     _scrobbleCheckbox = [NSButton checkboxWithTitle:@"Report plays to Navidrome (scrobbling)"
                                              target:self
                                              action:@selector(scrobbleToggled:)];
@@ -244,8 +226,6 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
                                  "configured.";
     [root addSubview:_scrobbleCheckbox];
 
-    // Streaming transcode controls. Both are per-request stream.view params, so
-    // a change takes effect on the next track without reconnecting.
     NSTextField *lFormat  = makeLabel(@"Stream as:");
     NSTextField *lBitrate = makeLabel(@"Max bitrate:");
 
@@ -275,9 +255,7 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
                              "target format is lossless (FLAC / WAV).";
     [root addSubview:_bitratePopup];
 
-    // Rescan button — useful if files were added/removed server-side and the
-    // user doesn't want to wait for Navidrome's own scan schedule.
-    _rescanButton = [NSButton buttonWithTitle:@"Rescan Library Now"
+    _rescanButton = [NSButton buttonWithTitle:@"Rescan"
                                         target:self
                                         action:@selector(rescanLibrary:)];
     _rescanButton.translatesAutoresizingMaskIntoConstraints = NO;
@@ -287,24 +265,63 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
     _scanStatusLabel.translatesAutoresizingMaskIntoConstraints = NO;
     _scanStatusLabel.textColor = [NSColor secondaryLabelColor];
     _scanStatusLabel.font = [NSFont systemFontOfSize:11];
+    _scanStatusLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+    [_scanStatusLabel setContentCompressionResistancePriority:NSLayoutPriorityDefaultLow
+                                               forOrientation:NSLayoutConstraintOrientationHorizontal];
     [root addSubview:_scanStatusLabel];
 
-    // Status label
+    NSTextField *(^makeSection)(NSString *) = ^NSTextField *(NSString *title) {
+        NSTextField *t = [NSTextField labelWithString:title];
+        t.translatesAutoresizingMaskIntoConstraints = NO;
+        t.font = [NSFont boldSystemFontOfSize:NSFont.systemFontSize];
+        [root addSubview:t];
+        return t;
+    };
+    NSBox *(^makeLine)(void) = ^NSBox *(void) {
+        NSBox *line = [[NSBox alloc] init];
+        line.boxType = NSBoxSeparator;
+        line.translatesAutoresizingMaskIntoConstraints = NO;
+        [root addSubview:line];
+        return line;
+    };
+    NSTextField *connSection    = makeSection(@"Navidrome Server Connection");
+    NSBox       *connLine       = makeLine();
+    NSTextField *librarySection = makeSection(@"Rescan Navidrome Library");
+    NSBox       *libraryLine    = makeLine();
+    NSTextField *logsSection    = makeSection(@"Logs and Troubleshooting");
+    NSBox       *logsLine       = makeLine();
+
+    _diagButton = [NSButton buttonWithTitle:@"Copy Diagnostics"
+                                     target:self
+                                     action:@selector(copyDiagnostics:)];
+    _diagButton.translatesAutoresizingMaskIntoConstraints = NO;
+    [root addSubview:_diagButton];
+
+    _logFolderButton = [NSButton buttonWithTitle:@"Show Log in Finder"
+                                          target:self
+                                          action:@selector(showLogInFinder:)];
+    _logFolderButton.translatesAutoresizingMaskIntoConstraints = NO;
+    [root addSubview:_logFolderButton];
+
+    for (NSButton *b in @[ _rescanButton, _diagButton, _logFolderButton ])
+        [b setContentHuggingPriority:NSLayoutPriorityDefaultHigh
+                      forOrientation:NSLayoutConstraintOrientationHorizontal];
+
+    _diagStatusLabel = [NSTextField labelWithString:@""];
+    _diagStatusLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    _diagStatusLabel.textColor = [NSColor secondaryLabelColor];
+    _diagStatusLabel.font = [NSFont systemFontOfSize:11];
+    _diagStatusLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+    [_diagStatusLabel setContentCompressionResistancePriority:NSLayoutPriorityDefaultLow
+                                               forOrientation:NSLayoutConstraintOrientationHorizontal];
+    [root addSubview:_diagStatusLabel];
+
     _statusLabel = [NSTextField labelWithString:@""];
     _statusLabel.translatesAutoresizingMaskIntoConstraints = NO;
     _statusLabel.textColor = [NSColor secondaryLabelColor];
     _statusLabel.font = [NSFont systemFontOfSize:11];
     [root addSubview:_statusLabel];
 
-    // Info label at bottom
-    NSTextField *infoLabel = [NSTextField wrappingLabelWithString:
-        @"After saving, open File › Open Navidrome Browser to browse your music library."];
-    infoLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    infoLabel.textColor = [NSColor secondaryLabelColor];
-    infoLabel.font = [NSFont systemFontOfSize:11];
-    [root addSubview:infoLabel];
-
-    // Credit watermark, pinned to the bottom-left corner.
     NSTextField *creditLabel = [NSTextField labelWithString:
         [NSString stringWithFormat:@"%s\n%s", navidrome::kPrefsAuthorLine, navidrome::kSourceCodeUrl]];
     creditLabel.translatesAutoresizingMaskIntoConstraints = NO;
@@ -319,18 +336,21 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
     CGFloat fieldH = 22;
 
     [NSLayoutConstraint activateConstraints:@[
-        // Server row
-        [lServer.topAnchor constraintEqualToAnchor:root.topAnchor constant:pad],
+        [connSection.topAnchor constraintEqualToAnchor:root.topAnchor constant:pad],
+        [connSection.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:pad],
+        [connLine.centerYAnchor constraintEqualToAnchor:connSection.centerYAnchor],
+        [connLine.leadingAnchor constraintEqualToAnchor:connSection.trailingAnchor constant:8],
+        [connLine.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-pad],
+
         [lServer.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:pad],
         [lServer.widthAnchor constraintEqualToConstant:labelW],
         [lServer.centerYAnchor constraintEqualToAnchor:_serverField.centerYAnchor],
 
-        [_serverField.topAnchor constraintEqualToAnchor:root.topAnchor constant:pad],
+        [_serverField.topAnchor constraintEqualToAnchor:connSection.bottomAnchor constant:vGap],
         [_serverField.leadingAnchor constraintEqualToAnchor:lServer.trailingAnchor constant:8],
         [_serverField.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-pad],
         [_serverField.heightAnchor constraintEqualToConstant:fieldH],
 
-        // Username row
         [lUser.topAnchor constraintEqualToAnchor:_serverField.bottomAnchor constant:vGap],
         [lUser.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:pad],
         [lUser.widthAnchor constraintEqualToConstant:labelW],
@@ -341,7 +361,6 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
         [_usernameField.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-pad],
         [_usernameField.heightAnchor constraintEqualToConstant:fieldH],
 
-        // Password row
         [lPassword.topAnchor constraintEqualToAnchor:_usernameField.bottomAnchor constant:vGap],
         [lPassword.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:pad],
         [lPassword.widthAnchor constraintEqualToConstant:labelW],
@@ -352,7 +371,6 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
         [_passwordField.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-pad],
         [_passwordField.heightAnchor constraintEqualToConstant:fieldH],
 
-        // Test button + status
         [_testButton.topAnchor constraintEqualToAnchor:_passwordField.bottomAnchor constant:vGap * 1.5],
         [_testButton.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:pad + labelW + 8],
 
@@ -360,15 +378,12 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
         [_statusLabel.leadingAnchor constraintEqualToAnchor:_testButton.trailingAnchor constant:10],
         [_statusLabel.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-pad],
 
-        // Custom Headers button (below Test row)
         [_headersButton.topAnchor constraintEqualToAnchor:_testButton.bottomAnchor constant:vGap],
         [_headersButton.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:pad + labelW + 8],
 
-        // Scrobbling checkbox
         [_scrobbleCheckbox.topAnchor constraintEqualToAnchor:_headersButton.bottomAnchor constant:vGap],
         [_scrobbleCheckbox.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:pad + labelW + 8],
 
-        // Stream format row
         [lFormat.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:pad],
         [lFormat.widthAnchor constraintEqualToConstant:labelW],
         [lFormat.centerYAnchor constraintEqualToAnchor:_formatPopup.centerYAnchor],
@@ -376,7 +391,6 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
         [_formatPopup.topAnchor constraintEqualToAnchor:_scrobbleCheckbox.bottomAnchor constant:vGap],
         [_formatPopup.leadingAnchor constraintEqualToAnchor:lFormat.trailingAnchor constant:8],
 
-        // Max bitrate row
         [lBitrate.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:pad],
         [lBitrate.widthAnchor constraintEqualToConstant:labelW],
         [lBitrate.centerYAnchor constraintEqualToAnchor:_bitratePopup.centerYAnchor],
@@ -384,31 +398,41 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
         [_bitratePopup.topAnchor constraintEqualToAnchor:_formatPopup.bottomAnchor constant:vGap],
         [_bitratePopup.leadingAnchor constraintEqualToAnchor:lBitrate.trailingAnchor constant:8],
 
-        // Rescan button + status
-        [_rescanButton.topAnchor constraintEqualToAnchor:_bitratePopup.bottomAnchor constant:vGap * 1.5],
+        [librarySection.topAnchor constraintEqualToAnchor:_bitratePopup.bottomAnchor constant:vGap * 2],
+        [librarySection.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:pad],
+        [libraryLine.centerYAnchor constraintEqualToAnchor:librarySection.centerYAnchor],
+        [libraryLine.leadingAnchor constraintEqualToAnchor:librarySection.trailingAnchor constant:8],
+        [libraryLine.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-pad],
+
+        [_rescanButton.topAnchor constraintEqualToAnchor:librarySection.bottomAnchor constant:vGap],
         [_rescanButton.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:pad + labelW + 8],
 
         [_scanStatusLabel.centerYAnchor constraintEqualToAnchor:_rescanButton.centerYAnchor],
         [_scanStatusLabel.leadingAnchor constraintEqualToAnchor:_rescanButton.trailingAnchor constant:10],
         [_scanStatusLabel.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-pad],
 
-        // Info label
-        [infoLabel.topAnchor constraintEqualToAnchor:_rescanButton.bottomAnchor constant:vGap * 2],
-        [infoLabel.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:pad],
-        [infoLabel.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-pad],
+        [logsSection.topAnchor constraintEqualToAnchor:_rescanButton.bottomAnchor constant:vGap * 2],
+        [logsSection.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:pad],
+        [logsLine.centerYAnchor constraintEqualToAnchor:logsSection.centerYAnchor],
+        [logsLine.leadingAnchor constraintEqualToAnchor:logsSection.trailingAnchor constant:8],
+        [logsLine.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-pad],
 
-        // Credit watermark: below the info label, at the bottom when there's room
+        [_diagButton.topAnchor constraintEqualToAnchor:logsSection.bottomAnchor constant:vGap],
+        [_diagButton.leadingAnchor constraintEqualToAnchor:_rescanButton.leadingAnchor],
+        [_logFolderButton.centerYAnchor constraintEqualToAnchor:_diagButton.centerYAnchor],
+        [_logFolderButton.leadingAnchor constraintEqualToAnchor:_diagButton.trailingAnchor constant:8],
+        [_diagStatusLabel.centerYAnchor constraintEqualToAnchor:_diagButton.centerYAnchor],
+        [_diagStatusLabel.leadingAnchor constraintEqualToAnchor:_logFolderButton.trailingAnchor constant:10],
+        [_diagStatusLabel.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-pad],
+
         [creditLabel.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:pad],
-        [creditLabel.topAnchor constraintGreaterThanOrEqualToAnchor:infoLabel.bottomAnchor constant:vGap * 2],
+        [creditLabel.topAnchor constraintGreaterThanOrEqualToAnchor:_diagButton.bottomAnchor constant:vGap * 2],
     ]];
-    // Low priority: a short page must not fight the host's frame for the root view.
     NSLayoutConstraint *creditBottom =
         [creditLabel.bottomAnchor constraintEqualToAnchor:root.bottomAnchor constant:-pad];
     creditBottom.priority = NSLayoutPriorityDefaultLow;
     creditBottom.active = YES;
 
-    // Set notifications for immediate-save behaviour (foobar2000 preferences pages
-    // are expected to apply changes as they're made, not on an "Apply" button).
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(fieldChanged:)
                                                  name:NSControlTextDidChangeNotification
@@ -429,10 +453,6 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
     [super viewDidLoad];
     [self loadSettings];
 }
-
-// ---------------------------------------------------------------------------
-// Load / save
-// ---------------------------------------------------------------------------
 
 - (void)loadSettings {
     _serverField.stringValue   = [NSString stringWithUTF8String:navidrome::cfg_server_url.get().c_str()];
@@ -480,14 +500,8 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
     navidrome::cfg_server_url.set([_serverField.stringValue UTF8String] ?: "");
     navidrome::cfg_username.set  ([_usernameField.stringValue UTF8String] ?: "");
     navidrome::cfg_password.set  ([_passwordField.stringValue UTF8String] ?: "");
-    // Server / credentials changed — drop the cached music-folder list so the
-    // library filter re-fetches against the new target.
     [[SubsonicClient sharedClient] refreshMusicFolders];
 }
-
-// ---------------------------------------------------------------------------
-// Test connection
-// ---------------------------------------------------------------------------
 
 - (IBAction)testConnection:(id)sender {
     [self saveSettings];
@@ -512,9 +526,6 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
     });
 }
 
-// Kicks off a server-side rescan and polls getScanStatus.view until it
-// finishes. Subsonic doesn't report a total item count up front, so the
-// status text can only show "N processed", not a percentage.
 - (IBAction)rescanLibrary:(id)sender {
     _rescanButton.enabled = NO;
     _scanStatusLabel.textColor = [NSColor secondaryLabelColor];
@@ -543,7 +554,7 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
             BOOL polled = [SubsonicClient.sharedClient getScanStatusWithScanning:&scanning
                                                                              count:&count
                                                                              error:&pollErr];
-            if (!polled) break;   // transient error — stop polling, last known count stands
+            if (!polled) break;
             dispatch_async(dispatch_get_main_queue(), ^{
                 self->_scanStatusLabel.stringValue = [NSString stringWithFormat:@"Scanning… %ld processed",
                     (long)count];
@@ -559,6 +570,35 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
     });
 }
 
+- (IBAction)copyDiagnostics:(id)sender {
+    _diagButton.enabled = NO;
+    _diagStatusLabel.stringValue = @"Collecting…";
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        std::string text;
+        navidrome::dbg::runGuarded("UI", "copy diagnostics", [&] { text = navidrome::collectDiagnostics(); });
+        NSString *s = [NSString stringWithUTF8String:text.c_str()];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self->_diagButton.enabled = YES;
+            NSPasteboard *pb = NSPasteboard.generalPasteboard;
+            [pb clearContents];
+            const BOOL ok = s.length > 0 && [pb setString:s forType:NSPasteboardTypeString];
+            if (!ok) NAVIDROME_WARN("UI", "copy diagnostics: pasteboard write failed");
+            self->_diagStatusLabel.stringValue = ok ? @"Copied to the clipboard"
+                                                    : @"Couldn't copy the diagnostics";
+        });
+    });
+}
+
+- (IBAction)showLogInFinder:(id)sender {
+    const std::string path = navidrome::componentLogPath();
+    if (path.empty()) { _diagStatusLabel.stringValue = @"No log file yet"; return; }
+    NSURL *url = [NSURL fileURLWithPath:[NSString stringWithUTF8String:path.c_str()]];
+    if ([NSFileManager.defaultManager fileExistsAtPath:url.path])
+        [NSWorkspace.sharedWorkspace activateFileViewerSelectingURLs:@[ url ]];
+    else
+        [NSWorkspace.sharedWorkspace openURL:url.URLByDeletingLastPathComponent];
+}
+
 - (IBAction)openCustomHeaders:(id)sender {
     [NavidromeHeadersEditor show];
 }
@@ -568,11 +608,6 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
 }
 
 @end
-
-// ---------------------------------------------------------------------------
-// AudioMuse-AI sub-page. The cfg vars are the shared ones in main.cpp
-// (NavidromeAudioMuse.h); same fields as the Windows page.
-// ---------------------------------------------------------------------------
 
 @implementation NavidromeAudioMusePrefsController {
     NSTextField       *_urlField;
@@ -658,7 +693,6 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
         navidrome::audiomuse::clampCount((int)navidrome::cfg_audiomuse_count.get())];
 }
 
-// Live write, like every Mac prefs page here (no apply hook through wrapNSObject).
 - (void)fieldChanged:(NSNotification *)note {
     navidrome::cfg_audiomuse_url.set(_urlField.stringValue.UTF8String ?: "");
     navidrome::cfg_audiomuse_token.set(_tokenField.stringValue.UTF8String ?: "");

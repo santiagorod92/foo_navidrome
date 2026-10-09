@@ -3,10 +3,6 @@
 #include "../../core/stdafx.h"
 #include "../../core/SubsonicTypes.h"
 
-// ---------------------------------------------------------------------------
-// Data model objects
-// ---------------------------------------------------------------------------
-
 @interface SubsonicArtist : NSObject
 @property (nonatomic, copy) NSString *artistId;
 @property (nonatomic, copy) NSString *name;
@@ -35,11 +31,11 @@
 @property (nonatomic, copy) NSString *albumId;
 @property (nonatomic, assign) NSInteger track;
 @property (nonatomic, assign) NSInteger year;
-@property (nonatomic, assign) NSTimeInterval duration;  // seconds
+@property (nonatomic, assign) NSTimeInterval duration;
 @property (nonatomic, copy) NSString *coverArtId;
-@property (nonatomic, copy) NSString *suffix;           // mp3, flac, etc.
+@property (nonatomic, copy) NSString *suffix;
 @property (nonatomic, assign) BOOL starred;
-@property (nonatomic, assign) NSInteger rating;         // 0 = unrated, else 1-5
+@property (nonatomic, assign) NSInteger rating;
 @end
 
 @interface SubsonicPlaylist : NSObject
@@ -50,23 +46,17 @@
 @property (nonatomic, assign) NSTimeInterval duration;
 @end
 
-// A genre from getGenres.view. Subsonic calls the genre itself "value" in the
-// JSON, not "name".
 @interface SubsonicGenre : NSObject
 @property (nonatomic, copy) NSString *name;
 @property (nonatomic, assign) NSInteger songCount;
 @property (nonatomic, assign) NSInteger albumCount;
 @end
 
-// A music folder / "library" (getMusicFolders.view). Subsonic reports the id
-// as a JSON number; it's normalized to a string here to match every other id.
 @interface SubsonicMusicFolder : NSObject
 @property (nonatomic, copy) NSString *folderId;
 @property (nonatomic, copy) NSString *name;
 @end
 
-// An internet radio station (getInternetRadioStations.view). Playback uses
-// streamUrl directly — no navidrome:// URI, no transcoding.
 @interface SubsonicRadioStation : NSObject
 @property (nonatomic, copy) NSString *stationId;
 @property (nonatomic, copy) NSString *name;
@@ -74,16 +64,12 @@
 @property (nonatomic, copy) NSString *homePageUrl;
 @end
 
-// A saved resume position (getBookmarks.view). Subsonic embeds the full song
-// object per bookmark and reports position in milliseconds.
 @interface SubsonicBookmark : NSObject
 @property (nonatomic, strong) SubsonicSong *song;
 @property (nonatomic, assign) NSTimeInterval positionMs;
 @property (nonatomic, copy) NSString *comment;
 @end
 
-// A podcast episode (getPodcasts.view). Only playable once status is
-// "completed" — streamId is the underlying library track id in that case.
 @interface SubsonicPodcastEpisode : NSObject
 @property (nonatomic, copy) NSString *episodeId;
 @property (nonatomic, copy) NSString *streamId;
@@ -94,8 +80,6 @@
 @property (nonatomic, assign) NSTimeInterval duration;
 @end
 
-// A subscribed podcast channel (getPodcasts.view). Episodes are fetched
-// separately, scoped to this channel's id.
 @interface SubsonicPodcastChannel : NSObject
 @property (nonatomic, copy) NSString *channelId;
 @property (nonatomic, copy) NSString *url;
@@ -105,17 +89,12 @@
 @property (nonatomic, copy) NSString *errorMessage;
 @end
 
-// One entry from getNowPlaying.view — a song another user is currently (or
-// was recently) streaming, server-wide.
 @interface SubsonicNowPlayingEntry : NSObject
 @property (nonatomic, strong) SubsonicSong *song;
 @property (nonatomic, copy) NSString *username;
 @property (nonatomic, assign) NSInteger minutesAgo;
 @end
 
-// Artist biography + last.fm-derived similar artists (getArtistInfo2.view).
-// Backs the "Artist Info" context-menu action and the artist's "Similar
-// Artists" child node — one request serves both.
 @interface SubsonicArtistInfo : NSObject
 @property (nonatomic, copy) NSString *biography;
 @property (nonatomic, copy) NSString *musicBrainzId;
@@ -126,145 +105,89 @@
 @property (nonatomic, copy) NSArray<SubsonicArtist *> *similarArtists;
 @end
 
-// Item kinds accepted by star.view / unstar.view — Subsonic names the query
-// parameter differently per kind (id / albumId / artistId).
 typedef NS_ENUM(NSInteger, SubsonicStarKind) {
     SubsonicStarKindSong,
     SubsonicStarKindAlbum,
     SubsonicStarKindArtist,
 };
 
-// ---------------------------------------------------------------------------
-// Subsonic API client (Singleton)
-// ---------------------------------------------------------------------------
-
 @interface SubsonicClient : NSObject
 
 + (instancetype)sharedClient;
 
-// Returns YES if server URL + credentials are configured
 - (BOOL)isConfigured;
 
-// Test connection — returns YES on success, sets *error on failure
 - (BOOL)pingWithError:(NSError **)error;
+- (BOOL)serverInfo:(navidrome::ServerInfo &)info error:(std::string &)error;
 
-// Classified outcome of the most recent request (transport + Subsonic status).
-// Lets a caller tell "credentials rejected" (surface to the user) from
-// "connection reset" (transient) without matching on NSError strings.
 - (navidrome::Error)lastError;
 
-// Music folders / "libraries" (getMusicFolders.view). A single-library server
-// reports exactly one. -cachedMusicFolders fetches once per session on demand
-// then serves a cached copy (empty array if that fetch failed); the browse
-// methods use it to decide the multi-library fan-out, and the prefs UI reads
-// it to populate its checklist. -refreshMusicFolders drops the cache.
 - (NSArray<SubsonicMusicFolder *> *)getMusicFoldersWithError:(NSError **)error;
 - (NSArray<SubsonicMusicFolder *> *)cachedMusicFolders;
 - (void)refreshMusicFolders;
-// Library ids the browser shows as top-level "group by library" nodes. A 2+
-// library server ALWAYS groups (independent of the "Only include selected
-// libraries" checkbox); the checkbox only narrows which libraries appear, and
-// only when 2+ are ticked. @[] for a single-library server or a one-library
-// scope. Browser groups when this has 2+ entries.
 - (NSArray<NSString *> *)libraryGroupingIds;
 
-// Browse hierarchy
 - (NSArray<SubsonicArtist *> *)getArtistsWithError:(NSError **)error;
-// Artists of one specific library (getArtists.view?musicFolderId=). Backs the
-// per-library tree nodes shown when 2+ libraries are selected in the filter.
 - (NSArray<SubsonicArtist *> *)getArtistsForLibrary:(NSString *)libraryId
                                               error:(NSError **)error;
 - (NSArray<SubsonicAlbum *> *)getAlbumsForArtist:(NSString *)artistId
                                             error:(NSError **)error;
-// scopeLibrary (nil = whole selection): pins the album list to one library —
-// used when browsing under a per-library tree node.
 - (NSArray<SubsonicAlbum *> *)getAlbumsForArtist:(NSString *)artistId
                                             error:(NSError **)error
                                    scopeLibrary:(NSString *)scopeLibraryId;
 - (NSArray<SubsonicSong *> *)getSongsForAlbum:(NSString *)albumId
                                          error:(NSError **)error;
 
-// Search (returns dict with keys "artists", "albums", "songs")
 - (NSDictionary *)search:(NSString *)query error:(NSError **)error;
 
-// Smart lists — getAlbumList2.view "type" (newest / frequent / recent /
-// random / starred). Backs the browser's category nodes.
 - (NSArray<SubsonicAlbum *> *)getAlbumListOfType:(NSString *)type
                                             size:(NSInteger)size
                                            error:(NSError **)error;
 
-// Starred songs (getStarred2.view). Albums/artists from the same response are
-// ignored — the Starred node lists tracks.
 - (NSArray<SubsonicSong *> *)getStarredSongsWithError:(NSError **)error;
 
-// Genres (getGenres.view) and their tracks (getSongsByGenre.view). Back the
-// browser's "Genres" category node.
 - (NSArray<SubsonicGenre *> *)getGenresWithError:(NSError **)error;
 - (NSArray<SubsonicSong *> *)getSongsForGenre:(NSString *)genre
                                         count:(NSInteger)count
                                         error:(NSError **)error;
 
-// Similar songs (getSimilarSongs2.view) for an artist, album or song id —
-// getSimilarSongs2 recommendations, used by Instant Mix.
 - (NSArray<SubsonicSong *> *)getSimilarSongsForId:(NSString *)itemId
                                              count:(NSInteger)count
                                              error:(NSError **)error;
 
-// A random batch of tracks (getRandomSongs.view). Backs the "Random Mix"
-// smart-list node.
 - (NSArray<SubsonicSong *> *)getRandomSongsWithCount:(NSInteger)count
                                                 error:(NSError **)error;
 
-// Every song in the (filtered) library — paged search3.view with an empty
-// query. Backs the "All Songs" browser node.
 - (NSArray<SubsonicSong *> *)getAllSongsWithError:(NSError **)error;
 
-// Biography + last.fm-derived similar artists (getArtistInfo2.view). Backs
-// the "Artist Info" context-menu action and the "Similar Artists" child node.
 - (SubsonicArtistInfo *)getArtistInfoForId:(NSString *)artistId
                                       error:(NSError **)error;
 
-// Top tracks for an artist (getTopSongs.view, keyed by artist NAME, not id).
-// Backs the "Top Songs" child node.
 - (NSArray<SubsonicSong *> *)getTopSongsForArtist:(NSString *)artistName
                                              count:(NSInteger)count
                                              error:(NSError **)error;
 
-// One song's lyrics (getLyricsBySongId.view, legacy getLyrics.view by artist +
-// title as fallback). Returned as the shared C++ type — its only callers are
-// C++ (the IBrowserClient adapter feeding the lyrics panel / navidrome_lyrics_api).
 - (navidrome::Lyrics)getLyricsForSongId:(NSString *)songId
                                  artist:(NSString *)artist
                                   title:(NSString *)title
                                   error:(NSError **)error;
 
-// Favorites + ratings. Both are per-user server-side state, so they show up in
-// the Navidrome web UI and every other Subsonic client.
 - (BOOL)setStarred:(BOOL)starred
              forId:(NSString *)itemId
               kind:(SubsonicStarKind)kind
              error:(NSError **)error;
-// rating 1-5; 0 clears the rating.
 - (BOOL)setRating:(NSInteger)rating forSongId:(NSString *)songId error:(NSError **)error;
 
-// Single song lookup (getSong.view). Used to refresh the per-user rating of a
-// track that is already playing, without re-browsing its album.
 - (SubsonicSong *)getSongWithId:(NSString *)songId error:(NSError **)error;
 
-// Server-side playlists
 - (NSArray<SubsonicPlaylist *> *)getPlaylistsWithError:(NSError **)error;
 - (NSArray<SubsonicSong *> *)getPlaylistSongs:(NSString *)playlistId error:(NSError **)error;
-// Creates a new playlist; songs are sent in order. Returns the new playlist's
-// id, or nil on failure. songIds may be empty to create an empty playlist.
 - (NSString *)createPlaylistNamed:(NSString *)name
                           songIds:(NSArray<NSString *> *)songIds
                             error:(NSError **)error;
-// Appends songs to an existing playlist (updatePlaylist.view songIdToAdd).
 - (BOOL)addSongs:(NSArray<NSString *> *)songIds
       toPlaylist:(NSString *)playlistId
            error:(NSError **)error;
-// Removes entries by their zero-based position in the playlist. Indexes are
-// applied highest-first so earlier removals can't shift the later ones.
 - (BOOL)removeIndexes:(NSArray<NSNumber *> *)indexes
          fromPlaylist:(NSString *)playlistId
                 error:(NSError **)error;
@@ -273,12 +196,7 @@ typedef NS_ENUM(NSInteger, SubsonicStarKind) {
                  error:(NSError **)error;
 - (BOOL)deletePlaylist:(NSString *)playlistId error:(NSError **)error;
 
-// Internet radio stations (getInternetRadioStations.view + CRUD). Playback
-// uses SubsonicRadioStation.streamUrl directly.
 - (NSArray<SubsonicRadioStation *> *)getRadioStationsWithError:(NSError **)error;
-// Creates a new station. Subsonic's create endpoint doesn't echo the new
-// station's id back (unlike createPlaylist.view), so this returns @"" on
-// success and nil on failure — check *error, not the returned string.
 - (NSString *)createRadioStationWithStreamURL:(NSString *)streamUrl
                                           name:(NSString *)name
                                    homePageUrl:(NSString *)homePageUrl
@@ -290,22 +208,14 @@ typedef NS_ENUM(NSInteger, SubsonicStarKind) {
                       error:(NSError **)error;
 - (BOOL)deleteRadioStation:(NSString *)stationId error:(NSError **)error;
 
-// Podcasts (getPodcasts.view). getChannelsWithError is the cheap list call
-// (no episodes); getEpisodesForChannel scopes to one channel with
-// includeEpisodes=true. createPodcastChannel has the same empty-string-on-
-// success caveat as createRadioStation — Subsonic doesn't echo the new
-// channel's id back either. No update endpoint — subscribe/unsubscribe only.
 - (NSArray<SubsonicPodcastChannel *> *)getPodcastChannelsWithError:(NSError **)error;
 - (NSArray<SubsonicPodcastEpisode *> *)getPodcastEpisodesForChannel:(NSString *)channelId
                                                                 error:(NSError **)error;
 - (NSString *)createPodcastChannelWithURL:(NSString *)url error:(NSError **)error;
 - (BOOL)deletePodcastChannel:(NSString *)channelId error:(NSError **)error;
 
-// Who's currently listening, server-wide (getNowPlaying.view).
 - (NSArray<SubsonicNowPlayingEntry *> *)getNowPlayingWithError:(NSError **)error;
 
-// Saved resume positions (getBookmarks.view). createBookmark is an upsert —
-// Subsonic overwrites any existing bookmark for the same song.
 - (NSArray<SubsonicBookmark *> *)getBookmarksWithError:(NSError **)error;
 - (BOOL)createBookmarkForSongId:(NSString *)songId
                       positionMs:(NSTimeInterval)positionMs
@@ -313,36 +223,19 @@ typedef NS_ENUM(NSInteger, SubsonicStarKind) {
                            error:(NSError **)error;
 - (BOOL)deleteBookmarkForSongId:(NSString *)songId error:(NSError **)error;
 
-// Kicks off (or reports progress of) a server-side library scan. Both
-// endpoints return the same shape. count is the number of items processed
-// so far; only meaningful while scanning is YES — Subsonic doesn't report a
-// total, so this can only show "N processed", not a percentage. A failed
-// request leaves scanning/count at NO/0 and sets error.
 - (BOOL)startScanWithScanning:(BOOL *)scanning count:(NSInteger *)count error:(NSError **)error;
 - (BOOL)getScanStatusWithScanning:(BOOL *)scanning count:(NSInteger *)count error:(NSError **)error;
 
-// Scrobble a play to the server: submission=NO marks "now playing",
-// submission=YES registers the play (play count, Last.fm / ListenBrainz).
 - (BOOL)scrobbleSongId:(NSString *)songId
             submission:(BOOL)submission
                  error:(NSError **)error;
 
-// URL builders — no network required
-// Returns the authenticated HTTP stream URL for foobar2000 to play directly.
-// coverArtId is embedded as a query param so the art extractor can retrieve it.
-// Carries the configured transcoding preferences (format / maxBitRate).
 - (NSString *)streamURLForSongId:(NSString *)songId coverArtId:(NSString *)coverArtId;
-// Returns cover art URL (size 0 = original)
 - (NSURL *)coverArtURLForId:(NSString *)coverArtId size:(NSInteger)size;
-// download.view — always the original file, never transcoded.
 - (NSURL *)downloadURLForSongId:(NSString *)songId;
 
-// Synchronous GET of arbitrary URL data with the configured custom HTTP headers
-// applied (used by the album-art extractor). Returns nil + sets *error on failure.
 - (NSData *)dataForURL:(NSURL *)url error:(NSError **)error;
 
-// Synchronous download straight to disk — streams to a temp file rather than
-// buffering the body, so a full-quality FLAC doesn't sit in memory.
 - (BOOL)downloadURL:(NSURL *)url toPath:(NSString *)path error:(NSError **)error;
 
 @end

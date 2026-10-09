@@ -1,3 +1,82 @@
+## [1.23.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.22.0...v1.23.0) (2026-10-09)
+
+
+### Features
+
+* **logging:** release builds now keep a log, `foo_navidrome.log`, in the foobar2000 profile. It records warnings and errors, rotates past 2 MB, and records full detail while *Preferences › Advanced › Tools › Navidrome: verbose logging* is on (applies immediately, no restart). Each session opens with a line giving the component, foobar2000, OS, architecture and Wine versions.
+* **diagnostics:** a **Copy Diagnostics** button (Preferences › Tools › Navidrome, both platforms) copies a report for bug reports to the clipboard. It includes versions, the server type, version and OpenSubsonic extensions, the relevant settings and the recent log. Credentials and custom header values are never included, and the server address is replaced by `<server>`. The log file is reachable with **Open Log Folder** (Windows) or **Show Log in Finder** (macOS).
+* **server capabilities:** the component reads the server's OpenSubsonic extension list once per session and skips endpoints the server doesn't support. Lyrics on a server without `songLyrics` go straight to the artist/title lookup instead of first waiting for a failed request.
+* **browser:** a browse list that has gone stale reloads itself. Reopening a browser window closed for more than 30 minutes reloads it from the server, and an Add/Play that resolves to nothing because the server rescanned since the list loaded reloads the list and asks you to select again.
+* **browser:** when Add to Playlist / Play Now can't load some or all of the tracks, an error window explains what failed, quotes the server's error and suggests **Refresh**.
+* **macOS:** **Remove Bookmark** in the browser's right-click menu (it was Windows-only).
+* **preferences:** the main Navidrome page is grouped under *Navidrome Server Connection*, *Rescan Navidrome Library* and *Logs and Troubleshooting* headings on both platforms. The rescan button is now labelled **Rescan**, and the macOS page no longer carries the "After saving, open File › Open Navidrome Browser" hint.
+* **bug reports:** GitHub issue forms for bug reports and feature requests. The bug form walks through verbose logging → reproduce → Copy Diagnostics.
+
+
+### Bug Fixes
+
+* failures of bookmark removal and of creating, editing or deleting a radio station (browser menu and Radio Stations preferences page) are now written to the log on both platforms instead of only flashing in the status line.
+
+
+### Code Refactoring
+
+* `SubsonicTypes.h` split into topic headers (`SubsonicModels.h`, `SubsonicErrors.h`, `TrackUri.h`, `LibraryFilter.h`, `Json.h`, `SubsonicParsers.h`) behind the same umbrella include.
+* Windows browser split: `BrowserWindow.cpp` keeps the window and tree, server actions move to `BrowserWindowActions.cpp`, the modal prompts to `BrowserPrompts.cpp`, and the Radio Stations and Libraries preference pages to their own files.
+* macOS browser split: server actions move into a `NavidromeBrowserController (Actions)` category with a shared private header.
+* Comments removed from the code (`src/`, `tests/`, `scripts/`, `tools/`, `Makefile`, workflows): about 3,700 fewer lines with no change in behaviour. Each script's `--help` now prints a built-in usage text.
+
+
+### Build System
+
+* the local Windows build (`win-build-local.sh`) tracks header dependencies and compile flags, so a header edit or a `--release-log` switch rebuilds exactly what it affects. Previously, a header edit without `--clean` could produce a DLL that crashed at runtime. A no-change build takes about 1.5 s.
+
+## [1.22.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.21.2...v1.22.0) (2026-10-09)
+
+
+### Features
+
+* Navidrome Browser as a Default UI panel on Windows ([#24](https://github.com/santiagorod92/foo_navidrome/issues/24)) ([14f9586](https://github.com/santiagorod92/foo_navidrome/commit/14f958612b32c25d5034acded710787079154f4d))
+
+
+### Bug Fixes
+
+* drop libPPUI WIN32_OP from the Default UI element so the MSBuild link succeeds ([a0b1466](https://github.com/santiagorod92/foo_navidrome/commit/a0b1466258514af5abea3c13336c9c374bc9656f))
+
+## [1.21.2](https://github.com/santiagorod92/foo_navidrome/compare/v1.21.1...v1.21.2) (2026-10-08)
+
+
+### Bug Fixes
+
+* warning-free release builds on macOS and Windows ([#21](https://github.com/santiagorod92/foo_navidrome/issues/21)) ([2a46400](https://github.com/santiagorod92/foo_navidrome/commit/2a4640036a9599e4c9d79764dc2ad9bd70f8e8ee))
+
+## [1.21.1](https://github.com/santiagorod92/foo_navidrome/compare/v1.21.0...v1.21.1) (2026-10-08)
+
+
+### Bug Fixes
+
+* Windows prefs dark mode, high-DPI layout and garbled text ([#18](https://github.com/santiagorod92/foo_navidrome/issues/18)) ([#20](https://github.com/santiagorod92/foo_navidrome/issues/20)) ([259ba3f](https://github.com/santiagorod92/foo_navidrome/commit/259ba3f56be6a86ac7e7667c7c640f08996ddb3b))
+
+## [1.21.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.20.0...v1.21.0) (2026-10-07)
+
+
+### Features
+
+* Instant Mix and AudioMuse-AI integration ([#16](https://github.com/santiagorod92/foo_navidrome/issues/16)) ([#19](https://github.com/santiagorod92/foo_navidrome/issues/19)) ([f91b545](https://github.com/santiagorod92/foo_navidrome/commit/f91b545f660e4d38515dd24f8e8e38a9213e0eaa))
+
+## [1.20.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.19.0...v1.20.0) (2026-10-07)
+
+
+### Features
+
+* lyrics on macOS — Navidrome Lyrics panel and navidrome_lyrics_api ([#17](https://github.com/santiagorod92/foo_navidrome/issues/17)) ([ac90536](https://github.com/santiagorod92/foo_navidrome/commit/ac90536ff8a144720d7161422950a1c0f92cefae))
+
+## [1.19.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.18.0...v1.19.0) (2026-10-02)
+
+
+### Features
+
+* navidrome_library_api on macOS ([#15](https://github.com/santiagorod92/foo_navidrome/issues/15)) ([fea1636](https://github.com/santiagorod92/foo_navidrome/commit/fea16365ff257e5ebdb6aaeca646d38548491bf7))
+
 ## [1.18.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.17.2...v1.18.0) (2026-10-01)
 
 

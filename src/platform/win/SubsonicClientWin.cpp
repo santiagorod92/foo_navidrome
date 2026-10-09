@@ -8,8 +8,8 @@
 #pragma comment(lib, "winhttp.lib")
 #pragma comment(lib, "crypt32.lib")
 
-// Config vars defined in NavidromePluginWin.cpp
 namespace navidrome {
+
     extern cfg_string cfg_server_url;
     extern cfg_string cfg_username;
     extern cfg_string cfg_password;
@@ -21,24 +21,6 @@ namespace navidrome {
     extern cfg_string cfg_library_ids;
 }
 
-// ---------------------------------------------------------------------------
-// The request bodies (URL assembly, retry loop, status-wrapper check, json
-// walk, multi-library fan-out) all live in navidrome::SubsonicCore now. This
-// file is the Windows adapter: a WinHTTP-backed IHttpTransport, a cfg_*-backed
-// ISettingsProvider, plus the binary cover-art fetch and streaming download
-// which never went through the JSON path.
-// ---------------------------------------------------------------------------
-
-// Force modern TLS on a WinHTTP session. WinHTTP's legacy default negotiates
-// SSL3 / TLS1.0, which Cloudflare and most modern endpoints reject (handshake
-// fails with ERROR_WINHTTP_SECURE_CHANNEL_ERROR, 12157). We offer only TLS
-// 1.2 + 1.3 — secure and correct for real Windows schannel.
-//
-// NOTE (Wine only): a server configured with Minimum TLS Version = 1.3 still
-// fails under Wine, because Wine's gnutls-backed schannel mis-negotiates when
-// 1.2 and 1.3 are both offered (server replies fatal alert 70, protocol
-// version). Real Windows schannel handles this fine; the workaround for Wine
-// testing is to set the Cloudflare zone's Minimum TLS Version to 1.2.
 static void applySecureProtocols(HINTERNET hSession) {
     DWORD protocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2;
 #ifdef WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3
@@ -48,28 +30,23 @@ static void applySecureProtocols(HINTERNET hSession) {
                      &protocols, sizeof(protocols));
 }
 
-// Map a WinHTTP GetLastError() value to the shared ErrorKind so SubsonicCore's
-// retry loop can tell a transient socket failure from a dead-certain one.
 static navidrome::ErrorKind classifyWinHttpError(DWORD err) {
     switch (err) {
-        case 12002: // ERROR_WINHTTP_TIMEOUT
+        case 12002:
             return navidrome::ErrorKind::Timeout;
-        case 12007: // ERROR_WINHTTP_NAME_NOT_RESOLVED
-        case 12029: // ERROR_WINHTTP_CANNOT_CONNECT
-        case 12030: // ERROR_WINHTTP_CONNECTION_ERROR
-        case 12152: // ERROR_WINHTTP_INVALID_SERVER_RESPONSE
+        case 12007:
+        case 12029:
+        case 12030:
+        case 12152:
             return navidrome::ErrorKind::Network;
-        case 12157: // ERROR_WINHTTP_SECURE_CHANNEL_ERROR
-        case 12175: // ERROR_WINHTTP_SECURE_FAILURE
+        case 12157:
+        case 12175:
             return navidrome::ErrorKind::Tls;
         default:
             return navidrome::ErrorKind::Network;
     }
 }
 
-// The server rejecting the configured credentials is a deterministic, user-
-// actionable state — say so once per session in the console (every subsequent
-// call would just repeat it). Cheap racy flag: worst case is two prints.
 static void warnAuthOnce() {
     static bool warned = false;
     if (warned) return;
@@ -78,10 +55,8 @@ static void warnAuthOnce() {
                    "check Preferences \xE2\x80\xBA Tools \xE2\x80\xBA Navidrome");
 }
 
-// RAII for a WinHTTP handle so an early return on any error path still closes
-// it — the old hand-rolled close chain leaked hReq whenever an error branch
-// returned before reaching its WinHttpCloseHandle.
 namespace {
+
 struct WinHttpHandle {
     HINTERNET h = nullptr;
     WinHttpHandle() = default;
@@ -97,7 +72,7 @@ struct WinHttpHandle {
     operator HINTERNET() const { return h; }
     explicit operator bool() const { return h != nullptr; }
 };
-} // namespace
+}
 
 static std::wstring toWide(const std::string& s) {
     if (s.empty()) return {};
@@ -117,14 +92,8 @@ static std::string toUtf8(const std::wstring& w) {
     return s;
 }
 
-// ---------------------------------------------------------------------------
-// The IHttpTransport + ISettingsProvider SubsonicCore runs on.
-// ---------------------------------------------------------------------------
 namespace {
 
-// One synchronous WinHTTP GET — no retry (SubsonicCore drives that), no status
-// wrapper parsing. Fills HttpResult::body on a clean 200, otherwise classifies
-// the failure into HttpResult::error.
 struct WinHttpTransport : navidrome::IHttpTransport {
     navidrome::HttpResult getOnce(const std::string& urlStr) override {
         using navidrome::ErrorKind;
@@ -200,10 +169,6 @@ struct WinHttpTransport : navidrome::IHttpTransport {
     void onAuthRejected() override { warnAuthOnce(); }
 };
 
-// One WinHTTP POST of a JSON body to AudioMuse-AI (NavidromeAudioMuse.h). Not
-// the Navidrome server, so none of its custom headers — just the content type
-// and the optional AudioMuse API token. The body is kept on an HTTP error so
-// AudioMuse's own error text can be shown.
 struct WinJsonPoster : navidrome::audiomuse::IJsonPoster {
     navidrome::HttpResult postJson(const std::string& urlStr, const std::string& body,
                                    const std::string& bearerToken, int timeoutMs) override {
@@ -244,10 +209,6 @@ struct WinJsonPoster : navidrome::audiomuse::IJsonPoster {
                 "WinHttpOpenRequest failed (err=" + std::to_string(GetLastError()) + ")" };
             return out;
         }
-        // The Instant Playlist is an LLM run that answers after tens of seconds.
-        // Set the timeouts on the request itself, including the separate
-        // wait-for-response-headers one: the session's values don't cover it,
-        // and under Wine it gave up after ~21 s (winhttp err=10060).
         WinHttpSetTimeouts(req, 0, 15000, 30000, timeoutMs);
         DWORD responseTimeout = static_cast<DWORD>(timeoutMs);
         WinHttpSetOption(req, WINHTTP_OPTION_RECEIVE_RESPONSE_TIMEOUT,
@@ -296,12 +257,8 @@ struct WinSettingsProvider : navidrome::ISettingsProvider {
         return s;
     }
 };
+}
 
-} // namespace
-
-// ---------------------------------------------------------------------------
-// SubsonicClientWin
-// ---------------------------------------------------------------------------
 navidrome::SubsonicClientWin& navidrome::SubsonicClientWin::get() {
     static SubsonicClientWin inst;
     return inst;
@@ -339,10 +296,10 @@ std::wstring navidrome::SubsonicClientWin::customHeadersWide() {
     return joined.empty() ? std::wstring() : toWide(joined);
 }
 
-// ---------------------------------------------------------------------------
-// API surface — every call forwards to the shared core.
-// ---------------------------------------------------------------------------
 bool navidrome::SubsonicClientWin::ping(std::string& outError) { return m_core->ping(outError); }
+bool navidrome::SubsonicClientWin::serverInfo(ServerInfo& out, std::string& outError) {
+    return m_core->serverInfo(out, outError);
+}
 
 std::vector<navidrome::MusicFolder>
 navidrome::SubsonicClientWin::getMusicFolders(std::string& outError) {
@@ -554,11 +511,6 @@ std::string navidrome::SubsonicClientWin::coverArtURL(
         context.salt, id, size);
 }
 
-// ---------------------------------------------------------------------------
-// Streaming download to disk — separate from the core's JSON GET (it builds the
-// body into a std::string) and from httpGetBinary() (which caps the size and
-// sniffs for image content). A full-quality track is neither text nor small.
-// ---------------------------------------------------------------------------
 bool navidrome::SubsonicClientWin::httpDownloadToFile(const std::string& urlStr,
                                                        const std::wstring& destPath,
                                                        std::string& outError) const {
@@ -578,7 +530,6 @@ bool navidrome::SubsonicClientWin::httpDownloadToFile(const std::string& urlStr,
         WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
         WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
     if (!sess) { outError = "WinHttpOpen failed"; return false; }
-    // A track download can run far longer than an API call.
     WinHttpSetTimeouts(sess, 0, 15000, 15000, 300000);
     applySecureProtocols(sess);
 
@@ -596,7 +547,7 @@ bool navidrome::SubsonicClientWin::httpDownloadToFile(const std::string& urlStr,
         outError = "WinHttpOpenRequest failed";
         return false;
     }
-    HINTERNET hReq = req;   // the rest of this function still reads `hReq`
+    HINTERNET hReq = req;
 
     std::wstring hdrs = customHeadersWide();
     if (!hdrs.empty())
@@ -640,7 +591,6 @@ bool navidrome::SubsonicClientWin::httpDownloadToFile(const std::string& urlStr,
                     }
                 }
                 CloseHandle(hFile);
-                // Don't leave a truncated file behind on a mid-stream failure.
                 if (!ok) DeleteFileW(destPath.c_str());
             }
         }
@@ -655,18 +605,12 @@ bool navidrome::SubsonicClientWin::httpDownloadToFile(const std::string& urlStr,
     return ok;
 }
 
-// ---------------------------------------------------------------------------
-// Binary fetch for cover art — separate from the core's JSON GET because it
-// needs raw bytes (not text), a size cap, Content-Type sniffing and
-// abort_callback cooperation so a background art fetch can be cancelled mid-read.
-// ---------------------------------------------------------------------------
 navidrome::SubsonicClientWin::BinaryFetchResult
 navidrome::SubsonicClientWin::httpGetBinary(
         const SubsonicRequestContext& context,
         const std::string& urlStr,
         std::size_t maxBytes,
         abort_callback& abort) const {
-
     BinaryFetchResult result;
     result.cls = FetchClass::Transport;
     result.httpStatus = 0;
@@ -681,7 +625,7 @@ navidrome::SubsonicClientWin::httpGetBinary(
     uc.lpszUrlPath = path; uc.dwUrlPathLength = 4096;
 
     if (!WinHttpCrackUrl(wurl.c_str(), 0, 0, &uc)) {
-        return result; // Transport
+        return result;
     }
 
     WinHttpHandle sess(WinHttpOpen(L"foo_navidrome/1.0",
@@ -692,7 +636,6 @@ navidrome::SubsonicClientWin::httpGetBinary(
     WinHttpSetTimeouts(sess, 0, 15000, 15000, 30000);
     applySecureProtocols(sess);
 
-    // Check abort before connect
     if (abort.is_aborting()) {
         result.cls = FetchClass::Aborted;
         return result;
@@ -705,9 +648,8 @@ navidrome::SubsonicClientWin::httpGetBinary(
     WinHttpHandle req(WinHttpOpenRequest(conn, L"GET", path,
         nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, flags));
     if (!req) return result;
-    HINTERNET hReq = req;   // the rest of this function still reads `hReq`
+    HINTERNET hReq = req;
 
-    // Apply custom headers from the given context (not the live cfg globals)
     std::string joined;
     for (const auto& line : navidrome::parseHeaderLines(context.customHeaders)) {
         if (!joined.empty()) joined += "\r\n";
@@ -719,7 +661,6 @@ navidrome::SubsonicClientWin::httpGetBinary(
             WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE);
     }
 
-    // Check abort before send
     if (abort.is_aborting()) {
         result.cls = FetchClass::Aborted;
         return result;
@@ -729,10 +670,9 @@ navidrome::SubsonicClientWin::httpGetBinary(
         !WinHttpReceiveResponse(hReq, nullptr)) {
         NAVIDROME_WARN("HTTP", "cover request failed (winhttp err=" +
                        std::to_string(GetLastError()) + ")");
-        return result; // Transport
+        return result;
     }
 
-    // Query status
     DWORD status = 0, sz = sizeof(status);
     if (!WinHttpQueryHeaders(hReq,
         WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
@@ -742,7 +682,6 @@ navidrome::SubsonicClientWin::httpGetBinary(
     result.httpStatus = status;
     result.cls = classifyHttpStatus(status);
 
-    // Query Content-Type
     wchar_t ctBuf[256] = {};
     DWORD ctLen = sizeof(ctBuf);
     if (WinHttpQueryHeaders(hReq, WINHTTP_QUERY_CONTENT_TYPE,
@@ -750,7 +689,6 @@ navidrome::SubsonicClientWin::httpGetBinary(
         result.contentType = toUtf8(ctBuf);
     }
 
-    // Read body (only for 200)
     if (status == 200) {
         std::vector<uint8_t> body;
         bool readSucceeded = true;
@@ -762,13 +700,11 @@ navidrome::SubsonicClientWin::httpGetBinary(
             }
             if (avail == 0) break;
 
-            // Check abort between chunks
             if (abort.is_aborting()) {
                 result.cls = FetchClass::Aborted;
                 return result;
             }
 
-            // Check size limit
             if (body.size() > maxBytes || avail > maxBytes - body.size()) {
                 result.cls = FetchClass::InvalidContent;
                 return result;
