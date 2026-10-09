@@ -1,15 +1,3 @@
-// Shared Subsonic API core — see SubsonicCore.h. Every request body lives here
-// once; the Windows and macOS clients supply only an IHttpTransport (WinHTTP /
-// NSURLSession) and an ISettingsProvider (the cfg_* globals).
-//
-// SDK-free: SubsonicTypes.h owns the json DOM, the object->struct parsers, the
-// multi-library fan-out kernels and the retry policy; this file only assembles
-// URLs, drives the retry loop and walks the parsed response. The one
-// platform-specific line is the MD5 primitive (WinCrypt / CommonCrypto), the
-// same split MediaEnrichmentLogic.cpp and SubsonicClient.mm already carry — kept
-// local so the file is self-contained on every build path (MediaEnrichmentLogic
-// isn't linked into the macOS component).
-
 #if defined(_WIN32)
 #if !defined(WIN32_LEAN_AND_MEAN)
 #define WIN32_LEAN_AND_MEAN
@@ -34,9 +22,6 @@
 
 namespace navidrome {
 
-// ---------------------------------------------------------------------------
-// IHttpTransport default backoff primitives
-// ---------------------------------------------------------------------------
 void IHttpTransport::sleepMs(int ms) {
     if (ms > 0) std::this_thread::sleep_for(std::chrono::milliseconds(ms));
 }
@@ -46,9 +31,6 @@ int IHttpTransport::jitterMs() {
     return static_cast<int>(std::uniform_int_distribution<unsigned>(0, 199)(rng));
 }
 
-// ---------------------------------------------------------------------------
-// Local helpers
-// ---------------------------------------------------------------------------
 namespace {
 
 #if defined(_WIN32)
@@ -90,12 +72,8 @@ std::string md5Hex(const std::string& input) {
 #endif
 
 std::string enc(const std::string& s) { return percentEncode(s); }
+}
 
-}  // namespace
-
-// ---------------------------------------------------------------------------
-// SubsonicCore
-// ---------------------------------------------------------------------------
 SubsonicCore::SubsonicCore(IHttpTransport& transport, ISettingsProvider& settings)
     : m_http(transport), m_settings(settings) {}
 
@@ -141,9 +119,6 @@ std::string SubsonicCore::coverArtURL(const std::string& id, int size) const {
     return buildURL("getCoverArt.view", extra);
 }
 
-// ---------------------------------------------------------------------------
-// Transport + response wrapper
-// ---------------------------------------------------------------------------
 std::string SubsonicCore::httpGet(const std::string& url, std::string& outError) {
     const std::string safeUrl = dbg::scrubAuth(url);
     NAVIDROME_TIMER("HTTP", "GET " + safeUrl);
@@ -188,7 +163,7 @@ json::Value SubsonicCore::checkResponse(const std::string& body, std::string& ou
         if (resp.error.kind == ErrorKind::Auth) m_http.onAuthRejected();
         return json::Value{};
     }
-    return resp.inner();   // copied out; caller owns it
+    return resp.inner();
 }
 
 bool SubsonicCore::ping(std::string& outError) {
@@ -197,9 +172,49 @@ bool SubsonicCore::ping(std::string& outError) {
     return !checkResponse(body, outError).isNull();
 }
 
-// ---------------------------------------------------------------------------
-// Music folders / multi-library filter
-// ---------------------------------------------------------------------------
+bool SubsonicCore::serverInfo(ServerInfo& out, std::string& outError) {
+    std::string body = httpGet(buildURL("ping.view"), outError);
+    if (body.empty()) return false;
+    json::Value inner = checkResponse(body, outError);
+    if (inner.isNull()) return false;
+    out = parseServerInfo(inner);
+    if (out.openSubsonic) {
+        std::string extErr;
+        std::string extBody = httpGet(buildURL("getOpenSubsonicExtensions.view"), extErr);
+        json::Value extInner = extBody.empty() ? json::Value{} : checkResponse(extBody, extErr);
+        if (!extInner.isNull()) {
+            out.extensions      = parseOpenSubsonicExtensions(extInner);
+            out.extensionsKnown = true;
+        } else {
+            NAVIDROME_WARN("API", "getOpenSubsonicExtensions failed (" + extErr +
+                           ") — optional endpoints will be probed by trial");
+        }
+    }
+
+    const std::string server = m_settings.load().serverUrl;
+    bool firstForServer;
+    {
+        std::lock_guard<std::mutex> lock(m_capsMutex);
+        firstForServer = m_capsServer != server;
+        m_capsServer = server;
+        m_caps       = out;
+    }
+    if (firstForServer)
+        NAVIDROME_NOTE("Env", "server: " + describeServer(out) +
+                              "; extensions: " + describeExtensions(out));
+    return true;
+}
+
+bool SubsonicCore::capabilities(ServerInfo& out) {
+    const std::string server = m_settings.load().serverUrl;
+    {
+        std::lock_guard<std::mutex> lock(m_capsMutex);
+        if (!m_capsServer.empty() && m_capsServer == server) { out = m_caps; return true; }
+    }
+    std::string err;
+    return serverInfo(out, err);
+}
+
 std::vector<MusicFolder> SubsonicCore::getMusicFolders(std::string& outError) {
     std::string body = httpGet(buildURL("getMusicFolders.view"), outError);
     if (body.empty()) return {};
@@ -223,7 +238,7 @@ std::vector<MusicFolder> SubsonicCore::cachedMusicFolders() {
     if (!m_folderFetched) {
         std::string err;
         auto folders = getMusicFolders(err);
-        if (!folders.empty()) {          // latch only on a good answer; retry after a failure
+        if (!folders.empty()) {
             m_folderCache   = std::move(folders);
             m_folderFetched = true;
         }
@@ -239,15 +254,11 @@ std::vector<std::string> SubsonicCore::activeMusicFolderIds() {
 
 std::vector<std::string> SubsonicCore::libraryGroupingIds() {
     auto folders = cachedMusicFolders();
-    if (folders.size() < 2) return {};   // single-library server → flat list, always
+    if (folders.size() < 2) return {};
 
     std::vector<std::string> allIds;
     for (auto& f : folders) allIds.push_back(f.id);
 
-    // Grouping by library is independent of the "Only include selected
-    // libraries" checkbox: a multi-library server always groups. The checkbox
-    // only narrows *which* libraries show — and only when 2+ are ticked (1
-    // ticked is a single-library scope, handled flat by activeMusicFolderIds()).
     const SubsonicSettings s = m_settings.load();
     if (s.libraryFilter) {
         auto sel = parseMusicFolderIds(s.libraryIdsCsv);
@@ -256,15 +267,11 @@ std::vector<std::string> SubsonicCore::libraryGroupingIds() {
             if (std::find(sel.begin(), sel.end(), id) != sel.end())
                 picked.push_back(id);
         if (picked.size() >= 2) return picked;
-        if (picked.size() == 1) return {};   // scoped to one library → flat
-        // 0 ticked → fall through to "all libraries"
+        if (picked.size() == 1) return {};
     }
     return allIds;
 }
 
-// ---------------------------------------------------------------------------
-// Browse
-// ---------------------------------------------------------------------------
 std::vector<Artist> SubsonicCore::fetchArtistsForFolder(const std::string& folderId,
                                                         std::string& outError) {
     std::string body = httpGet(
@@ -311,12 +318,6 @@ std::vector<Album> SubsonicCore::getAlbumsForArtist(const std::string& artistId,
         result.push_back(std::move(al));
     }
 
-    // getArtist.view ignores musicFolderId server-side and AlbumID3 carries no
-    // library id, so when the library filter is active we can't scope the album
-    // list directly. search3.view *does* honor musicFolderId: fan it out over
-    // the selected libraries, keep the album ids that belong to this artist, and
-    // filter the getArtist.view list against that allow-set (order preserved).
-    // scopeLibraryId pins the list to one library (a per-library tree node).
     const std::vector<std::string> folderIds =
         scopeLibraryId.empty() ? activeMusicFolderIds()
                                : std::vector<std::string>{ scopeLibraryId };
@@ -336,8 +337,6 @@ std::vector<Album> SubsonicCore::getAlbumsForArtist(const std::string& artistId,
             searchAlbums.push_back(parseAlbum(*a));
     }
 
-    // The search passes are best-effort scoping; a failure there must not turn
-    // into a user-visible error when getArtist.view itself succeeded.
     outError.clear();
 
     bool unconfirmed = false;
@@ -400,9 +399,6 @@ SearchResults SubsonicCore::search(const std::string& query, std::string& outErr
     return merged;
 }
 
-// ---------------------------------------------------------------------------
-// Smart lists, favorites, ratings
-// ---------------------------------------------------------------------------
 std::vector<Album> SubsonicCore::getAlbumList(AlbumListType type, int size, std::string& outError) {
     const std::string base = std::string("type=") + albumListTypeName(type) +
                              "&size=" + std::to_string(size);
@@ -433,7 +429,7 @@ std::vector<Song> SubsonicCore::getStarredSongs(std::string& outError) {
         std::vector<Song> result;
         for (auto* s : root["starred2"]["song"].items()) {
             Song so = parseSong(*s);
-            so.starred = true;   // getStarred2 omits the per-item "starred" field
+            so.starred = true;
             result.push_back(std::move(so));
         }
         return result;
@@ -451,7 +447,7 @@ std::vector<Genre> SubsonicCore::getGenres(std::string& outError) {
     std::vector<Genre> result;
     for (auto* g : root["genres"]["genre"].items()) {
         Genre gen = parseGenre(*g);
-        if (gen.name.empty()) continue;   // skip the empty "no genre" bucket
+        if (gen.name.empty()) continue;
         result.push_back(std::move(gen));
     }
     return result;
@@ -527,6 +523,11 @@ Lyrics SubsonicCore::getLyrics(const std::string& songId, const std::string& art
         std::lock_guard<std::mutex> lock(m_lyricsMutex);
         byIdSupported = m_lyricsByIdUnsupportedOn != server;
     }
+    ServerInfo caps;
+    if (byIdSupported && !songId.empty() && capabilities(caps) && caps.lacksExtension("songLyrics")) {
+        byIdSupported = false;
+        NAVIDROME_LOG("Lyrics", "server lacks songLyrics — using getLyrics.view (artist/title)");
+    }
     if (!songId.empty() && byIdSupported) {
         std::string err;
         std::string body = httpGet(buildURL("getLyricsBySongId.view", "id=" + enc(songId)), err);
@@ -560,8 +561,6 @@ Lyrics SubsonicCore::getLyrics(const std::string& songId, const std::string& art
 
 std::vector<Song> SubsonicCore::getRandomSongs(int count, std::string& outError) {
     const auto folderIds = activeMusicFolderIds();
-    // Split the requested size across the fanned-out libraries so the merged
-    // result stays near `count` rather than count-per-library.
     const int perFolder = folderIds.empty()
         ? count
         : (std::max)(1, count / static_cast<int>(folderIds.size()) + 1);
@@ -588,10 +587,6 @@ std::vector<Song> SubsonicCore::getRandomSongs(int count, std::string& outError)
 }
 
 std::vector<Song> SubsonicCore::getAllSongs(std::string& outError, int pageSize) {
-    // Navidrome (and OpenSubsonic servers generally) treat an empty search3
-    // query as "match everything", which makes it the one paged endpoint that
-    // walks the whole song table. A server that ignores songOffset would hand
-    // back the same page forever, so a page that adds no new id also stops it.
     auto fetch = [&](const std::string& folderId) -> std::vector<Song> {
         std::vector<Song> result;
         std::unordered_set<std::string> seen;
@@ -657,16 +652,12 @@ bool SubsonicCore::getSong(const std::string& songId, Song& out, std::string& ou
     if (body.empty()) return false;
     auto root = checkResponse(body, outError);
     if (root.isNull()) return false;
-    // getSong returns a bare "song" object; items() wraps it as a 1-element list.
     auto songs = root["song"].items();
     if (songs.empty()) return false;
     out = parseSong(*songs.front());
     return true;
 }
 
-// ---------------------------------------------------------------------------
-// Server-side playlists
-// ---------------------------------------------------------------------------
 std::vector<Playlist> SubsonicCore::getPlaylists(std::string& outError) {
     std::string body = httpGet(buildURL("getPlaylists.view"), outError);
     if (body.empty()) return {};
@@ -715,8 +706,6 @@ std::string SubsonicCore::createPlaylist(const std::string& name,
             outError = "Playlist created, but the server returned no id — "
                        "only the first " + std::to_string(kChunk) + " tracks were added";
         }
-        // Everything made it in; we just have no id to hand back. outError stays
-        // empty so the caller can tell this apart from a real failure.
         return "";
     }
 
@@ -795,9 +784,6 @@ bool SubsonicCore::deletePlaylist(const std::string& playlistId, std::string& ou
     return !checkResponse(body, outError).isNull();
 }
 
-// ---------------------------------------------------------------------------
-// Internet radio
-// ---------------------------------------------------------------------------
 std::vector<RadioStation> SubsonicCore::getRadioStations(std::string& outError) {
     std::string body = httpGet(buildURL("getInternetRadioStations.view"), outError);
     if (body.empty()) return {};
@@ -819,9 +805,6 @@ std::string SubsonicCore::createRadioStation(const std::string& streamUrl, const
     std::string body = httpGet(buildURL("createInternetRadioStation.view", params), outError);
     if (body.empty()) return "";
     if (checkResponse(body, outError).isNull()) return "";
-    // Unlike createPlaylist.view, Subsonic's create-station endpoint doesn't echo
-    // the new station's id back. Report success with an empty id rather than a
-    // phantom failure — callers must check outError, not this string.
     return "";
 }
 
@@ -843,9 +826,6 @@ bool SubsonicCore::deleteRadioStation(const std::string& id, std::string& outErr
     return !checkResponse(body, outError).isNull();
 }
 
-// ---------------------------------------------------------------------------
-// Podcasts
-// ---------------------------------------------------------------------------
 std::vector<PodcastChannel> SubsonicCore::getPodcastChannels(std::string& outError) {
     std::string body = httpGet(buildURL("getPodcasts.view"), outError);
     if (body.empty()) return {};
@@ -879,9 +859,6 @@ std::string SubsonicCore::createPodcastChannel(const std::string& url, std::stri
     std::string body = httpGet(buildURL("createPodcastChannel.view", "url=" + enc(url)), outError);
     if (body.empty()) return "";
     if (checkResponse(body, outError).isNull()) return "";
-    // Like createInternetRadioStation.view, Subsonic doesn't echo the new
-    // channel's id back — report success with an empty id, callers must check
-    // outError, not this string.
     return "";
 }
 
@@ -892,9 +869,6 @@ bool SubsonicCore::deletePodcastChannel(const std::string& id, std::string& outE
     return !checkResponse(body, outError).isNull();
 }
 
-// ---------------------------------------------------------------------------
-// Now playing
-// ---------------------------------------------------------------------------
 std::vector<NowPlayingEntry> SubsonicCore::getNowPlaying(std::string& outError) {
     std::string body = httpGet(buildURL("getNowPlaying.view"), outError);
     if (body.empty()) return {};
@@ -907,9 +881,6 @@ std::vector<NowPlayingEntry> SubsonicCore::getNowPlaying(std::string& outError) 
     return result;
 }
 
-// ---------------------------------------------------------------------------
-// Bookmarks
-// ---------------------------------------------------------------------------
 std::vector<Bookmark> SubsonicCore::getBookmarks(std::string& outError) {
     std::string body = httpGet(buildURL("getBookmarks.view"), outError);
     if (body.empty()) return {};
@@ -942,9 +913,6 @@ bool SubsonicCore::deleteBookmark(const std::string& songId, std::string& outErr
     return !checkResponse(body, outError).isNull();
 }
 
-// ---------------------------------------------------------------------------
-// Library scan
-// ---------------------------------------------------------------------------
 ScanStatus SubsonicCore::startScan(std::string& outError) {
     std::string body = httpGet(buildURL("startScan.view"), outError);
     if (body.empty()) return {};
@@ -961,9 +929,6 @@ ScanStatus SubsonicCore::getScanStatus(std::string& outError) {
     return parseScanStatus(root);
 }
 
-// ---------------------------------------------------------------------------
-// Scrobble
-// ---------------------------------------------------------------------------
 bool SubsonicCore::scrobble(const std::string& songId, bool submission, std::string& outError) {
     if (songId.empty()) return false;
     std::string params = "id=" + enc(songId) + "&submission=" + (submission ? "true" : "false");
@@ -971,5 +936,4 @@ bool SubsonicCore::scrobble(const std::string& songId, bool submission, std::str
     if (body.empty()) return false;
     return !checkResponse(body, outError).isNull();
 }
-
-}  // namespace navidrome
+}

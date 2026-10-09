@@ -1,34 +1,4 @@
 #!/usr/bin/env bash
-# mac-vm-build.sh — build the macOS foo_navidrome.component INSIDE the local
-# macOS VM (../macos-devbox, `mvm`) with xcodebuild, pull the packaged
-# .fb2k-component back to the host, and optionally deploy + launch it there.
-#
-# This is the "build on demand without a Mac" path. It needs Xcode in the guest
-# once: `mvm xcode Xcode_15.x.xip`, then `mvm snapshot xcode`.
-#
-# What it does, every run:
-#   1. push the SDK siblings (../foobar2000/{SDK,helpers,shared,
-#      foobar2000_component_client,helpers-mac}, ../pfc, ../libPPUI) into the
-#      guest at ~/build/  in the layout the xcworkspace expects
-#   2. push this repo's WORKING TREE to ~/build/foobar2000/foo_navidrome/
-#      (tracked + untracked, minus .git and build output)
-#   3. run scripts/run-unit-tests.sh mac         (skip with --no-unit-tests)
-#   4. run scripts/mac-ci-build.sh <version> (xcodebuild Release + package), with
-#      the version resolved HERE by scripts/version.sh (the guest copy has no .git)
-#   5. tar the resulting foo_navidrome_<v>.fb2k-component back to the repo root
-#   6. --test  -> mvm deploy <component> --launch
-#
-# DerivedData is kept in the guest at ~/build/foobar2000/foo_navidrome/build/
-# across runs for a faster loop; --clean wipes the whole ~/build tree first.
-#
-# Requires: the VM up + provisioned (`mvm up --wait`). MVM= overrides the mvm path.
-#
-# Usage:
-#   ./mac-vm-build.sh                 # build, pull the .fb2k-component to repo root
-#   ./mac-vm-build.sh --test          # ... then deploy + launch it in the guest
-#   ./mac-vm-build.sh --clean --test  # wipe guest ~/build first, then build + test
-#   ./mac-vm-build.sh --no-unit-tests
-#   ./mac-vm-build.sh --debug-log     # compile in the NAVIDROME_DEBUG_LOG tracer (guest /tmp log)
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
@@ -48,14 +18,12 @@ for a in "$@"; do
   esac
 done
 
-# --- SDK siblings present on the host? (README build layout) -----------------
 SDK_DIRS=(foobar2000/SDK foobar2000/helpers foobar2000/shared
           foobar2000/foobar2000_component_client foobar2000/helpers-mac pfc libPPUI)
 for d in "${SDK_DIRS[@]}"; do
   [ -d "$PARENT/$d" ] || { echo "missing SDK sibling: $PARENT/$d  (see README 'Build layout')"; exit 1; }
 done
 
-# --- guest reachable + has Xcode --------------------------------------------
 sshg true 2>/dev/null || { echo "guest not reachable — mvm up --wait (and mvm provision once)"; exit 1; }
 
 if ! sshg 'xcodebuild -version' >/dev/null 2>&1; then
@@ -66,28 +34,24 @@ if ! sshg 'xcodebuild -version' >/dev/null 2>&1; then
 fi
 echo "==> guest xcode: $(sshg 'xcodebuild -version | tr "\n" " "')"
 
-GDIR='~/build/foobar2000/foo_navidrome'   # guest repo dir (literal ~, expanded by the guest shell)
+GDIR='~/build/foobar2000/foo_navidrome'
 
-# --- stage the guest tree --------------------------------------------------
 if [ "$CLEAN" = 1 ]; then
   echo "==> --clean: wiping guest ~/build"
   sshg 'rm -rf ~/build'
 fi
 sshg 'mkdir -p ~/build/foobar2000/foo_navidrome'
-# keep DerivedData (build/), replace every other file under the repo dir
 sshg "cd $GDIR && find . -maxdepth 1 -mindepth 1 ! -name build -exec rm -rf {} +"
 
 echo "==> pushing SDK siblings (~5 MB) ..."
 ( cd "$PARENT" && tar cf - "${SDK_DIRS[@]}" ) | sshg 'tar xf - -C ~/build'
 
 echo "==> pushing working tree ..."
-# tracked + untracked-not-ignored, minus the heavy/irrelevant bits.
 tar -C "$REPO" \
     --exclude='./.git' --exclude='./build' --exclude='./build-win' --exclude='./build-mac' \
     --exclude='./_sdk-staging' --exclude='./node_modules' --exclude='*.fb2k-component' \
     -cf - . | sshg "tar xf - -C $GDIR"
 
-# --- build in the guest --------------------------------------------------
 if [ "$RUN_UNIT" = 1 ]; then
   echo "==> guest unit tests ..."
   sshg "cd $GDIR && ./scripts/run-unit-tests.sh mac"
@@ -99,7 +63,6 @@ EXTRA_ENV=""
 [ "$DEBUG_LOG" = 1 ] && EXTRA_ENV="MAC_EXTRA_CFLAGS=-DNAVIDROME_DEBUG_LOG=1"
 sshg "cd $GDIR && $EXTRA_ENV ./scripts/mac-ci-build.sh '$VERSION'"
 
-# --- pull the packaged component back -----------------------------------
 echo "==> pulling .fb2k-component to $REPO ..."
 sshg "cd $GDIR && ls -t foo_navidrome_*.fb2k-component | head -1" >/dev/null || {
   echo "no .fb2k-component produced in the guest"; exit 1; }

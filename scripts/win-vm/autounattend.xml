@@ -1,22 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-  Unattended install for Windows 11 ARM64 in a QEMU VM used to runtime-test the
-  foo_navidrome Windows component (see win-vm.sh + win-utm-test.sh).
-
-  What it automates:
-    * Skips the TPM 2.0 / Secure Boot / RAM checks (LabConfig) so it installs on
-      a plain QEMU 'virt' machine with no emulated TPM.
-    * Wipes disk 0 (the NVMe target) and lays out a UEFI GPT layout.
-    * Injects the virtio-net driver from the attached virtio-win ISO so the guest
-      has working networking on first boot (disk is NVMe = inbox driver).
-    * Creates a local admin 'tester' (password 'tester') with auto-logon.
-    * Bypasses the OOBE / online-account screens.
-    * On first logon: enables the OpenSSH server (so the host can scp the DLL in
-      and relaunch foobar2000), opens the firewall, and installs foobar2000 ARM.
-
-  Credentials are intentionally weak — this is a throwaway local test VM with no
-  data and host-only networking. Do NOT reuse this answer file for anything real.
--->
 <unattend xmlns="urn:schemas-microsoft-com:unattend">
 
   <settings pass="windowsPE">
@@ -33,7 +15,6 @@
     <component name="Microsoft-Windows-Setup"
                processorArchitecture="arm64" publicKeyToken="31bf3856ad364e35"
                language="neutral" versionScope="nonSxS">
-      <!-- Skip the Win11 hardware gate so it installs on a plain QEMU machine. -->
       <RunSynchronous>
         <RunSynchronousCommand wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
           <Order>1</Order>
@@ -81,12 +62,8 @@
         <AcceptEula>true</AcceptEula>
         <FullName>tester</FullName>
         <Organization>navidrome-test</Organization>
-        <!-- Generic Win11 Pro KMS client key: lets Setup proceed without prompting. -->
         <ProductKey><Key>VK7JG-NPHTM-C97JM-9MPGT-3V66T</Key></ProductKey>
       </UserData>
-      <!-- The virtio-net driver is loaded automatically by WinPE from the
-           $WinPEDriver$ folder on the unattend image (win-vm.sh injects it), so
-           no drive-letter-specific <Drivers> path is needed here. -->
     </component>
   </settings>
 

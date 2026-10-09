@@ -1,13 +1,4 @@
 #!/usr/bin/env bash
-# setup-mac-toolchain.sh — one-time setup on macOS (Apple Silicon) for the
-# local Windows cross-build + QEMU test loop. Idempotent-ish; safe to re-run.
-#
-# Installs / provisions:
-#   - Homebrew: llvm (clang-cl), lld (lld-link), bash 5, xwin, qemu, and the
-#     ISO-build tools (aria2 cabextract wimlib cdrtools)
-#   - xwin: Microsoft CRT/SDK/ATL for x86_64 + aarch64 -> ~/.local/share/xwin/sdk
-#   - WTL headers -> ~/.local/share/wtl/Include
-#   - foobar2000 SDK (reupen mirror) -> ~/.local/share/foo_navidrome-sdk/{foobar2000,pfc,libPPUI}
 set -euo pipefail
 
 SDKDIR="$HOME/.local/share/foo_navidrome-sdk"

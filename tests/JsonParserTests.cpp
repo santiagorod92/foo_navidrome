@@ -1,4 +1,3 @@
-// Unit tests: navidrome::json DOM + the Subsonic object parsers (SubsonicTypes.h).
 #include "TestHarness.h"
 #include "../src/core/SubsonicTypes.h"
 
@@ -11,7 +10,6 @@ TEST_CASE(testJson) {
     using navidrome::json::Value;
     std::string err;
 
-    // --- primitives ---
     Value n = navidrome::json::parse("  42  ", err);
     check(err.empty() && n.type() == Value::Number && n.asNumber() == 42.0,
         "parses a bare number with surrounding whitespace");
@@ -24,7 +22,6 @@ TEST_CASE(testJson) {
     check(navidrome::json::parse("null", err).isNull() && err.empty(),
         "parses null");
 
-    // --- strings + escapes ---
     Value s = navidrome::json::parse("\"a\\\"b\\\\c\\/d\\n\"", err);
     check(err.empty() && s.type() == Value::String && s.asString() == "a\"b\\c/d\n",
         "decodes \\\" \\\\ \\/ \\n escapes");
@@ -33,7 +30,6 @@ TEST_CASE(testJson) {
     check(navidrome::json::parse("\"\\uD83D\\uDE00\"", err).asString() == "\xF0\x9F\x98\x80" && err.empty(),
         "a surrogate pair decodes to 4-byte UTF-8");
 
-    // --- object + array, missing-key safety ---
     Value o = navidrome::json::parse(
         "{\"a\":1,\"b\":[10,20,30],\"c\":{\"d\":\"x\"},\"e\":null}", err);
     check(err.empty() && o.isObject() && o.size() == 4, "object with 4 members");
@@ -48,7 +44,6 @@ TEST_CASE(testJson) {
     check(o.has("e") && o["e"].isNull(), "has() is true for an explicit null");
     check(!o.has("nope"), "has() is false for an absent key");
 
-    // --- items(): Subsonic single-element-array collapse ---
     Value arr = navidrome::json::parse("{\"x\":[{\"id\":1},{\"id\":2}]}", err);
     check(arr["x"].items().size() == 2, "items() over a real array");
     Value one = navidrome::json::parse("{\"x\":{\"id\":9}}", err);
@@ -57,7 +52,6 @@ TEST_CASE(testJson) {
     check(navidrome::json::parse("{}", err)["x"].items().empty(),
         "items() over a missing field is empty");
 
-    // --- error cases ---
     navidrome::json::parse("{\"a\":}", err);
     check(!err.empty(), "reports an error on a missing value");
     navidrome::json::parse("[1,2", err);
@@ -74,7 +68,6 @@ TEST_CASE(testSubsonicParsers) {
         return navidrome::json::parse(body, err);
     };
 
-    // --- parseSong: defaults, starred-by-presence, numeric id coercion ---
     navidrome::Song s1 = navidrome::parseSong(parse(
         "{\"id\":\"t1\",\"title\":\"Song\",\"artist\":\"A\",\"artistId\":42,"
         "\"album\":\"Alb\",\"albumId\":\"al1\",\"coverArt\":\"c1\",\"suffix\":\"flac\","
@@ -89,7 +82,6 @@ TEST_CASE(testSubsonicParsers) {
     check(s2.title == "Unknown Title" && !s2.starred && s2.rating == 0 && s2.duration == 0.0,
         "parseSong defaults when fields are absent");
 
-    // --- parseAlbum ---
     navidrome::Album al = navidrome::parseAlbum(parse(
         "{\"id\":\"al1\",\"name\":\"Rec\",\"artist\":\"A\",\"artistId\":\"ar1\","
         "\"coverArt\":\"c\",\"year\":1999,\"songCount\":10,\"starred\":\"x\"}"));
@@ -98,31 +90,26 @@ TEST_CASE(testSubsonicParsers) {
     check(navidrome::parseAlbum(parse("{}")).name == "Unknown Album",
         "parseAlbum name default");
 
-    // --- parseArtist ---
     navidrome::Artist ar = navidrome::parseArtist(parse(
         "{\"id\":\"ar1\",\"name\":\"Band\",\"albumCount\":7}"));
     check(ar.id == "ar1" && ar.name == "Band" && ar.albumCount == 7, "parseArtist fields");
     check(navidrome::parseArtist(parse("{}")).name == "Unknown Artist",
         "parseArtist name default");
 
-    // --- parsePlaylist ---
     navidrome::Playlist pl = navidrome::parsePlaylist(parse(
         "{\"id\":9,\"name\":\"Mix\",\"owner\":\"me\",\"songCount\":4,\"duration\":88.0}"));
     check(pl.id == "9" && pl.name == "Mix" && pl.owner == "me" && pl.songCount == 4,
         "parsePlaylist fields, numeric id coerced");
 
-    // --- parseGenre: the "value"-not-"name" quirk ---
     navidrome::Genre g = navidrome::parseGenre(parse(
         "{\"value\":\"Jazz\",\"songCount\":12,\"albumCount\":3}"));
     check(g.name == "Jazz" && g.songCount == 12 && g.albumCount == 3,
         "parseGenre reads the genre string from \"value\"");
 
-    // --- parseMusicFolder: id arrives as a JSON number ---
     navidrome::MusicFolder mf = navidrome::parseMusicFolder(parse(
         "{\"id\":1,\"name\":\"Music\"}"));
     check(mf.id == "1" && mf.name == "Music", "parseMusicFolder coerces a numeric id");
 
-    // --- parseRadioStation ---
     navidrome::RadioStation st = navidrome::parseRadioStation(parse(
         "{\"id\":\"r1\",\"name\":\"Radio\",\"streamUrl\":\"http://s/\",\"homePageUrl\":\"http://h/\"}"));
     check(st.id == "r1" && st.streamUrl == "http://s/" && st.homePageUrl == "http://h/",
@@ -130,7 +117,6 @@ TEST_CASE(testSubsonicParsers) {
     check(navidrome::parseRadioStation(parse("{\"id\":\"r2\"}")).name == "Unnamed station",
         "parseRadioStation name default");
 
-    // --- parseBookmark: wraps an "entry" song + ms position ---
     navidrome::Bookmark bm;
     bool okBm = navidrome::parseBookmark(parse(
         "{\"position\":45000,\"comment\":\"resume\",\"entry\":{\"id\":\"t9\",\"title\":\"X\"}}"), bm);
@@ -139,12 +125,10 @@ TEST_CASE(testSubsonicParsers) {
     check(!navidrome::parseBookmark(parse("{\"position\":1}"), bm),
         "parseBookmark returns false with no entry");
 
-    // --- parseScanStatus: array-collapsed scanStatus ---
     navidrome::ScanStatus ss = navidrome::parseScanStatus(parse(
         "{\"scanStatus\":{\"scanning\":true,\"count\":1234}}"));
     check(ss.scanning && ss.count == 1234, "parseScanStatus reads scanning + count");
 
-    // --- parseArtistInfo2: biography + similar artists, array-collapsed like scanStatus ---
     navidrome::ArtistInfo ai = navidrome::parseArtistInfo2(parse(
         "{\"artistInfo2\":{\"biography\":\"A great <a href=\\\"x\\\">band</a> &amp; friends\","
         "\"lastFmUrl\":\"http://last.fm/band\",\"musicBrainzId\":\"mb1\","
@@ -161,7 +145,6 @@ TEST_CASE(testSubsonicParsers) {
     check(aiEmpty.biography.empty() && aiEmpty.similarArtists.empty(),
         "parseArtistInfo2 defaults on a missing artistInfo2 object");
 
-    // --- stripHtmlTags / formatArtistBiography ---
     check(navidrome::stripHtmlTags("A great <a href=\"x\">band</a> &amp; friends") ==
           "A great band & friends",
         "stripHtmlTags drops tags and unescapes entities");
@@ -177,7 +160,6 @@ TEST_CASE(testSubsonicParsers) {
     check(navidrome::formatArtistBiography(navidrome::ArtistInfo{}) == "No biography available.",
         "formatArtistBiography falls back when the server has no biography");
 
-    // --- parseSubsonicResponse: envelope handling ---
     navidrome::SubsonicResponse okResp = navidrome::parseSubsonicResponse(
         "{\"subsonic-response\":{\"status\":\"ok\",\"version\":\"1.16.1\","
         "\"songsByGenre\":{\"song\":[{\"id\":\"a\"},{\"id\":\"b\"}]}}}");
@@ -200,5 +182,4 @@ TEST_CASE(testSubsonicParsers) {
     check(!noWrap.ok && noWrap.error.kind == navidrome::ErrorKind::Parse,
         "parseSubsonicResponse: missing subsonic-response wrapper -> Parse error");
 }
-
-} // namespace
+}

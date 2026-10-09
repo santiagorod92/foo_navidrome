@@ -32,7 +32,7 @@ A [foobar2000](https://www.foobar2000.org/) component that lets you browse and s
 - Every artist has **Top Songs** and **Similar Artists** child nodes, so you can browse an artist's most popular tracks or jump straight to related artists without leaving the tree (`getTopSongs.view`, `getArtistInfo2.view`)
 - Double-click a song to play immediately
 - Live search across artists, albums and songs — results update as you type (debounced, no per-keystroke server hammering)
-- **Rescan Library Now** button in Preferences › Tools › Navidrome — triggers a server-side scan and shows live progress, for when files were added/removed server-side and you don't want to wait for Navidrome's own scan schedule
+- **Rescan** button (*Rescan Navidrome Library* section of Preferences › Tools › Navidrome) — triggers a server-side scan and shows live progress, for when files were added/removed server-side and you don't want to wait for Navidrome's own scan schedule
 - Album artwork displayed in Now Playing and playlists (fetched from Navidrome)
 - Credentials saved in foobar2000's config (persistent across restarts)
 - Test Connection button to verify server connectivity
@@ -222,6 +222,14 @@ Then:
 Any of those actions work on whole albums or artists too — the component expands
 the selection to tracks for you. Ratings apply to songs only, which is what
 Subsonic supports.
+
+The list keeps itself current: reopening a browser window that has been closed
+for more than 30 minutes reloads it from the server, and if **Add to Playlist** /
+**Play Now** finds nothing because the server rescanned its library since the list
+loaded (old artist/album ids), the list reloads by itself and asks you to select
+again. Whenever Add/Play can't load some or all of the tracks, an error window
+explains what happened, shows the server's error and suggests **Refresh**, which
+still reloads the list on demand.
 
 #### Showing ratings in the playlist
 
@@ -579,6 +587,23 @@ foo_navidrome/
 ├── foo_navidrome.xcodeproj/        # Xcode project
 └── foo_navidrome.xcworkspace/      # Xcode workspace (includes SDK projects)
 ```
+
+## Troubleshooting and bug reports
+
+foo_navidrome keeps its own log, `foo_navidrome.log`, in your foobar2000 profile
+folder. It records warnings and errors by default. To get more detail while you
+reproduce a problem, enable *Preferences › Advanced › Tools › Navidrome: verbose
+logging*. The change applies immediately, and you can turn it back off afterwards.
+
+When you report a bug, open *Preferences › Tools › Navidrome* and click **Copy
+Diagnostics**, then paste the result into the issue. It contains the component,
+foobar2000 and OS versions, your server's type and version, the relevant settings
+and the last part of the log. Credentials and custom header values are never
+included, and your server's address is replaced by `<server>`. **Open Log Folder**
+(**Show Log in Finder** on macOS) shows the whole file.
+
+[Open a bug report](https://github.com/santiagorod92/foo_navidrome/issues/new?template=bug_report.yml):
+the form walks you through these steps and has a field for the diagnostics.
 
 ## Contributing
 

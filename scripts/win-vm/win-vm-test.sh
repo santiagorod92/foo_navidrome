@@ -1,28 +1,12 @@
 #!/usr/bin/env bash
-# win-vm-test.sh — the local Windows-on-ARM test loop:
-#   1. cross-build the x64 foo_navidrome.dll on this Mac (build-mac.sh)
-#   2. scp it into the running Win11 ARM QEMU guest
-#   3. relaunch foobar2000 there
-#
-# The guest is created by win-vm.sh + autounattend.xml (run once). foobar2000 on
-# ARM is ARM64EC and loads the x64 component via emulation, so the x64 build is
-# all we need to exercise the UI. Requires the guest booted (win-vm.sh run) with
-# SSH up (tester/tester on localhost:2222).
-#
-# Usage: ./win-vm-test.sh [--launch]
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
 SSH_PORT="${SSH_PORT:-2222}"
 VMDIR="${VMDIR:-$HOME/.local/share/foo_navidrome-winvm}"
-# Common opts (no port flag — ssh uses -p, scp uses -P).
 COMMON=(-i "$VMDIR/id_vm" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
 SSH_OPTS=(-p "$SSH_PORT" "${COMMON[@]}")
 SCP_OPTS=(-P "$SSH_PORT" "${COMMON[@]}")
-# foobar-on-ARM (ARM64EC) scans user-components-arm64ec — it loads our x64 DLL
-# there via emulation. Hot-swapping the DLL in-place requires the component to
-# already be installed once from a .fb2k-component (see README); a loose drop
-# into a fresh folder is NOT picked up by the ARM build.
 GUEST_DIR='C:\Users\tester\AppData\Roaming\foobar2000-v2\user-components-arm64ec\foo_navidrome'
 LAUNCH=0; [ "${1:-}" = "--launch" ] && LAUNCH=1
 

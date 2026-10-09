@@ -1,0 +1,90 @@
+name: Bug report
+description: Something in foo_navidrome doesn't work as expected.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. The **diagnostics** section below is the
+        most useful part: it tells us your versions, your server and what the component logged
+        around the problem. It takes about a minute.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+      placeholder: |
+        I selected an artist in the Navidrome Browser and clicked Play Now.
+        I expected the album to start playing, but nothing happened.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The shortest list of steps that makes it happen. Say if it only happens sometimes.
+      placeholder: |
+        1. Open File › Open Navidrome Browser
+        2. Expand an artist
+        3. Click Play Now
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows
+        - macOS
+        - Windows under Wine (Linux)
+    validations:
+      required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        ## Diagnostics
+
+        **1. Turn on verbose logging** (recommended, so the log has the full detail):
+        *Preferences › Advanced › Tools › Navidrome: verbose logging (for bug reports)*.
+        It applies immediately, no restart needed.
+
+        **2. Reproduce the problem** once more, right away.
+
+        **3. Copy the diagnostics:** open *Preferences › Tools › Navidrome* and click
+        **Copy Diagnostics**. When the label next to it says *Copied to the clipboard*,
+        paste below.
+
+        **4. Turn verbose logging off** again if you like.
+
+        The diagnostics never include your password, token or custom header values, and your
+        server's address is replaced by `<server>`. Read it before posting anyway.
+
+        If foobar2000 crashed or the window won't open, use **Open Log Folder**
+        (**Show Log in Finder** on macOS) instead, or open `foo_navidrome.log` in your
+        foobar2000 profile folder, and attach that file.
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Paste the output of **Copy Diagnostics** here.
+      placeholder: |
+        ### foo_navidrome diagnostics
+
+        - Component: 1.x.y
+        - foobar2000: foobar2000 v2.x
+        ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Screenshots, the attached log file, other components you use (UI, lyrics), etc.
+    validations:
+      required: false

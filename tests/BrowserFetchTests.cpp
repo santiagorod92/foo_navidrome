@@ -1,5 +1,3 @@
-// Unit tests: NavidromeBrowserModel.cpp — buildRootNodes, the fetchChildren dispatch,
-// collectSongsDeep / collectSelectionSongs and the playlist rating push-back.
 #include "TestHarness.h"
 #include "../src/core/NavidromeBrowserModel.h"
 #include "FakeBrowserClient.h"
@@ -12,7 +10,6 @@ namespace {
 TEST_CASE(testBrowserFetchDispatch) {
     using navidrome::BrowserNode;
 
-    // --- buildRootNodes: flat vs. library-grouped ---
     {
         FakeBrowserClient fc;
         std::string err;
@@ -43,7 +40,6 @@ TEST_CASE(testBrowserFetchDispatch) {
         check(roots.empty(), "no category nodes are returned on a failed root load");
     }
 
-    // --- fetchChildren: one representative case per node type ---
     struct Case {
         BrowserNode node;
         const char* wantCall;
@@ -126,8 +122,6 @@ TEST_CASE(testBrowserFetchDispatch) {
               "the Now Playing category yields song nodes annotated with user + minutesAgo");
     }
     {
-        // Placeholder as built by fetchChildren's Artist case: id = artist id,
-        // subtitle = artist name (see makeArtistSubNode).
         FakeBrowserClient fc; std::string err;
         BrowserNode topSongsNode;
         topSongsNode.type = BrowserNode::Category; topSongsNode.category = BrowserNode::CatArtistTopSongs;
@@ -181,7 +175,6 @@ TEST_CASE(testBrowserFetchDispatch) {
               "a failed child fetch clears the result and surfaces the error");
     }
 
-    // --- collectSelectionSongs: multi-select de-dupe across selected nodes ---
     {
         auto song = [](const char* id) {
             navidrome::Song s; s.id = id; s.title = id; return navidrome::makeSongNode(s);
@@ -193,8 +186,8 @@ TEST_CASE(testBrowserFetchDispatch) {
             return n;
         };
         FakeBrowserClient fc;
-        auto a = loaded({ song("x"), song("x"), song("y") });   // playlist with a repeat
-        auto b = loaded({ song("y"), song("z") });              // overlaps a on "y"
+        auto a = loaded({ song("x"), song("x"), song("y") });
+        auto b = loaded({ song("y"), song("z") });
         auto out = navidrome::collectSelectionSongs(fc, { a, b });
         std::string ids;
         for (auto& s : out) ids += s->id;
@@ -206,14 +199,12 @@ TEST_CASE(testBrowserFetchDispatch) {
               "collectSongIdsDeep applies the same cross-selection de-dupe");
     }
 
-    // --- collectSongsDeep: recurses through the tree, reuses loaded children ---
     {
         FakeBrowserClient fc;
         auto artistNode = std::make_shared<BrowserNode>();
         artistNode->type = BrowserNode::Artist; artistNode->id = "ar1";
         std::vector<navidrome::BrowserNodePtr> songs;
         navidrome::collectSongsDeep(fc, artistNode, songs);
-        // artist -> (fetch) album -> (fetch) song
         check(songs.size() == 1 && songs[0]->type == BrowserNode::Song,
               "collectSongsDeep walks artist -> album -> song via fetches");
         bool touchedSubCategories = false;
@@ -239,10 +230,65 @@ TEST_CASE(testBrowserFetchDispatch) {
               "collectSongIdsDeep returns the non-empty song ids");
     }
 
-    // --- syncBrowserNodesToPlaylists: Song filter + RatingUpdate build ---
+    {
+        FakeBrowserClient fc;
+        fc.error = "Album not found";
+        auto albumNode = std::make_shared<BrowserNode>();
+        albumNode->type = BrowserNode::Album; albumNode->id = "gone";
+        std::string err;
+        auto out = navidrome::collectSelectionSongs(fc, { albumNode }, &err);
+        check(out.empty() && err == "Album not found",
+              "collectSelectionSongs surfaces the fetch error instead of an empty silence");
+
+        FakeBrowserClient ok;
+        std::string none;
+        auto got = navidrome::collectSelectionSongs(ok, { albumNode }, &none);
+        check(got.size() == 1 && none.empty(), "a clean collect leaves the error empty");
+    }
+
+    {
+        using navidrome::browserTreeIsStale;
+        using navidrome::kBrowserTreeMaxAgeMs;
+        const long long t0 = 1000000;
+        check(browserTreeIsStale(0, t0), "a tree that never loaded is stale");
+        check(!browserTreeIsStale(t0, t0 + kBrowserTreeMaxAgeMs - 1),
+              "a tree younger than the max age is fresh");
+        check(browserTreeIsStale(t0, t0 + kBrowserTreeMaxAgeMs),
+              "a tree at the max age is stale");
+
+        using navidrome::shouldReloadAfterEmptyCollect;
+        check(!shouldReloadAfterEmptyCollect(true, true, true),
+              "songs were found: never rebuild under the user");
+        check(shouldReloadAfterEmptyCollect(false, true, false),
+              "nothing found because a fetch failed: rebuild");
+        check(shouldReloadAfterEmptyCollect(false, false, true),
+              "nothing found from a stale tree: rebuild");
+        check(!shouldReloadAfterEmptyCollect(false, false, false),
+              "a really empty node in a fresh tree is left alone");
+
+        using navidrome::queueProblemMessage;
+        check(queueProblemMessage(true, "", false).empty(),
+              "everything queued: no message");
+        const auto partial = queueProblemMessage(true, "Album not found", false);
+        check(partial.find("only part") != std::string::npos &&
+              partial.find("Refresh") != std::string::npos &&
+              partial.find("Album not found") != std::string::npos,
+              "partial queue: says so, suggests Refresh, quotes the server error");
+        const auto reloaded = queueProblemMessage(false, "Album not found", true);
+        check(reloaded.find("reloaded") != std::string::npos &&
+              reloaded.find("Refresh") != std::string::npos &&
+              reloaded.find("Album not found") != std::string::npos,
+              "failed + reloaded: explains the reload, suggests Refresh, quotes the error");
+        const auto empty = queueProblemMessage(false, "", false);
+        check(empty.find("no tracks") != std::string::npos &&
+              empty.find("Refresh") != std::string::npos &&
+              empty.find("Server error") == std::string::npos,
+              "nothing found without an error: suggests Refresh, no error line");
+    }
+
     {
         navidrome::Song s1; s1.id = "s1"; s1.rating = 4; s1.starred = true;
-        navidrome::Song s2; s2.id = "";   s2.rating = 2;      // no id -> skipped
+        navidrome::Song s2; s2.id = "";   s2.rating = 2;
         std::vector<navidrome::BrowserNodePtr> mixed = {
             navidrome::makeSongNode(s1),
             navidrome::makeSongNode(s2),
@@ -259,5 +305,4 @@ TEST_CASE(testBrowserFetchDispatch) {
               "syncBrowserNodesToPlaylists forwards only id-bearing Song nodes");
     }
 }
-
-} // namespace
+}

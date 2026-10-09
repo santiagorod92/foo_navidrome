@@ -1,0 +1,18 @@
+name: Feature request
+description: Suggest something foo_navidrome could do.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would you like to do?
+      description: The thing you're trying to do, and what gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How could it work?
+      description: Your idea of the feature. Mention if it's for Windows, macOS or both.
+    validations:
+      required: false

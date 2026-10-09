@@ -1,28 +1,25 @@
-// Entry point for the SDK-free unit-test executable — runs every TEST_CASE
-// registered by the tests/*.cpp topic files (see TestHarness.h).
 #include "TestHarness.h"
 
 #include <iostream>
 #include <utility>
 
 namespace navidrome {
+
 std::vector<RatingUpdate> g_lastRatingSync;
 void syncRatingsToPlaylists(std::vector<RatingUpdate> u) { g_lastRatingSync = std::move(u); }
 }
 
 namespace tests {
+
 namespace {
 
 int g_failures = 0;
 
-// Function-local so registration from other translation units' static
-// initialisers never runs before the vector is constructed.
 std::vector<std::pair<const char*, TestFn>>& registry() {
     static std::vector<std::pair<const char*, TestFn>> r;
     return r;
 }
-
-} // namespace
+}
 
 void check(bool condition, const char* description) {
     if (condition) return;
@@ -38,8 +35,7 @@ bool registerTest(const char* name, TestFn fn) {
     registry().emplace_back(name, fn);
     return true;
 }
-
-} // namespace tests
+}
 
 int main() {
     for (const auto& t : tests::registry()) {

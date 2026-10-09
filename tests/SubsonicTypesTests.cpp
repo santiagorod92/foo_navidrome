@@ -1,6 +1,3 @@
-// Unit tests: SubsonicTypes.h string/URL helpers — enums, header parsing, percent
-// decoding, transcode params, file names, the navidrome:// track URI codec,
-// scrobble threshold, music-folder selection and query-param lookups.
 #include "TestHarness.h"
 #include "../src/core/SubsonicTypes.h"
 
@@ -131,18 +128,13 @@ TEST_CASE(testTrackURICodec) {
     using navidrome::buildTrackURI;
     using navidrome::parseTrackURI;
 
-    // Empty id -> empty URI (both platforms rely on this to skip non-songs).
     check(buildTrackURI(TrackURI{}).empty(), "an empty id builds no URI");
 
-    // A bare track carrying only an id must be byte-identical to what the
-    // pre-codec builders produced: prefix + encoded id, no '?'.
     TrackURI bare;
     bare.id = "abc123";
     check(buildTrackURI(bare) == "navidrome://track/abc123",
         "an id-only track has no query string");
 
-    // Full round-trip. Note album has a space and albumId a slash — both must
-    // survive encode -> decode unchanged.
     TrackURI in;
     in.id       = "song/42";
     in.title    = "Café del Mar";
@@ -159,7 +151,6 @@ TEST_CASE(testTrackURICodec) {
 
     const std::string uri = buildTrackURI(in);
     check(uri.compare(0, 18, "navidrome://track/") == 0, "URI keeps the scheme prefix");
-    // Reserved characters in the id and values are percent-encoded.
     check(uri.find("navidrome://track/song%2F42") == 0, "the id is percent-encoded");
     check(uri.find("artist=A%20%26%20B") != std::string::npos,
         "'&' and space in a value are escaped so they don't break the query");
@@ -179,7 +170,6 @@ TEST_CASE(testTrackURICodec) {
     check(out.starred == in.starred,   "starred round-trips");
     check(out.duration > 251.0 && out.duration < 252.0, "duration round-trips (approx)");
 
-    // Unset fields are omitted, not sent as empty params.
     TrackURI minimal;
     minimal.id = "x";
     minimal.title = "T";
@@ -188,32 +178,26 @@ TEST_CASE(testTrackURICodec) {
     check(mUri.find("rating=") == std::string::npos, "an unset rating is absent, not rating=0");
     check(mUri.find("starred=") == std::string::npos, "an unset star is absent");
 
-    // A foreign URI parses to an empty id (== "not ours").
     check(parseTrackURI("https://server/music.mp3?title=x").id.empty(),
         "a non-navidrome URI yields no id");
     check(parseTrackURI("navidrome://track/").id.empty(),
         "the bare prefix yields no id");
 
-    // An old URI missing the newer fields leaves them at defaults, never a sentinel.
     const TrackURI legacy = parseTrackURI("navidrome://track/old?title=Song&artist=Nine");
     check(legacy.id == "old" && legacy.title == "Song" && legacy.artist == "Nine",
         "a legacy URI's known fields parse");
     check(legacy.rating == 0 && !legacy.starred && legacy.albumId.empty(),
         "a legacy URI's absent fields stay at their defaults");
 
-    // Unknown query keys are ignored, not fatal.
     const TrackURI fwd = parseTrackURI("navidrome://track/y?title=Z&future=1&rating=2");
     check(fwd.title == "Z" && fwd.rating == 2, "an unknown key is skipped, known keys still read");
 }
 
 TEST_CASE(testScrobbleThreshold) {
     using navidrome::scrobbleSubmitThreshold;
-    // Half the length while that's under the 4-minute cap.
     check(scrobbleSubmitThreshold(200.0) == 100.0, "short track: submit at half length");
-    // Capped at 240s for anything 8 minutes or longer.
     check(scrobbleSubmitThreshold(600.0) == 240.0, "long track: submit is capped at 4 min");
     check(scrobbleSubmitThreshold(480.0) == 240.0, "exactly 8 min: half == cap");
-    // Unknown / live-stream length falls back to the cap alone.
     check(scrobbleSubmitThreshold(0.0) == 240.0, "unknown length falls back to the cap");
     check(scrobbleSubmitThreshold(-1.0) == 240.0, "negative length falls back to the cap");
 }
@@ -224,7 +208,6 @@ TEST_CASE(testMusicFolderFilter) {
     using navidrome::joinMusicFolderIds;
     using navidrome::effectiveMusicFolderIds;
 
-    // parse: trim, drop empties, de-dupe, keep order.
     const auto ids = parseMusicFolderIds(" 1, 2 ,,3, 2 ");
     check((ids == std::vector<std::string>{"1", "2", "3"}),
         "parseMusicFolderIds trims, de-dupes and drops empty entries");
@@ -239,7 +222,6 @@ TEST_CASE(testMusicFolderFilter) {
     const std::vector<MusicFolder> two    = {{"1", "Music"}, {"2", "Audiobooks"}};
     const std::vector<MusicFolder> three  = {{"1", "Music"}, {"2", "Audiobooks"}, {"3", "Podcasts"}};
 
-    // Every "do nothing" branch returns {} — byte-for-byte today's behaviour.
     check(effectiveMusicFolderIds(false, "1", two).empty(),
         "filter disabled -> no fan-out even with a selection");
     check(effectiveMusicFolderIds(true, "", two).empty(),
@@ -251,7 +233,6 @@ TEST_CASE(testMusicFolderFilter) {
     check(effectiveMusicFolderIds(true, "7,8,9", two).empty(),
         "a selection that is entirely stale -> no fan-out");
 
-    // Real subset -> fan-out list, in server order, stale ids dropped.
     check((effectiveMusicFolderIds(true, "1", two) == std::vector<std::string>{"1"}),
         "one-of-two selected -> fan out over that id");
     check((effectiveMusicFolderIds(true, "3,1", three) ==
@@ -272,7 +253,6 @@ TEST_CASE(testRawQueryParam) {
     check(rawQueryParam(legacy, "size").empty(), "an absent param reads empty");
     check(rawQueryParam("navidrome://track/x", "id").empty(),
         "no query string means empty, not a crash");
-    // Pair-boundary anchoring: "id" must not match inside "guid=".
     check(rawQueryParam("x?guid=abc&id=real", "id") == "real",
         "a param name is only matched at a pair boundary");
 }
@@ -286,8 +266,6 @@ TEST_CASE(testQueryParams) {
     check(queryParamFromURI(uri, "rating") == "4", "a middle parameter is read");
     check(queryParamFromURI(uri, "albumId") == "alb/42",
         "the last parameter is read and percent-decoded");
-    // "album=" is a prefix of "albumId=" and vice versa — a naive find() would
-    // return the wrong one of the two.
     check(queryParamFromURI(uri, "album") == "Live Set",
         "a parameter whose name prefixes another is not confused with it");
     check(queryParamFromURI(uri, "coverArt").empty(),
@@ -299,7 +277,6 @@ TEST_CASE(testQueryParams) {
     check(queryParamFromURI("navidrome://track/abc?albumId=", "albumId").empty(),
         "an empty value is indistinguishable from absent, and must stay so");
 
-    // trackIdFromURI shares the percent-decoder; guard the seam.
     check(navidrome::trackIdFromURI("navidrome://track/song%252Fraw?rating=3") ==
         "song%2Fraw", "the song id is decoded exactly once, query stripped");
     check(navidrome::trackIdFromURI("https://server/music.mp3").empty(),
@@ -319,5 +296,4 @@ TEST_CASE(testQueryParams) {
           navidrome::trackIdFromURI("navidrome://track/?rating=4").empty(),
         "an empty id before the query still parses; params still read");
 }
-
-} // namespace
+}

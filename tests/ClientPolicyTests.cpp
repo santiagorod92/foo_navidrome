@@ -1,6 +1,3 @@
-// Unit tests: Shared client policy in SubsonicTypes.h — the error model, multi-library
-// fan-out/merge, retry policy, scrobble tracker, broken-track registry,
-// prefs option lists and the session-environment summary.
 #include "TestHarness.h"
 #include "../src/core/SubsonicTypes.h"
 
@@ -17,7 +14,6 @@ TEST_CASE(testErrorModel) {
     using navidrome::isRetryable;
     using navidrome::errorKindName;
 
-    // HTTP status -> ErrorKind
     check(httpStatusToErrorKind(200) == ErrorKind::None, "HTTP 200 is not an error");
     check(httpStatusToErrorKind(204) == ErrorKind::None, "any 2xx is success");
     check(httpStatusToErrorKind(0) == ErrorKind::Network,
@@ -34,7 +30,6 @@ TEST_CASE(testErrorModel) {
     check(httpStatusToErrorKind(418) == ErrorKind::ServerError,
         "an unmapped 4xx falls back to server error");
 
-    // Subsonic error code -> ErrorKind
     check(subsonicCodeToErrorKind(40) == ErrorKind::Auth, "Subsonic 40 wrong creds is auth");
     check(subsonicCodeToErrorKind(41) == ErrorKind::Auth, "Subsonic 41 token auth n/a is auth");
     check(subsonicCodeToErrorKind(50) == ErrorKind::Auth, "Subsonic 50 not authorized is auth");
@@ -45,7 +40,6 @@ TEST_CASE(testErrorModel) {
     check(subsonicCodeToErrorKind(60) == ErrorKind::ServerError,
         "Subsonic 60 trial expired is unmapped -> server error");
 
-    // retry policy
     check(isRetryable(ErrorKind::Network), "network failures are retryable");
     check(isRetryable(ErrorKind::Timeout), "timeouts are retryable");
     check(isRetryable(ErrorKind::RateLimited), "rate-limit is retryable (after backoff)");
@@ -56,7 +50,6 @@ TEST_CASE(testErrorModel) {
     check(!isRetryable(ErrorKind::NotConfigured), "not-configured is not retryable");
     check(!isRetryable(ErrorKind::None), "success is not 'retryable'");
 
-    // Error convenience accessors
     Error ok;
     check(ok.ok() && !ok.retryable() && std::string(ok.kindName()) == "None",
         "a default-constructed Error is success");
@@ -66,7 +59,6 @@ TEST_CASE(testErrorModel) {
     check(std::string(timedOut.kindName()) == "Timeout",
         "kindName round-trips the enum");
 
-    // every enumerator has a distinct, non-empty name
     const ErrorKind all[] = {
         ErrorKind::None, ErrorKind::NotConfigured, ErrorKind::Network,
         ErrorKind::Timeout, ErrorKind::Tls, ErrorKind::Auth, ErrorKind::NotFound,
@@ -84,7 +76,6 @@ TEST_CASE(testFanOutMerge) {
     auto id = [](const Album& a) { return a.id; };
     auto mk = [](const char* i) { Album a; a.id = i; return a; };
 
-    // empty folder list -> one call with an empty id, result passed straight through
     {
         int calls = 0;
         auto out = navidrome::mergeFanOut<Album>({}, [&](const std::string& fid) {
@@ -95,7 +86,6 @@ TEST_CASE(testFanOutMerge) {
         check(calls == 1 && out.size() == 2, "single-request path");
     }
 
-    // two folders, overlapping ids -> merged, first occurrence wins, order kept
     {
         auto out = navidrome::mergeFanOut<Album>({"1", "2"}, [&](const std::string& fid) {
             if (fid == "1") return std::vector<Album>{ mk("a"), mk("b") };
@@ -106,7 +96,6 @@ TEST_CASE(testFanOutMerge) {
             "merge preserves first-seen order");
     }
 
-    // items with an empty id are never treated as duplicates
     {
         auto out = navidrome::mergeFanOut<Album>({"1", "2"}, [&](const std::string&) {
             return std::vector<Album>{ mk("") };
@@ -123,7 +112,6 @@ TEST_CASE(testAlbumArtistFilter) {
 
     std::vector<Album> fromArtist = { mk("al1", "art1"), mk("al2", "art1"), mk("al3", "art1") };
 
-    // search confirms al1 + al3 belong to art1 (al2 only in another library)
     {
         std::vector<Album> search = { mk("al1", "art1"), mk("al3", "art1"), mk("alX", "other") };
         bool unconfirmed = true;
@@ -133,7 +121,6 @@ TEST_CASE(testAlbumArtistFilter) {
             "keeps only confirmed albums, order preserved");
     }
 
-    // search returned nothing for this artist -> full list back, flagged
     {
         std::vector<Album> search = { mk("alX", "other") };
         bool unconfirmed = false;
@@ -142,7 +129,6 @@ TEST_CASE(testAlbumArtistFilter) {
         check(out.size() == 3, "and returns the unfiltered list");
     }
 
-    // an album search row with no id is ignored
     {
         std::vector<Album> search = { mk("", "art1") };
         bool unconfirmed = false;
@@ -190,12 +176,10 @@ TEST_CASE(testRetryPolicy) {
 }
 
 TEST_CASE(testScrobbleTracker) {
-    // A real navidrome:// URI (10s track) and something that isn't ours.
     const std::string ours = "navidrome://track/s1?duration=10";
     const std::string alien = "https://example.com/song.mp3";
     const double len = 10.0;
 
-    // --- not one of ours: nothing happens ---
     {
         navidrome::ScrobbleTracker t;
         auto a = t.onNewTrack(alien, len, true);
@@ -204,7 +188,6 @@ TEST_CASE(testScrobbleTracker) {
         check(t.onPlaybackTime(9.0).empty(), "and never submits");
     }
 
-    // --- ours, scrobbling OFF: refresh only, never a scrobble ---
     {
         navidrome::ScrobbleTracker t;
         auto a = t.onNewTrack(ours, len, false);
@@ -213,7 +196,6 @@ TEST_CASE(testScrobbleTracker) {
         check(t.onPlaybackTime(999.0).empty(), "no submission when scrobbling is off");
     }
 
-    // --- ours, scrobbling ON: refresh + now-playing, then submit once ---
     {
         navidrome::ScrobbleTracker t;
         auto a = t.onNewTrack(ours, len, true);
@@ -225,11 +207,10 @@ TEST_CASE(testScrobbleTracker) {
         check(t.onPlaybackTime(thr + 5.0).empty(), "does not submit again");
     }
 
-    // --- onStop resets, so the same instance is reusable across tracks ---
     {
         navidrome::ScrobbleTracker t;
         t.onNewTrack(ours, len, true);
-        t.onPlaybackTime(999.0);   // submitted
+        t.onPlaybackTime(999.0);
         t.onStop();
         check(t.onPlaybackTime(999.0).empty(), "after onStop there is nothing to submit");
         auto a = t.onNewTrack(ours, len, true);
@@ -239,8 +220,6 @@ TEST_CASE(testScrobbleTracker) {
 }
 
 TEST_CASE(testBrokenTrackRegistry) {
-    // Fresh instance per case — not the process-wide brokenTrackRegistry()
-    // singleton, so cases can't bleed into each other.
     navidrome::BrokenTrackRegistry r;
     check(!r.isBroken("s1"), "nothing is broken before markBroken");
 
@@ -248,7 +227,7 @@ TEST_CASE(testBrokenTrackRegistry) {
     check(r.isBroken("s1"), "marked id reads back as broken");
     check(!r.isBroken("s2"), "an unmarked id stays unaffected");
 
-    r.markBroken("s1");  // idempotent
+    r.markBroken("s1");
     check(r.isBroken("s1"), "marking the same id twice is a no-op, not an error");
 
     r.markBroken("");
@@ -279,5 +258,4 @@ TEST_CASE(testSessionEnv) {
           "scrobble=off  startupRefresh=off  customHeaders=no",
         "defaults render as no/off/0 and an explicit format passes through");
 }
-
-} // namespace
+}

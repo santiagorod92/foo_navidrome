@@ -6,12 +6,12 @@
 
 #import <memory>
 
-// Forward declaration of config vars (defined in NavidromePlugin.mm)
 namespace navidrome {
+
     extern cfg_string cfg_server_url;
     extern cfg_string cfg_username;
     extern cfg_string cfg_password;
-    extern cfg_string cfg_salt;  // Fixed salt generated once at component load
+    extern cfg_string cfg_salt;
     extern cfg_string cfg_custom_headers;
     extern cfg_string cfg_stream_format;
     extern cfg_var_modern::cfg_int cfg_max_bitrate;
@@ -19,19 +19,6 @@ namespace navidrome {
     extern cfg_string cfg_library_ids;
 }
 
-// ---------------------------------------------------------------------------
-// This file is now the macOS adapter over the shared navidrome::SubsonicCore
-// (SubsonicCore.h) — the core owns every request body (URL assembly, retry
-// loop, status-wrapper check, json walk, multi-library fan-out). Here we
-// supply an NSURLSession-backed IHttpTransport + a cfg_*-backed
-// ISettingsProvider, keep the bare cover-art / download paths that never went
-// through JSON, and marshal the core's std::vector<navidrome::X> back into the
-// ObjC Subsonic* view-model the Mac UI consumes.
-// ---------------------------------------------------------------------------
-
-// Apply the user-configured custom headers (one "Name: Value" per line) to a
-// mutable request — shared by API calls and cover-art fetches so every request
-// carries e.g. Cloudflare Access service tokens.
 static void NavidromeApplyCustomHeaders(NSMutableURLRequest *req) {
     for (const std::string &line :
          navidrome::parseHeaderLines(navidrome::cfg_custom_headers.get().c_str())) {
@@ -48,8 +35,6 @@ static void NavidromeApplyCustomHeaders(NSMutableURLRequest *req) {
     }
 }
 
-// Map an NSURLErrorDomain code to the shared ErrorKind so the core's retry loop
-// can tell a transient socket failure from a dead-certain one.
 static navidrome::ErrorKind NavidromeClassifyURLError(NSInteger code) {
     switch (code) {
         case NSURLErrorTimedOut:
@@ -76,9 +61,6 @@ static navidrome::ErrorKind NavidromeClassifyURLError(NSInteger code) {
     }
 }
 
-// The server rejecting the configured credentials is a deterministic, user-
-// actionable state — say so once per session in the console (every subsequent
-// call would just repeat it).
 static void NavidromeWarnAuthOnce() {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
@@ -90,10 +72,6 @@ static void NavidromeWarnAuthOnce() {
 static NSString *nsstr(const std::string &s) {
     return [NSString stringWithUTF8String:s.c_str()] ?: @"";
 }
-
-// ---------------------------------------------------------------------------
-// Data model implementations
-// ---------------------------------------------------------------------------
 
 @implementation SubsonicArtist
 - (NSString *)description {
@@ -169,11 +147,6 @@ static NSString *nsstr(const std::string &s) {
 }
 @end
 
-// ---------------------------------------------------------------------------
-// navidrome::X struct -> ObjC Subsonic* view-model. A straight field copy: the
-// json parsing, field names and Subsonic quirks all live in SubsonicTypes.h,
-// byte-for-byte shared with the Windows client.
-// ---------------------------------------------------------------------------
 static SubsonicSong *SongFromCore(const navidrome::Song &s) {
     SubsonicSong *song = [[SubsonicSong alloc] init];
     song.songId     = nsstr(s.id);
@@ -332,8 +305,6 @@ static NSArray<NSString *> *StringsToNSArray(const std::vector<std::string> &v) 
     return a;
 }
 
-// A core method reports failure through a non-empty outError (its "isNull"
-// equivalent); turn that into the NSError the ObjC callers expect.
 static NSError *NavidromeMakeError(const std::string &msg, NSInteger code) {
     return [NSError errorWithDomain:@"SubsonicClient" code:code userInfo:@{
         NSLocalizedDescriptionKey: (msg.empty() ? @"request failed" : nsstr(msg)) }];
@@ -346,13 +317,8 @@ static std::vector<std::string> ToStdStrings(NSArray<NSString *> *arr) {
     return out;
 }
 
-// ---------------------------------------------------------------------------
-// The IHttpTransport + ISettingsProvider SubsonicCore runs on.
-// ---------------------------------------------------------------------------
 namespace {
 
-// One synchronous NSURLSession GET — no retry (the core drives that), no status
-// wrapper parsing. Custom headers applied from the live cfg globals.
 struct MacHttpTransport : navidrome::IHttpTransport {
     NSURLSession *session = nil;
 
@@ -418,15 +384,9 @@ struct MacSettingsProvider : navidrome::ISettingsProvider {
         return s;
     }
 };
-
-}  // namespace
-
-// ---------------------------------------------------------------------------
-// SubsonicClient
-// ---------------------------------------------------------------------------
+}
 
 @interface SubsonicClient () {
-    // Order matters: the transport + settings provider must outlive the core.
     std::unique_ptr<navidrome::IHttpTransport>    _transport;
     std::unique_ptr<navidrome::ISettingsProvider> _settingsProvider;
     std::unique_ptr<navidrome::SubsonicCore>      _core;
@@ -470,11 +430,6 @@ struct MacSettingsProvider : navidrome::ISettingsProvider {
     return _core->lastError();
 }
 
-// ---------------------------------------------------------------------------
-// API Methods — every call forwards to the shared core, then marshals the
-// result back into the ObjC view-model.
-// ---------------------------------------------------------------------------
-
 - (BOOL)pingWithError:(NSError **)error {
     std::string err;
     BOOL ok = _core->ping(err);
@@ -482,9 +437,9 @@ struct MacSettingsProvider : navidrome::ISettingsProvider {
     return ok;
 }
 
-// ---------------------------------------------------------------------------
-// Music folders / multi-library filter
-// ---------------------------------------------------------------------------
+- (BOOL)serverInfo:(navidrome::ServerInfo &)info error:(std::string &)error {
+    return _core->serverInfo(info, error);
+}
 
 - (NSArray<SubsonicMusicFolder *> *)getMusicFoldersWithError:(NSError **)error {
     std::string err;
@@ -504,10 +459,6 @@ struct MacSettingsProvider : navidrome::ISettingsProvider {
 - (NSArray<NSString *> *)libraryGroupingIds {
     return StringsToNSArray(_core->libraryGroupingIds());
 }
-
-// ---------------------------------------------------------------------------
-// Browse
-// ---------------------------------------------------------------------------
 
 - (NSArray<SubsonicArtist *> *)getArtistsWithError:(NSError **)error {
     std::string err;
@@ -556,10 +507,6 @@ struct MacSettingsProvider : navidrome::ISettingsProvider {
               @"albums":  AlbumsFromCore(r.albums),
               @"songs":   SongsFromCore(r.songs) };
 }
-
-// ---------------------------------------------------------------------------
-// Smart lists, favorites, ratings, playlists, scrobbling
-// ---------------------------------------------------------------------------
 
 - (NSArray<SubsonicAlbum *> *)getAlbumListOfType:(NSString *)type
                                             size:(NSInteger)size
@@ -713,7 +660,6 @@ struct MacSettingsProvider : navidrome::ISettingsProvider {
     std::string err;
     std::string pid = _core->createPlaylist(name.UTF8String ?: "", ToStdStrings(songIds), err);
     if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -3); return nil; }
-    // "" means "created, server echoed no id" — a success, per the header contract.
     return nsstr(pid);
 }
 
@@ -772,7 +718,6 @@ struct MacSettingsProvider : navidrome::ISettingsProvider {
     _core->createRadioStation(streamUrl.UTF8String ?: "", name.UTF8String ?: "",
                               homePageUrl.UTF8String ?: "", err);
     if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
-    // Subsonic's create-station endpoint echoes no id back — success is @"".
     return @"";
 }
 
@@ -819,7 +764,6 @@ struct MacSettingsProvider : navidrome::ISettingsProvider {
     std::string err;
     _core->createPodcastChannel(url.UTF8String ?: "", err);
     if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
-    // Like createRadioStation, Subsonic's create endpoint echoes no id back.
     return @"";
 }
 
@@ -897,10 +841,6 @@ struct MacSettingsProvider : navidrome::ISettingsProvider {
     return ok;
 }
 
-// ---------------------------------------------------------------------------
-// URL builders
-// ---------------------------------------------------------------------------
-
 - (NSString *)streamURLForSongId:(NSString *)songId coverArtId:(NSString *)coverArtId {
     return nsstr(_core->streamURL(songId.UTF8String ?: "", coverArtId.UTF8String ?: ""));
 }
@@ -912,11 +852,6 @@ struct MacSettingsProvider : navidrome::ISettingsProvider {
 - (NSURL *)coverArtURLForId:(NSString *)coverArtId size:(NSInteger)size {
     return [NSURL URLWithString:nsstr(_core->coverArtURL(coverArtId.UTF8String ?: "", (int)size))];
 }
-
-// ---------------------------------------------------------------------------
-// Bare byte fetch + streaming download — never went through the JSON path, so
-// they stay here rather than in the core.
-// ---------------------------------------------------------------------------
 
 - (NSData *)dataForURL:(NSURL *)url error:(NSError **)outError {
     const std::string safeUrl =
@@ -964,8 +899,6 @@ struct MacSettingsProvider : navidrome::ISettingsProvider {
             }
             return nil;
         }
-        // Same backoff primitives SubsonicCore's own retry loop uses — jitter
-        // sourced from the transport this client already owns.
         _transport->sleepMs(navidrome::retry::backoffMs(attempt, _transport->jitterMs()));
     }
     return nil;
@@ -974,8 +907,6 @@ struct MacSettingsProvider : navidrome::ISettingsProvider {
 - (BOOL)downloadURL:(NSURL *)url toPath:(NSString *)path error:(NSError **)outError {
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
     NavidromeApplyCustomHeaders(request);
-    // A track download can outlast the 30 s resource timeout the shared session
-    // uses for API calls.
     request.timeoutInterval = 300.0;
 
     __block NSURL *tempURL = nil;
@@ -986,8 +917,6 @@ struct MacSettingsProvider : navidrome::ISettingsProvider {
                      completionHandler:^(NSURL *location, NSURLResponse *response, NSError *error) {
         taskError    = error;
         httpResponse = (NSHTTPURLResponse *)response;
-        // The temp file is deleted as soon as this handler returns, so move it
-        // to its final home here rather than after the semaphore is signalled.
         if (location && !error && httpResponse.statusCode == 200) {
             NSError *moveErr = nil;
             [[NSFileManager defaultManager] removeItemAtPath:path error:nil];
@@ -1015,13 +944,8 @@ struct MacSettingsProvider : navidrome::ISettingsProvider {
 
 @end
 
-// ---------------------------------------------------------------------------
-// AudioMuse-AI POST (NavidromeAudioMuse.h). Its own session: the Navidrome one
-// caps a request at 30 s, and an Instant Playlist (an LLM run) takes longer.
-// None of the Navidrome custom headers — AudioMuse is a different server. The
-// body is kept on an HTTP error so AudioMuse's own error text can be shown.
-// ---------------------------------------------------------------------------
 namespace {
+
 struct MacJsonPoster : navidrome::audiomuse::IJsonPoster {
     navidrome::HttpResult postJson(const std::string &url, const std::string &body,
                                    const std::string &bearerToken, int timeoutMs) override {
@@ -1075,7 +999,7 @@ struct MacJsonPoster : navidrome::audiomuse::IJsonPoster {
         return out;
     }
 };
-} // namespace
+}
 
 navidrome::audiomuse::IJsonPoster &navidrome::audioMusePoster() {
     static MacJsonPoster inst;

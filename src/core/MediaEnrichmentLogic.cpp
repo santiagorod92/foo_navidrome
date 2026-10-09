@@ -1,9 +1,3 @@
-// This module is deliberately SDK-free (see CLAUDE.md) so the unit-test host in
-// Windows/tests/ can build it standalone. The only platform-specific piece is
-// the MD5 primitive: WinCrypt on Windows, CommonCrypto on macOS (the same one
-// SubsonicClient.mm already uses). That keeps the whole test suite building and
-// running natively on both platforms — `make test` (clang-cl + wine) and
-// `make mac-test` (native clang++) — off the one source file.
 #if defined(_WIN32)
 #if !defined(WIN32_LEAN_AND_MEAN)
 #define WIN32_LEAN_AND_MEAN
@@ -27,6 +21,7 @@
 #endif
 
 namespace navidrome {
+
 namespace {
 
 #if defined(_WIN32)
@@ -58,8 +53,6 @@ std::string md5Hex(const std::string& input) {
 #else
 std::string md5Hex(const std::string& input) {
     unsigned char digest[CC_MD5_DIGEST_LENGTH] = {};
-    // CC_MD5 is deprecated on modern macOS but not removed; it stays the
-    // lowest-dependency MD5 (no framework link) and matches SubsonicClient.mm.
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
     CC_MD5(input.data(), static_cast<CC_LONG>(input.size()), digest);
@@ -105,8 +98,7 @@ int subsonicErrorCode(const std::vector<std::uint8_t>& bytes) {
     }
     return value;
 }
-
-} // namespace
+}
 
 std::string uriEncode(const std::string& value) {
     static constexpr char hex[] = "0123456789ABCDEF";
@@ -162,7 +154,6 @@ std::string normalizeMediaServerUrl(const std::string& value) {
         [](unsigned char byte) { return static_cast<char>(std::tolower(byte)); });
     return result;
 }
-
 
 std::string buildCoverArtUrl(const std::string& serverUrl,
                              const std::string& username,
@@ -312,5 +303,4 @@ std::string buildEsLyricConfigJs(
     result << "},\n  debug: " << (debug ? "true" : "false") << ",\n};\n";
     return result.str();
 }
-
-} // namespace navidrome
+}

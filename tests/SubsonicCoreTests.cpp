@@ -6,16 +6,11 @@
 
 namespace {
 
-// ---------------------------------------------------------------------------
-// SubsonicCore — a fake transport records every URL and replays canned JSON so
-// the request assembly, retry loop, Auth handling and fan-out can be asserted
-// with no network.
-// ---------------------------------------------------------------------------
 struct FakeTransport : navidrome::IHttpTransport {
     std::vector<std::string> urls;
-    std::vector<std::pair<std::string, std::string>> routes;  // url-substring -> body
+    std::vector<std::pair<std::string, std::string>> routes;
     navidrome::Error forcedError;
-    int failTimes = 0;   // return forcedError for the next N calls
+    int failTimes = 0;
     int authCalls = 0;
 
     navidrome::HttpResult getOnce(const std::string& url) override {
@@ -49,7 +44,6 @@ static navidrome::SubsonicSettings basicSettings() {
 TEST_CASE(testSubsonicCore) {
     using navidrome::SubsonicCore;
 
-    // --- URL + auth assembly -------------------------------------------
     {
         FakeTransport tx;
         FakeSettings cfg;
@@ -82,7 +76,6 @@ TEST_CASE(testSubsonicCore) {
               "streamURL embeds the coverArt id when given");
     }
 
-    // --- a parse path: getArtists walks artists.index[].artist[] --------
     {
         FakeTransport tx; FakeSettings cfg; cfg.s = basicSettings();
         tx.routes.push_back({"getArtists.view",
@@ -99,11 +92,10 @@ TEST_CASE(testSubsonicCore) {
               "getArtists issues one request when the library filter is off");
     }
 
-    // --- retry loop ---------------------------------------------------
     {
         FakeTransport tx; FakeSettings cfg; cfg.s = basicSettings();
         tx.forcedError = { navidrome::ErrorKind::Network, 0, 0, "reset" };
-        tx.failTimes = 2;   // fail twice, succeed on the 3rd attempt
+        tx.failTimes = 2;
         SubsonicCore core(tx, cfg);
         std::string err;
         check(core.ping(err) && err.empty() && tx.urls.size() == 3,
@@ -119,7 +111,6 @@ TEST_CASE(testSubsonicCore) {
               "httpGet does not retry a deterministic failure");
     }
 
-    // --- Auth surfaces onAuthRejected, transport- and status-level -----
     {
         FakeTransport tx; FakeSettings cfg; cfg.s = basicSettings();
         tx.forcedError = { navidrome::ErrorKind::Auth, 401, 0, "bad creds" };
@@ -141,17 +132,16 @@ TEST_CASE(testSubsonicCore) {
               "a subsonic status=failed code 40 is classified Auth and warns once");
     }
 
-    // --- multi-library fan-out --------------------------------------
     {
         FakeTransport tx; FakeSettings cfg; cfg.s = basicSettings();
         cfg.s.libraryFilter = true;
-        cfg.s.libraryIdsCsv = "1,2";   // a proper subset of the 3 server folders
+        cfg.s.libraryIdsCsv = "1,2";
         tx.routes.push_back({"getMusicFolders.view",
             R"({"subsonic-response":{"status":"ok","musicFolders":{"musicFolder":[)"
             R"({"id":1,"name":"A"},{"id":2,"name":"B"},{"id":3,"name":"C"}]}}})"});
         tx.routes.push_back({"getAlbumList2.view",
             R"({"subsonic-response":{"status":"ok","albumList2":{"album":[)"
-            R"({"id":"al1","name":"One"}]}}})"});   // same id from both passes
+            R"({"id":"al1","name":"One"}]}}})"});
         SubsonicCore core(tx, cfg);
         std::string err;
         auto albums = core.getAlbumList(navidrome::AlbumListType::Newest, 50, err);
@@ -169,7 +159,6 @@ TEST_CASE(testSubsonicCore) {
               "the fan-out merge dedupes results by id");
     }
 
-    // --- getAllSongs: empty-query search3, paged by songOffset ---------
     {
         FakeTransport tx; FakeSettings cfg; cfg.s = basicSettings();
         tx.routes.push_back({"songOffset=0",
@@ -191,7 +180,6 @@ TEST_CASE(testSubsonicCore) {
               "getAllSongs pages an empty search3 query with artists/albums off");
     }
     {
-        // A server that ignores songOffset returns the same full page forever.
         FakeTransport tx; FakeSettings cfg; cfg.s = basicSettings();
         tx.routes.push_back({"search3.view",
             R"({"subsonic-response":{"status":"ok","searchResult3":{"song":[)"
@@ -212,5 +200,4 @@ TEST_CASE(testSubsonicCore) {
         check(!err.empty() && songs.empty(), "getAllSongs surfaces a server error");
     }
 }
-
-} // namespace
+}

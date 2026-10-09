@@ -1,7 +1,3 @@
-// Shared browser tree logic — the child-fetch dispatch, the root-node builder
-// and the deep song collector, written once over the IBrowserClient seam so the
-// Windows and macOS browser views stay identical. SDK-free (see the header).
-
 #include "NavidromeBrowserModel.h"
 #include "NavidromePlaylistSync.h"
 
@@ -26,24 +22,18 @@ namespace {
 
 BrowserNodePtr makeLibraryArtistNode(const Artist& a, const std::string& libraryId) {
     auto n = makeArtistNode(a);
-    n->libraryId = libraryId;   // pin this artist's album fetch to the library
+    n->libraryId = libraryId;
     return n;
 }
-
-} // namespace
+}
 
 std::vector<BrowserNodePtr> buildRootNodes(IBrowserClient& client, std::string& outError) {
     outError.clear();
     std::vector<BrowserNodePtr> out;
 
-    // Multi-library server -> group the tree by library: one Library node per
-    // library, each lazily expanding to its own artists. Single-library server
-    // (or a one-library scope) -> flat artist list. The grouping decision is
-    // the client's (groupingLibraryIds), independent of the "only selected
-    // libraries" filter — see the Decisions note in CLAUDE.md.
     auto groupIds = client.groupingLibraryIds();
     if (groupIds.size() >= 2) {
-        auto folders = client.musicFolders();   // warmed by groupingLibraryIds()
+        auto folders = client.musicFolders();
         for (auto& n : buildCategoryNodes()) out.push_back(n);
         for (const auto& id : groupIds) {
             std::string name = id;
@@ -92,8 +82,6 @@ std::vector<BrowserNodePtr> fetchChildren(IBrowserClient& client,
             for (const auto& s : client.getPlaylistSongs(node.id, outError)) addSong(s);
             break;
         case BrowserNode::Genre:
-            // getSongsByGenre is paged; 500 covers all but the largest genres
-            // and keeps a single request per expansion.
             for (const auto& s : client.getSongsForGenre(node.id, 500, outError)) addSong(s);
             break;
         case BrowserNode::PodcastChannel:
@@ -133,8 +121,6 @@ std::vector<BrowserNodePtr> fetchChildren(IBrowserClient& client,
                     }
                     break;
                 case BrowserNode::CatArtistTopSongs:
-                    // node.subtitle carries the artist name (see makeArtistSubNode) —
-                    // getTopSongs.view keys off the name, not the id.
                     for (const auto& s : client.getTopSongs(node.subtitle, 50, outError)) addSong(s);
                     break;
                 case BrowserNode::CatAllSongs:
@@ -145,7 +131,7 @@ std::vector<BrowserNodePtr> fetchChildren(IBrowserClient& client,
                     for (const auto& a : info.similarArtists) out.push_back(makeArtistNode(a));
                     break;
                 }
-                default:   // the four getAlbumList2-backed smart lists
+                default:
                     for (const auto& a : client.getAlbumList(
                             albumListTypeForCategory(node.category), 100, outError))
                         out.push_back(makeAlbumNode(a));
@@ -161,24 +147,17 @@ std::vector<BrowserNodePtr> fetchChildren(IBrowserClient& client,
     return out;
 }
 
-// An artist's "Top Songs"/"Similar Artists" children are extra browsing
-// entry points, not part of the artist's own discography — a deep walk that
-// started at the Artist (Play/Add "whole artist") must skip them, or it picks
-// up duplicate top tracks and drags in unrelated artists' entire catalogs.
-// Selecting either node directly still works: this only filters them out of
-// their *parent*'s recursion, and the function has no other special case for
-// BrowserNode::Category, so a direct call on one of these nodes falls through
-// to the normal fetch-then-recurse path below.
 namespace {
+
 bool isArtistSubCategory(const BrowserNodePtr& n) {
     return n->type == BrowserNode::Category &&
            (n->category == BrowserNode::CatArtistTopSongs ||
             n->category == BrowserNode::CatArtistSimilarArtists);
 }
-} // namespace
+}
 
 void collectSongsDeep(IBrowserClient& client, const BrowserNodePtr& node,
-                      std::vector<BrowserNodePtr>& out) {
+                      std::vector<BrowserNodePtr>& out, std::string* error) {
     if (!node) return;
     if (node->type == BrowserNode::Song || node->type == BrowserNode::Radio) {
         out.push_back(node);
@@ -188,28 +167,54 @@ void collectSongsDeep(IBrowserClient& client, const BrowserNodePtr& node,
 
     if (node->childrenLoaded && !node->children.empty()) {
         for (const auto& c : node->children)
-            if (!isArtistSubCategory(c)) collectSongsDeep(client, c, out);
+            if (!isArtistSubCategory(c)) collectSongsDeep(client, c, out, error);
         return;
     }
 
     std::string err;
-    for (const auto& c : fetchChildren(client, *node, err))
-        if (!isArtistSubCategory(c)) collectSongsDeep(client, c, out);
+    auto children = fetchChildren(client, *node, err);
+    if (!err.empty() && error && error->empty()) *error = err;
+    for (const auto& c : children)
+        if (!isArtistSubCategory(c)) collectSongsDeep(client, c, out, error);
 }
 
 std::vector<BrowserNodePtr> collectSelectionSongs(IBrowserClient& client,
-                                                  const std::vector<BrowserNodePtr>& nodes) {
+                                                  const std::vector<BrowserNodePtr>& nodes,
+                                                  std::string* error) {
     std::vector<BrowserNodePtr> out;
     std::unordered_set<std::string> fromEarlierNodes;
     for (const auto& n : nodes) {
         std::vector<BrowserNodePtr> part;
-        collectSongsDeep(client, n, part);
+        collectSongsDeep(client, n, part, error);
         for (const auto& s : part)
             if (s->id.empty() || !fromEarlierNodes.count(s->id)) out.push_back(s);
         for (const auto& s : part)
             if (!s->id.empty()) fromEarlierNodes.insert(s->id);
     }
     return out;
+}
+
+std::string queueProblemMessage(bool gotSongs, const std::string& error, bool reloaded) {
+    const std::string cause = error.empty() ? "" : "\n\nServer error: " + error;
+    if (gotSongs) {
+        if (error.empty()) return "";
+        return "Some of the selected items couldn't be loaded from the Navidrome server, "
+               "so only part of the selection was queued.\n\n"
+               "If the server rescanned its library since the list loaded, press Refresh "
+               "in the Navidrome Browser and try again." + cause;
+    }
+    if (reloaded)
+        return "Couldn't load the tracks of the selected item from the Navidrome server.\n\n"
+               "The server's library probably changed since the list loaded (a rescan can "
+               "give artists and albums new ids), so the list was reloaded. Select the item "
+               "again and retry. If it keeps failing, check the connection to the server and "
+               "press Refresh." + cause;
+    if (!error.empty())
+        return "Couldn't load the tracks of the selected item from the Navidrome server.\n\n"
+               "Press Refresh in the Navidrome Browser and try again." + cause;
+    return "The Navidrome server returned no tracks for the selected item.\n\n"
+           "If you expected some, the list may be out of date: press Refresh in the "
+           "Navidrome Browser and try again.";
 }
 
 std::vector<std::string> collectSongIdsDeep(IBrowserClient& client,
@@ -262,13 +267,14 @@ StarRatingResult applyRatingToNodes(IBrowserClient& client,
 }
 
 namespace {
+
 std::vector<BrowserNodePtr> songsToNodes(const std::vector<Song>& songs) {
     std::vector<BrowserNodePtr> nodes;
     nodes.reserve(songs.size());
     for (const auto& s : songs) nodes.push_back(makeSongNode(s));
     return nodes;
 }
-} // namespace
+}
 
 std::vector<BrowserNodePtr> fetchSimilarSongs(IBrowserClient& client,
                                               const std::string& itemId, int count,
@@ -328,5 +334,4 @@ Lyrics lyricsForTrackURI(IBrowserClient& client, const std::string& uri, std::st
     lyricsCache().put(t.id, l);
     return l;
 }
-
-} // namespace navidrome
+}

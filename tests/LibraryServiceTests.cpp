@@ -1,6 +1,3 @@
-// Unit tests: NavidromeBrowserModel.cpp — listLibraryAlbums / collectArtistSongs, the shared
-// half of navidrome_library_api (the album list other components, e.g. foo_ui_panels' album
-// browser, show).
 #include "TestHarness.h"
 #include "../src/core/NavidromeBrowserModel.h"
 #include "FakeBrowserClient.h"
@@ -11,7 +8,6 @@
 namespace {
 
 TEST_CASE(testLibraryAlbums) {
-    // Every artist's albums, completed from the artist where the server left fields empty.
     {
         FakeBrowserClient fc;
         std::vector<navidrome::Album> got;
@@ -26,14 +22,12 @@ TEST_CASE(testLibraryAlbums) {
         check(fc.calls.size() == 2 && fc.calls[1] == "getAlbumsForArtist:",
               "albums fetched unscoped (whole library selection)");
     }
-    // The artist list failing is an error; nothing delivered.
     {
         FakeBrowserClient fc; fc.error = "HTTP 401";
         int n = 0; std::string err;
         const bool ok = navidrome::listLibraryAlbums(fc, nullptr, [&](const navidrome::Album&) { ++n; }, err);
         check(!ok && err == "HTTP 401" && n == 0, "artist-list failure reported, no albums");
     }
-    // Abort is honoured between artists.
     {
         FakeBrowserClient fc;
         int n = 0; std::string err;
@@ -50,5 +44,4 @@ TEST_CASE(testCollectArtistSongs) {
     check(nodes.size() == 1 && nodes[0]->type == navidrome::BrowserNode::Song,
           "artist's albums expanded to song nodes");
 }
-
-} // namespace
+}

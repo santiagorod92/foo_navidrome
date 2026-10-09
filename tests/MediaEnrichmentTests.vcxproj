@@ -30,7 +30,6 @@
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <!-- Every topic file + TestMain.cpp; a new tests/*.cpp needs no edit here. -->
     <ClCompile Include="*.cpp" />
     <ClCompile Include="..\src\core\MediaEnrichmentLogic.cpp" />
     <ClCompile Include="..\src\core\NavidromeBrowserModel.cpp" />
