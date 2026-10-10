@@ -147,6 +147,9 @@ NBCWrapList(const std::vector<navidrome::BrowserNodePtr> &nodes) {
 }
 @end
 
+NSNotificationName const NavidromeBrowserSectionsDidChangeNotification =
+    @"NavidromeBrowserSectionsDidChangeNotification";
+
 @implementation NavidromeBrowserController
 
 - (instancetype)init {
@@ -154,8 +157,22 @@ NBCWrapList(const std::vector<navidrome::BrowserNodePtr> &nodes) {
     if (self) {
         _rootNodes     = [NSMutableArray array];
         _filteredNodes = [NSMutableArray array];
+        [NSNotificationCenter.defaultCenter addObserver:self
+                                               selector:@selector(browserSectionsChanged:)
+                                                   name:NavidromeBrowserSectionsDidChangeNotification
+                                                 object:nil];
     }
     return self;
+}
+
+- (void)dealloc {
+    [NSNotificationCenter.defaultCenter removeObserver:self];
+}
+
+- (void)browserSectionsChanged:(NSNotification *)note {
+    if (!self.isViewLoaded) return;
+    NAVIDROME_LOG("UI", "browser sections changed, reloading tree");
+    [self refresh:nil];
 }
 
 - (void)loadView {

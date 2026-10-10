@@ -9,6 +9,7 @@ struct FakeBrowserClient : navidrome::IBrowserClient {
     std::vector<std::string> calls;
     std::string error;
     std::vector<std::string> groupIds;
+    navidrome::CategoryKindList hidden;
     navidrome::Lyrics lyrics;
 
     template <class T> std::vector<T> one(const char* name, std::string& e, T v) {
@@ -143,6 +144,7 @@ struct FakeBrowserClient : navidrome::IBrowserClient {
         calls.push_back("groupingLibraryIds");
         return groupIds;
     }
+    navidrome::CategoryKindList hiddenCategories() override { return hidden; }
     std::vector<navidrome::MusicFolder> musicFolders() override {
         calls.push_back("musicFolders");
         return { {"1", "Music"}, {"2", "Podcasts"} };

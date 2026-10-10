@@ -9,7 +9,7 @@ Usage: win11-ui-test.sh <command>
                      (one-time setup: Columns UI as the UI module, the panel added to its layout
                      via Live layout editing > Add after > Panels > Navidrome Browser)
   prefs [PAGE]       Preferences on one of our pages, screenshot
-                     (main | audiomuse | libraries | radio | media | components)
+                     (main | audiomuse | libraries | sections | radio | media | components)
   log [N]            last N lines of the debug log
 USAGE
 }
@@ -178,10 +178,10 @@ cui() {
 prefs() {
   local guid
   case "${1:-main}" in
-    main) guid=${GUID_PREFIX}0105 ;; audiomuse) guid=${GUID_PREFIX}0405 ;; libraries) guid=${GUID_PREFIX}0112 ;;
+    main) guid=${GUID_PREFIX}0105 ;; audiomuse) guid=${GUID_PREFIX}0405 ;; libraries) guid=${GUID_PREFIX}0112 ;; sections) guid=${GUID_PREFIX}0117 ;;
     radio) guid=${GUID_PREFIX}010F ;; media) guid=${GUID_PREFIX}0109 ;;
     components) guid=0E966267-7DFB-433B-A07C-3F8CDD31A258 ;;
-    *) fail "unknown page '$1' (main | audiomuse | libraries | radio | media | components)" ;;
+    *) fail "unknown page '$1' (main | audiomuse | libraries | sections | radio | media | components)" ;;
   esac
   with_guest_config "INSERT OR REPLACE INTO main.configStrings VALUES ('preferences.lastOpenPage', '$guid');"
   "$WVM" fb2k start '/config'

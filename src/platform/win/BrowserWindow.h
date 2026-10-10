@@ -36,6 +36,7 @@ struct LoadedPayload {
 class BrowserWindow : public CWindowImpl<BrowserWindow>, private ui_config_callback_impl {
 public:
     static BrowserWindow& get();
+    static void reloadAllOpen();
     void show();
     void createEmbedded(HWND parent);
     void setContextMenuPassthrough(std::function<bool()> pass) { m_passContextMenu = std::move(pass); }
@@ -229,6 +230,7 @@ private:
     HTREEITEM     m_selAnchor = nullptr;
 
     bool          m_embedded = false;
+    static std::vector<BrowserWindow*> s_open;
     std::function<bool()> m_passContextMenu;
 
     std::map<HTREEITEM, std::shared_ptr<NavidromeNode>> m_nodeMap;

@@ -712,17 +712,47 @@ void playInstantMix(metadb_handle_ptr seed, const std::vector<navidrome::Browser
     else                 playFrom(pl, 0);
 }
 
-void runInstantMix(metadb_handle_ptr seed, std::string seedId, std::string title) {
+std::vector<navidrome::BrowserNodePtr> audioMuseMix(const std::string& seedId,
+                                                    navidrome::BrowserNode::Type seedType,
+                                                    threaded_process_status& status,
+                                                    abort_callback& abort, std::string& err) {
+    namespace am = navidrome::audiomuse;
+    const am::Settings settings = navidrome::audioMuseSettings();
+    if (!settings.configured()) {
+        NAVIDROME_LOG("UI", "Instant Mix: Navidrome returned nothing, AudioMuse-AI not configured");
+        err = am::noSimilarMessage(am::MixFallback::NotConfigured, {});
+        return {};
+    }
+    if (!am::canMixFrom(seedType)) {
+        err = am::noSimilarMessage(am::MixFallback::Unsupported, {});
+        return {};
+    }
+    std::string amErr;
+    const auto tracks = am::similarTo(navidrome::audioMusePoster(), settings, seedId, seedType, amErr);
+    abort.check();
+    if (!amErr.empty()) {
+        err = am::noSimilarMessage(am::MixFallback::Failed, amErr);
+        return {};
+    }
+    auto nodes = navidrome::withoutSongId(resolveWithProgress(tracks, status, abort, amErr), seedId);
+    if (nodes.empty()) {
+        NAVIDROME_WARN("UI", "Instant Mix: AudioMuse-AI fallback found nothing for " + seedId);
+        err = amErr.empty() ? am::noSimilarMessage(am::MixFallback::Empty, {})
+                            : am::noSimilarMessage(am::MixFallback::Failed, amErr);
+    }
+    return nodes;
+}
+
+void runInstantMix(metadb_handle_ptr seed, std::string seedId, navidrome::BrowserNode::Type seedType,
+                   std::string title) {
     const int count = navidrome::audiomuse::clampCount(static_cast<int>(navidrome::cfg_audiomuse_count.get()));
     NAVIDROME_LOG("UI", "Instant Mix: seed=" + seedId + " count=" + std::to_string(count));
     runWithProgress("Instant Mix", "Instant Mix: " + title,
-        [seedId, count](threaded_process_status&, abort_callback& abort, std::string& err) {
+        [seedId, seedType, count](threaded_process_status& status, abort_callback& abort, std::string& err) {
             auto nodes = navidrome::fetchSimilarSongs(navidrome::libraryClient(), seedId, count, err);
             abort.check();
             nodes = navidrome::withoutSongId(std::move(nodes), seedId);
-            if (nodes.empty() && err.empty())
-                err = "The server has no similar songs for this one. Navidrome answers Instant Mix "
-                      "from an agent with sonic similarity (e.g. the AudioMuse-AI plugin) or last.fm.";
+            if (nodes.empty() && err.empty()) nodes = audioMuseMix(seedId, seedType, status, abort, err);
             return nodes;
         },
         [seed](std::vector<navidrome::BrowserNodePtr> nodes) { playInstantMix(seed, nodes); });
@@ -736,7 +766,7 @@ void startInstantMix(metadb_handle_list_cref data) {
         file_info_impl info;
         if (data[i]->get_info(info) && info.meta_get_count_by_name("title") > 0)
             title = info.meta_get("title", 0);
-        runInstantMix(data[i], seedId, title);
+        runInstantMix(data[i], seedId, navidrome::BrowserNode::Song, title);
         return;
     }
 }
@@ -749,7 +779,7 @@ void navidrome::startInstantMix(const BrowserNodePtr& seed) {
         const metadb_handle_list h = makeTrackHandles({ seed }, nullptr);
         if (h.get_count() > 0) seedHandle = h[0];
     }
-    runInstantMix(seedHandle, seed->id, seed->displayName.empty() ? seed->id : seed->displayName);
+    runInstantMix(seedHandle, seed->id, seed->type, seed->displayName.empty() ? seed->id : seed->displayName);
 }
 
 namespace {

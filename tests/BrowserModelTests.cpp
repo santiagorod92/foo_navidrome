@@ -6,6 +6,38 @@
 
 namespace {
 
+TEST_CASE(testHiddenCategories) {
+    using navidrome::BrowserNode;
+
+    check(navidrome::browserCategories().size() == 12, "category table lists all 12 root categories");
+    check(navidrome::parseHiddenCategories("").empty(), "empty csv hides nothing");
+
+    auto h = navidrome::parseHiddenCategories(" radio,podcasts,,bogus,radio , starred");
+    check(h.size() == 3 && h[0] == BrowserNode::CatRadio && h[1] == BrowserNode::CatPodcasts &&
+          h[2] == BrowserNode::CatStarred,
+          "parse trims, skips unknown/empty keys and de-dupes, keeping csv order");
+    check(navidrome::joinHiddenCategories(h) == "starred,radio,podcasts",
+          "join writes keys in canonical category order");
+    check(navidrome::parseHiddenCategories(navidrome::joinHiddenCategories(h)) ==
+              navidrome::CategoryKindList({ BrowserNode::CatStarred, BrowserNode::CatRadio,
+                                            BrowserNode::CatPodcasts }),
+          "join/parse round-trips");
+    check(navidrome::joinHiddenCategories({}).empty(), "nothing hidden joins to an empty string");
+
+    bool keysUnique = true;
+    const auto& cats = navidrome::browserCategories();
+    for (size_t i = 0; i < cats.size(); ++i)
+        for (size_t j = i + 1; j < cats.size(); ++j)
+            if (std::string(cats[i].key) == cats[j].key || cats[i].kind == cats[j].kind)
+                keysUnique = false;
+    check(keysUnique, "category keys and kinds are unique");
+
+    auto nodes = navidrome::buildCategoryNodes({ BrowserNode::CatAllSongs, BrowserNode::CatNowPlaying });
+    check(nodes.size() == 10 && nodes.front()->category == BrowserNode::CatStarred &&
+          nodes.back()->category == BrowserNode::CatPodcasts,
+          "buildCategoryNodes drops hidden kinds and keeps the rest in order");
+}
+
 TEST_CASE(testBrowserModel) {
     using navidrome::BrowserNode;
 

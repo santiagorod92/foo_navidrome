@@ -1,3 +1,12 @@
+## [1.25.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.24.0...v1.25.0) (2026-10-10)
+
+
+### Features
+
+* **instant mix:** when Navidrome has no similar songs for a song or an artist and an AudioMuse-AI server URL is set (*Preferences › Tools › Navidrome › AudioMuse-AI*), Instant Mix now asks AudioMuse-AI directly, so it also works without the AudioMuse-AI Navidrome plugin and for tracks last.fm doesn't know ([#26](https://github.com/santiagorod92/foo_navidrome/issues/26)). When nothing is found, the message explains where Navidrome's answer comes from and how to set AudioMuse-AI up.
+* **browser:** choose which top-level sections the browser tree shows ([#27](https://github.com/santiagorod92/foo_navidrome/issues/27)). *Preferences › Tools › Navidrome › Browser Sections* has a checkbox per section (All Songs, Starred, Recently Added, Most Played, Recently Played, Random Albums, Genres, Playlists, Bookmarks, Radio, Podcasts, Now Playing); hidden ones disappear from the tree, leaving your artists (and libraries). Open browsers reload on Apply (Windows) or on each click (macOS). Everything stays visible by default.
+
+
 ## [1.24.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.23.0...v1.24.0) (2026-10-10)
 
 

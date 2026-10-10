@@ -207,26 +207,70 @@ inline BrowserNodePtr errorNode(const std::string& msg) {
     return n;
 }
 
-inline std::vector<BrowserNodePtr> buildCategoryNodes() {
-    struct Entry { BrowserNode::CategoryKind kind; const char* title; };
-    static const Entry kCategories[] = {
-        { BrowserNode::CatAllSongs,       "All Songs"       },
-        { BrowserNode::CatStarred,        "★ Starred"  },
-        { BrowserNode::CatRecentlyAdded,  "Recently Added"  },
-        { BrowserNode::CatMostPlayed,     "Most Played"     },
-        { BrowserNode::CatRecentlyPlayed, "Recently Played" },
-        { BrowserNode::CatRandom,         "Random Albums"   },
-        { BrowserNode::CatGenres,         "Genres"          },
-        { BrowserNode::CatPlaylists,      "Playlists"       },
-        { BrowserNode::CatBookmarks,      "Bookmarks"       },
-        { BrowserNode::CatRadio,          "Radio"           },
-        { BrowserNode::CatPodcasts,       "Podcasts"        },
-        { BrowserNode::CatNowPlaying,     "Now Playing"     },
+struct CategoryEntry {
+    BrowserNode::CategoryKind kind;
+    const char* title;
+    const char* key;
+};
+
+inline const std::vector<CategoryEntry>& browserCategories() {
+    static const std::vector<CategoryEntry> kCategories = {
+        { BrowserNode::CatAllSongs,       "All Songs",       "all_songs"       },
+        { BrowserNode::CatStarred,        "★ Starred",       "starred"         },
+        { BrowserNode::CatRecentlyAdded,  "Recently Added",  "recently_added"  },
+        { BrowserNode::CatMostPlayed,     "Most Played",     "most_played"     },
+        { BrowserNode::CatRecentlyPlayed, "Recently Played", "recently_played" },
+        { BrowserNode::CatRandom,         "Random Albums",   "random_albums"   },
+        { BrowserNode::CatGenres,         "Genres",          "genres"          },
+        { BrowserNode::CatPlaylists,      "Playlists",       "playlists"       },
+        { BrowserNode::CatBookmarks,      "Bookmarks",       "bookmarks"       },
+        { BrowserNode::CatRadio,          "Radio",           "radio"           },
+        { BrowserNode::CatPodcasts,       "Podcasts",        "podcasts"        },
+        { BrowserNode::CatNowPlaying,     "Now Playing",     "now_playing"     },
     };
+    return kCategories;
+}
+
+using CategoryKindList = std::vector<BrowserNode::CategoryKind>;
+
+inline bool containsCategory(const CategoryKindList& list, BrowserNode::CategoryKind kind) {
+    for (auto k : list)
+        if (k == kind) return true;
+    return false;
+}
+
+inline CategoryKindList parseHiddenCategories(const std::string& csv) {
+    CategoryKindList out;
+    std::size_t pos = 0;
+    while (pos <= csv.size()) {
+        std::size_t comma = csv.find(',', pos);
+        if (comma == std::string::npos) comma = csv.size();
+        std::string key = csv.substr(pos, comma - pos);
+        while (!key.empty() && key.front() == ' ') key.erase(key.begin());
+        while (!key.empty() && key.back() == ' ') key.pop_back();
+        for (const auto& c : browserCategories())
+            if (key == c.key && !containsCategory(out, c.kind)) out.push_back(c.kind);
+        pos = comma + 1;
+    }
+    return out;
+}
+
+inline std::string joinHiddenCategories(const CategoryKindList& hidden) {
+    std::string out;
+    for (const auto& c : browserCategories()) {
+        if (!containsCategory(hidden, c.kind)) continue;
+        if (!out.empty()) out += ',';
+        out += c.key;
+    }
+    return out;
+}
+
+inline std::vector<BrowserNodePtr> buildCategoryNodes(const CategoryKindList& hidden = {}) {
     std::vector<BrowserNodePtr> out;
-    out.reserve(sizeof(kCategories) / sizeof(kCategories[0]));
-    for (const auto& c : kCategories)
-        out.push_back(makeCategoryNode(c.kind, c.title));
+    out.reserve(browserCategories().size());
+    for (const auto& c : browserCategories())
+        if (!containsCategory(hidden, c.kind))
+            out.push_back(makeCategoryNode(c.kind, c.title));
     return out;
 }
 
@@ -332,6 +376,7 @@ struct IBrowserClient {
                                                  const std::string& title, std::string& outError) = 0;
 
     virtual std::vector<std::string>  groupingLibraryIds() = 0;
+    virtual CategoryKindList          hiddenCategories() { return {}; }
     virtual std::vector<MusicFolder>  musicFolders() = 0;
 
     virtual bool setStarred(bool starred, const std::string& itemId, StarKind kind,

@@ -30,11 +30,12 @@ BrowserNodePtr makeLibraryArtistNode(const Artist& a, const std::string& library
 std::vector<BrowserNodePtr> buildRootNodes(IBrowserClient& client, std::string& outError) {
     outError.clear();
     std::vector<BrowserNodePtr> out;
+    const auto hidden = client.hiddenCategories();
 
     auto groupIds = client.groupingLibraryIds();
     if (groupIds.size() >= 2) {
         auto folders = client.musicFolders();
-        for (auto& n : buildCategoryNodes()) out.push_back(n);
+        for (auto& n : buildCategoryNodes(hidden)) out.push_back(n);
         for (const auto& id : groupIds) {
             std::string name = id;
             for (const auto& f : folders)
@@ -46,7 +47,7 @@ std::vector<BrowserNodePtr> buildRootNodes(IBrowserClient& client, std::string& 
 
     auto artists = client.getArtists(outError);
     if (outError.empty())
-        for (auto& n : buildCategoryNodes()) out.push_back(n);
+        for (auto& n : buildCategoryNodes(hidden)) out.push_back(n);
     for (const auto& a : artists)
         out.push_back(makeArtistNode(a));
     return out;
