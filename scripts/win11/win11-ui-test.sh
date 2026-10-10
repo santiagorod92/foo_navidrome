@@ -5,6 +5,8 @@ Usage: win11-ui-test.sh <command>
   seed               copy foo_navidrome's settings from the Wine profile into the guest
   smoke [DLL]        deploy (default build-win/foo_navidrome.dll), relaunch, browse, play, assert, screenshot
   browser            open the browser in the running foobar2000
+  search [DLL] [Q]   deploy, relaunch, select a row, search Q (default "the"), clear it; asserts the
+                     tree rebuilds stay under SEARCH_MAX_MS (default 500) and prints their timings
   cui [DLL]          deploy, relaunch under Columns UI, assert the Navidrome Browser panel loads, screenshot
                      (one-time setup: Columns UI as the UI module, the panel added to its layout
                      via Live layout editing > Add after > Panels > Navidrome Browser)
@@ -25,6 +27,7 @@ GUEST_PROFILE='AppData/Roaming/foobar2000-v2'
 GUID_PREFIX='A1B2C3D4-1111-2222-AABB-CCDDEEFF'
 
 FIRST_ROW_X=60; FIRST_ROW_Y=43
+SEARCH_X=200; SEARCH_Y=15
 
 say()  { printf '\033[1;36m==> %s\033[0m\n' "$*"; }
 ok()   { printf '\033[1;32m  ok\033[0m %s\n' "$*"; }
@@ -151,6 +154,51 @@ smoke() {
   say "smoke passed"
 }
 
+rebuild_ms() {
+  since_mark | grep -E "UI +.*$1 .* took " | tail -1 | sed -E 's/.* took ([0-9.]+)(ms|us)$/\1 \2/' |
+    awk '{ printf "%d\n", ($2 == "us") ? $1 / 1000 : $1 }'
+}
+
+check_rebuild() {
+  local ms max="${SEARCH_MAX_MS:-500}"
+  ms="$(rebuild_ms "$1")"
+  [ -n "$ms" ] || fail "no '$1' timing in the log"
+  since_mark | grep -E "UI +.*$1 .* took " | tail -1 | sed -E 's/^[0-9:.]+ +//'
+  [ "$ms" -le "$max" ] && ok "$1 took ${ms}ms (<= ${max}ms)" || fail "$1 took ${ms}ms (> ${max}ms)"
+}
+
+search() {
+  local dll="${1:-$REPO/build-win/foo_navidrome.dll}" query="${2:-the}" crashes
+  [ -f "$dll" ] || fail "no $dll — build it first (make win-build)"
+  say "deploy $(basename "$dll")"
+  "$WVM" deploy "$dll"
+  crashes="$(crash_count)"
+  restart
+
+  say "open the browser, select the first row"
+  mark; open_browser
+  expect 'populateRoot .* took' 30 "root tree populated"
+  since_mark | grep -E 'populateRoot .* took' | tail -1 | sed -E 's/^[0-9:.]+ +//'
+  click_client "$FIRST_ROW_X" "$FIRST_ROW_Y"; sleep 0.5
+
+  say "search '$query'"
+  mark; click_client "$SEARCH_X" "$SEARCH_Y"; sleep 0.3; "$WVM" type "$query"
+  expect 'populateSearchResults .* took' 20 "search results shown"
+  sleep 1
+  check_rebuild populateSearchResults
+
+  say "clear the search"
+  mark; for _ in $(seq 1 ${#query}); do "$WVM" key bsp; done
+  expect 'restoreBrowseTree .* took' 20 "browse tree restored"
+  check_rebuild restoreBrowseTree
+
+  sleep 1
+  running || fail "foobar2000 is not running"
+  [ "$(crash_count)" = "$crashes" ] && ok "no new crash report" || fail "foobar2000 wrote a crash report"
+  shot "$SHOTS/win11-search-$(date +%Y%m%d-%H%M%S).png" && ok "screenshot"
+  say "search passed"
+}
+
 cui() {
   local dll="${1:-$REPO/build-win/foo_navidrome.dll}" crashes
   [ -f "$dll" ] || fail "no $dll — build it first (make win-build)"
@@ -194,6 +242,7 @@ case "${1:-}" in
   seed)    seed ;;
   smoke)   shift; smoke "$@" ;;
   browser) open_browser; echo "$BROWSER" ;;
+  search)  shift; search "$@" ;;
   cui)     shift; cui "$@" ;;
   prefs)   shift; prefs "$@" ;;
   log)     tail -n "${2:-50}" "$LOG" ;;
