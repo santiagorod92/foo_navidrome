@@ -304,8 +304,10 @@ void BrowserWindow::loadArtists() {
     m_searchResultNodes.clear();
 
     setStatus("Loading artists\u2026");
-    m_tree.DeleteAllItems();
-    m_nodeMap.clear();
+    {
+        TreeRebuild rebuild(*this);
+        clearTree();
+    }
     m_rootNodes.clear();
     refreshServerPlaylists();
     refreshRadioStations();
@@ -404,10 +406,14 @@ void BrowserWindow::populateRoot(LoadedPayload* payload) {
     m_rootNodes = payload->nodes;
     m_treeLoadedAtMs = navidrome::browserNowMs();
     std::size_t artists = 0, libraries = 0;
-    for (auto& n : m_rootNodes) {
-        insertNode(TVI_ROOT, n);
-        if (n->type == NavidromeNode::Artist)  ++artists;
-        if (n->type == NavidromeNode::Library) ++libraries;
+    {
+        NAVIDROME_TIMER("UI", "populateRoot " + std::to_string(m_rootNodes.size()) + " rows");
+        TreeRebuild rebuild(*this);
+        for (auto& n : m_rootNodes) {
+            insertNode(TVI_ROOT, n);
+            if (n->type == NavidromeNode::Artist)  ++artists;
+            if (n->type == NavidromeNode::Library) ++libraries;
+        }
     }
     if (!m_reloadNotice.empty()) { setStatus(m_reloadNotice); m_reloadNotice.clear(); }
     else if (libraries) setStatus(std::to_string(libraries) + " libraries");
@@ -420,25 +426,31 @@ void BrowserWindow::populateSearchResults(LoadedPayload* payload) {
     }
     m_isSearching       = true;
     m_searchResultNodes = payload->nodes;
-    m_tree.DeleteAllItems();
-    m_nodeMap.clear();
-    for (auto& n : m_searchResultNodes) insertNode(TVI_ROOT, n);
+    {
+        NAVIDROME_TIMER("UI", "populateSearchResults " + std::to_string(m_searchResultNodes.size()) + " rows");
+        TreeRebuild rebuild(*this);
+        clearTree();
+        for (auto& n : m_searchResultNodes) insertNode(TVI_ROOT, n);
+    }
     setStatus(std::to_string(m_searchResultNodes.size()) + " songs found");
 }
 
 void BrowserWindow::restoreBrowseTree() {
     m_isSearching = false;
     m_searchResultNodes.clear();
-    m_tree.DeleteAllItems();
-    m_nodeMap.clear();
     std::size_t artists = 0, libraries = 0;
-    for (auto& n : m_rootNodes) {
-        n->children.clear();
-        n->childrenLoaded = false;
-        SetNodeItem(n, nullptr);
-        insertNode(TVI_ROOT, n);
-        if (n->type == NavidromeNode::Artist)  ++artists;
-        if (n->type == NavidromeNode::Library) ++libraries;
+    {
+        NAVIDROME_TIMER("UI", "restoreBrowseTree " + std::to_string(m_rootNodes.size()) + " rows");
+        TreeRebuild rebuild(*this);
+        clearTree();
+        for (auto& n : m_rootNodes) {
+            n->children.clear();
+            n->childrenLoaded = false;
+            SetNodeItem(n, nullptr);
+            insertNode(TVI_ROOT, n);
+            if (n->type == NavidromeNode::Artist)  ++artists;
+            if (n->type == NavidromeNode::Library) ++libraries;
+        }
     }
     if (libraries) setStatus(std::to_string(libraries) + " libraries");
     else           setStatus(std::to_string(artists) + " artists");
@@ -470,8 +482,11 @@ void BrowserWindow::populateChildren(LoadedPayload* payload) {
         parent->children     = { errNode };
     }
 
-    for (auto& child : parent->children)
-        insertNode(NodeItem(parent), child);
+    {
+        TreeRebuild rebuild(*this);
+        for (auto& child : parent->children)
+            insertNode(NodeItem(parent), child);
+    }
 
     if (parent->children.empty()) {
         TVITEM it   = {};
@@ -480,6 +495,24 @@ void BrowserWindow::populateChildren(LoadedPayload* payload) {
         it.cChildren = 0;
         m_tree.SetItem(&it);
     }
+}
+
+BrowserWindow::TreeRebuild::TreeRebuild(BrowserWindow& w) : w(w) {
+    w.m_treeRebuilding = true;
+    w.m_tree.SetRedraw(FALSE);
+}
+
+BrowserWindow::TreeRebuild::~TreeRebuild() {
+    w.m_tree.SetRedraw(TRUE);
+    w.m_tree.Invalidate();
+    w.m_treeRebuilding = false;
+}
+
+void BrowserWindow::clearTree() {
+    m_tree.SelectItem(nullptr);
+    m_tree.DeleteAllItems();
+    m_nodeMap.clear();
+    m_selAnchor = nullptr;
 }
 
 std::string BrowserWindow::labelFor(const std::shared_ptr<NavidromeNode>& node) const {
@@ -634,6 +667,7 @@ LRESULT CALLBACK BrowserWindow::TreeSubclassProc(HWND hWnd, UINT msg, WPARAM wPa
 }
 
 LRESULT BrowserWindow::OnTreeSelChanged(LPNMHDR pnmh) {
+    if (m_treeRebuilding) return 0;
     auto* pnm = reinterpret_cast<LPNMTREEVIEW>(pnmh);
     HTREEITEM now = pnm->itemNew.hItem;
     if (!now) return 0;

@@ -168,6 +168,12 @@ private:
     void    populateChildren(LoadedPayload* payload);
     void    populateSearchResults(LoadedPayload* payload);
     void    restoreBrowseTree();
+    void    clearTree();
+    struct TreeRebuild {
+        explicit TreeRebuild(BrowserWindow& w);
+        ~TreeRebuild();
+        BrowserWindow& w;
+    };
     HTREEITEM insertNode(HTREEITEM parent, std::shared_ptr<NavidromeNode> node);
     std::shared_ptr<NavidromeNode> nodeForItem(HTREEITEM hItem);
     std::vector<std::shared_ptr<NavidromeNode>>
@@ -228,6 +234,7 @@ private:
     HBRUSH m_themeBgBrush = nullptr;
 
     HTREEITEM     m_selAnchor = nullptr;
+    bool          m_treeRebuilding = false;
 
     bool          m_embedded = false;
     static std::vector<BrowserWindow*> s_open;

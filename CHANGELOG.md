@@ -1,3 +1,11 @@
+## [1.25.1](https://github.com/santiagorod92/foo_navidrome/compare/v1.25.0...v1.25.1) (2026-10-10)
+
+
+### Bug Fixes
+
+* **windows:** foobar2000 no longer freezes while the Navidrome Browser shows search results or goes back to the full list after a search is cleared ([#30](https://github.com/santiagorod92/foo_navidrome/issues/30)). Rebuilding the tree used to take seconds on large libraries (2.3 s with 1500 artists); it now takes a few milliseconds. Loading the browser and expanding nodes are faster too.
+
+
 ## [1.25.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.24.0...v1.25.0) (2026-10-10)
 
 
