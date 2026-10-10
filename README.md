@@ -38,7 +38,7 @@ A [foobar2000](https://www.foobar2000.org/) component that lets you browse and s
 - Test Connection button to verify server connectivity
 - **Native `navidrome://` URI scheme**: tracks added to playlists store a stable URI, not a transient HTTP URL — playlists survive credential rotation or server URL changes
 - **Auto-skips tracks deleted from the server**: once a track 404s during playback (e.g. a stale playlist entry after a library reorg), it's skipped automatically for the rest of the session on any later shuffle/repeat/Random Mix — no more retrying the same dead stream over and over
-- Appears under **Preferences › Media Library › Library viewers** alongside Album List / Artist View, and can also be docked as a panel in the main window layout: **Navidrome Browser** in the Default UI element picker on Windows (*View › Layout › Enable layout editing mode*, right-click › *Replace UI Element…*), `navidrome` in **View › Layout › Edit Layout…** on macOS
+- Appears under **Preferences › Media Library › Library viewers** alongside Album List / Artist View, and can also be docked as a panel in the main window layout: **Navidrome Browser** in the Default UI element picker on Windows (*View › Layout › Enable layout editing mode*, right-click › *Replace UI Element…*) or as a [Columns UI](https://github.com/reupen/columns_ui) panel (*Panels › Navidrome Browser*), `navidrome` in **View › Layout › Edit Layout…** on macOS
 - **Lyrics on Windows** via [ESLyric](https://github.com/ESLyric/release) — see [Lyrics (ESLyric)](#lyrics-eslyric-windows)
 - **Lyrics on macOS** in a native **Navidrome Lyrics** layout panel — see [Lyrics (macOS)](#lyrics-macos)
 - **Instant Mix** from any playlist track (right-click › Navidrome › Instant Mix) or any song, album or artist in the browser — plays similar songs in a dedicated *Instant Mix* playlist — plus **AudioMuse-AI** Text Search, Instant Playlist and Song Alchemy — see [Instant Mix and AudioMuse-AI](#instant-mix-and-audiomuse-ai)
@@ -208,7 +208,7 @@ component** and abort on failure — pass `--no-test` to skip. All paths call
 Three ways to open the browser:
 - **File › Open Navidrome Browser**
 - **Preferences › Media Library › Library viewers › Navidrome › Activate**
-- As a panel in your layout, always open: on Windows (Default UI) enable *View › Layout › Enable layout editing mode*, right-click an element › *Replace UI Element…* (or add a splitter first) and pick **Navidrome Browser** under *Media Library Viewers*; on macOS open *View › Layout › Edit Layout…* and add a `navidrome` line where you want the panel (names are case-insensitive)
+- As a panel in your layout, always open: on Windows (Default UI) enable *View › Layout › Enable layout editing mode*, right-click an element › *Replace UI Element…* (or add a splitter first) and pick **Navidrome Browser** under *Media Library Viewers*; with Columns UI turn on *Live layout editing* (toolbar button, or *Preferences › Columns UI › Layout*), right-click a panel › *Add before/after* › *Panels* › **Navidrome Browser**; on macOS open *View › Layout › Edit Layout…* and add a `navidrome` line where you want the panel (names are case-insensitive)
 
 Then:
 - Expand an artist to see albums, expand an album to see songs
@@ -572,6 +572,7 @@ foo_navidrome/
 │           ├── BrowserWindow.h/.cpp        #   ATL browser window
 │           └── EsLyricBridge.* / EsLyricScript.h # ESLyric config + searcher script
 ├── third_party/wtl/                # Vendored WTL headers (Windows builds)
+├── third_party/columns_ui-sdk/     # Vendored Columns UI SDK (0BSD; the Columns UI panel)
 ├── tests/                          # cross-platform unit tests — Windows (vcxproj), Linux (make test), macOS (make mac-test)
 ├── scripts/                        # build / install / toolchain helpers
 │   ├── mac-dev-build.sh            #   macOS dev loop (bump + xcodebuild + install)
@@ -624,6 +625,7 @@ project is developed and tested with today:
 | **Windows compiler** | clang-cl / lld-link (LLVM 22) cross-compiling on Linux | Visual Studio 2022 (MSVC toolset **v143**, *Desktop development with C++* + ATL); this is what CI uses (`windows-2022` runner) |
 | **Windows SDK / CRT / ATL** | Windows SDK 10.0.26100 + MSVC CRT/ATL, fetched by [xwin](https://github.com/Jake-Shadle/xwin) 0.9.0 | whatever VS 2022 installs |
 | **WTL** | [WTL 10](https://sourceforge.net/projects/wtl/) (10.01 vendored in `third_party/wtl/` for CI; the Linux setup script fetches 10.0.10320) | WTL 10 |
+| **Columns UI SDK** | [reupen/columns_ui-sdk](https://github.com/reupen/columns_ui-sdk) 8.1.0, vendored in `third_party/columns_ui-sdk/` (`VERSION` = commit); only `ui_extension.cpp` is compiled in | nothing to install; tested against Columns UI 3.7.0 |
 | **macOS toolchain** | Xcode 15.4 (macOS 14.5 SDK) | Xcode 15+; deployment target **macOS 12.0** |
 | **Runtime testing** | Wine (fast loop), a Windows 11 VM ([dockur/windows](https://github.com/dockur/windows)), and a macOS 14 Sonoma VM ([dockur/macos](https://github.com/dockur/macos)) | any real Windows 10/11 or macOS 12+ machine with foobar2000 v2 |
 | **Build tooling** | GNU Make, bash, git, curl, unzip/zip | macOS ships bash 3.2; the scripts stay compatible with it |
@@ -764,7 +766,6 @@ Platform folders only hold transport, widget and wiring code — a data-layer fi
 ### Good places to start
 
 - Offline / caching support for streamed tracks.
-- A Columns UI panel (`uie::window`) for the browser on Windows. Default UI is covered.
 
 ## Releasing
 

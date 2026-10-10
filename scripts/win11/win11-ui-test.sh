@@ -5,6 +5,9 @@ Usage: win11-ui-test.sh <command>
   seed               copy foo_navidrome's settings from the Wine profile into the guest
   smoke [DLL]        deploy (default build-win/foo_navidrome.dll), relaunch, browse, play, assert, screenshot
   browser            open the browser in the running foobar2000
+  cui [DLL]          deploy, relaunch under Columns UI, assert the Navidrome Browser panel loads, screenshot
+                     (one-time setup: Columns UI as the UI module, the panel added to its layout
+                     via Live layout editing > Add after > Panels > Navidrome Browser)
   prefs [PAGE]       Preferences on one of our pages, screenshot
                      (main | audiomuse | libraries | radio | media | components)
   log [N]            last N lines of the debug log
@@ -148,6 +151,30 @@ smoke() {
   say "smoke passed"
 }
 
+cui() {
+  local dll="${1:-$REPO/build-win/foo_navidrome.dll}" crashes
+  [ -f "$dll" ] || fail "no $dll — build it first (make win-build)"
+  say "deploy $(basename "$dll")"
+  "$WVM" deploy "$dll"
+  crashes="$(crash_count)"
+
+  say "restart foobar2000 (fresh log)"
+  restart
+  expect 'Columns UI panel instantiated' 20 "Columns UI created the Navidrome Browser panel"
+  expect 'getArtists\.view' 15 "artist list requested"
+  expect '200 OK' 20 "artist list loaded"
+
+  say "post-checks"
+  sleep 2
+  running || fail "foobar2000 is not running"
+  [ "$(crash_count)" = "$crashes" ] && ok "no new crash report" || fail "foobar2000 wrote a crash report"
+  local errs; errs="$(grep -cE '^[0-9:.]+  ERROR ' "$LOG" 2>/dev/null || true)"
+  [ "${errs:-0}" = 0 ] && ok "no ERROR lines in the log" \
+    || { grep -E '^[0-9:.]+  ERROR ' "$LOG" | tail -5; fail "$errs ERROR line(s) in the log"; }
+  shot "$SHOTS/win11-cui-$(date +%Y%m%d-%H%M%S).png" && ok "screenshot"
+  say "Columns UI panel passed"
+}
+
 prefs() {
   local guid
   case "${1:-main}" in
@@ -167,6 +194,7 @@ case "${1:-}" in
   seed)    seed ;;
   smoke)   shift; smoke "$@" ;;
   browser) open_browser; echo "$BROWSER" ;;
+  cui)     shift; cui "$@" ;;
   prefs)   shift; prefs "$@" ;;
   log)     tail -n "${2:-50}" "$LOG" ;;
   *) usage; exit 2 ;;
