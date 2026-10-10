@@ -1,3 +1,11 @@
+## [1.24.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.23.0...v1.24.0) (2026-10-10)
+
+
+### Features
+
+* **windows:** the Navidrome Browser is now available as a [Columns UI](https://github.com/reupen/columns_ui) panel. Turn on *Live layout editing*, right-click a panel › *Add before/after* › *Panels* › **Navidrome Browser**. Nothing extra is needed on the Columns UI side; tested with Columns UI 3.7.0.
+
+
 ## [1.23.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.22.0...v1.23.0) (2026-10-09)
 
 

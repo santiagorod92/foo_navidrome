@@ -63,7 +63,7 @@ help:
 	@echo "  win11-release         deploy a GitHub release [TAG=v1.12.0, default latest], relaunch"
 	@echo "  win11-seed            copy foo_navidrome settings (server/account) from the Wine profile into the VM"
 	@echo "  win11-smoke           build, deploy, run the UI smoke test on real Windows (scripts/win11/win11-ui-test.sh)"
-	@echo "  win11-ui              win11-ui-test.sh ARGS='prefs radio' / 'browser' / 'log 50' — no build"
+	@echo "  win11-ui              win11-ui-test.sh ARGS='prefs radio' / 'browser' / 'cui' / 'log 50' — no build"
 	@echo "  win11-logs            follow the guest's debug log (lands in the VM's shared folder)"
 	@echo "  win11-<cmd>           any wvm command: win11-up, -down, -ssh, -shot, -dpi ARGS=144, -theme ARGS=dark, ..."
 	@echo "                        (see ../macos-devbox/README.md; one-time: mvm setup, up, provision, snapshot base)"
