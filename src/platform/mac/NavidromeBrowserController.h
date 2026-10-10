@@ -77,3 +77,5 @@ typedef NS_ENUM(NSInteger, NavidromeCategoryKind) {
 @end
 
 void NavidromeShowStandaloneBrowser(void);
+
+extern NSNotificationName const NavidromeBrowserSectionsDidChangeNotification;

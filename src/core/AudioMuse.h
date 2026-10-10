@@ -107,13 +107,14 @@ inline std::string alchemyBody(const std::vector<AlchemySeed>& seeds, int n,
            serverField(server) + "}";
 }
 
-enum class Kind { TextSearch, InstantPlaylist, Alchemy };
+enum class Kind { TextSearch, InstantPlaylist, Alchemy, InstantMix };
 
 inline const char* kindName(Kind k) {
     switch (k) {
         case Kind::TextSearch:      return "Text Search";
         case Kind::InstantPlaylist: return "Instant Playlist";
         case Kind::Alchemy:         return "Song Alchemy";
+        case Kind::InstantMix:      return "Instant Mix";
     }
     return "?";
 }
@@ -216,6 +217,47 @@ inline std::vector<Track> alchemy(IJsonPoster& http, const Settings& s,
     for (const auto& seed : seeds) anyAdd = anyAdd || (!seed.subtract && !seed.id.empty());
     if (!anyAdd) { outError = "Song Alchemy needs at least one song or artist"; return {}; }
     return request(http, s, Kind::Alchemy, alchemyBody(seeds, s.count, s.server), outError);
+}
+
+enum class MixFallback { NotConfigured, Unsupported, Failed, Empty };
+
+inline bool canMixFrom(const BrowserNode::Type seedType) {
+    return seedType == BrowserNode::Song || seedType == BrowserNode::Artist;
+}
+
+inline std::vector<Track> similarTo(IJsonPoster& http, const Settings& s, const std::string& seedId,
+                                    BrowserNode::Type seedType, std::string& outError) {
+    outError.clear();
+    if (!canMixFrom(seedType) || seedId.empty()) {
+        outError = "AudioMuse-AI can only mix from a song or an artist";
+        return {};
+    }
+    NAVIDROME_LOG("AudioMuse", "Instant Mix fallback: seed=" + seedId +
+                  (seedType == BrowserNode::Artist ? " (artist)" : " (song)"));
+    AlchemySeed seed;
+    seed.id = seedId;
+    seed.artist = seedType == BrowserNode::Artist;
+    return request(http, s, Kind::InstantMix, alchemyBody({ seed }, s.count, s.server), outError);
+}
+
+inline std::string noSimilarMessage(MixFallback fallback, const std::string& audioMuseError) {
+    std::string msg = "Navidrome has no similar songs for this one.";
+    switch (fallback) {
+        case MixFallback::NotConfigured:
+            return msg + " Navidrome answers Instant Mix from its agents: the AudioMuse-AI Navidrome "
+                   "plugin when it is installed and listed in Navidrome's Agents setting, otherwise "
+                   "last.fm, which knows little about less-played tracks.\n\nSet the AudioMuse-AI "
+                   "server URL (Preferences > Tools > Navidrome > AudioMuse-AI) and Instant Mix asks "
+                   "AudioMuse-AI directly when Navidrome has nothing.";
+        case MixFallback::Unsupported:
+            return msg + " AudioMuse-AI can only mix from a song or an artist: start the Instant Mix "
+                   "from one of this album's songs or from its artist.";
+        case MixFallback::Failed:
+            return msg + " Asking AudioMuse-AI directly failed too.\n\n" + audioMuseError;
+        case MixFallback::Empty:
+            return "Neither Navidrome nor AudioMuse-AI has similar songs for this one.";
+    }
+    return msg;
 }
 
 inline std::vector<BrowserNodePtr> resolveTracks(IBrowserClient& client,

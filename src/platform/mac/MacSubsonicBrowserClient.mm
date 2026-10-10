@@ -7,6 +7,10 @@
 #include <utility>
 #include <vector>
 
+namespace navidrome {
+    extern cfg_string cfg_browser_hidden_categories;
+}
+
 namespace {
 
 std::string str(NSString *x) { return x ? std::string(x.UTF8String) : std::string(); }
@@ -310,6 +314,9 @@ struct MacBrowserClient final : navidrome::IBrowserClient {
     }
     std::vector<navidrome::MusicFolder> musicFolders() override {
         return mapArr<SubsonicMusicFolder>([client cachedMusicFolders]);
+    }
+    navidrome::CategoryKindList hiddenCategories() override {
+        return navidrome::parseHiddenCategories(navidrome::cfg_browser_hidden_categories.get().c_str());
     }
     bool setStarred(bool starred, const std::string& id, navidrome::StarKind kind,
                     std::string& e) override {

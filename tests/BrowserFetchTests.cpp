@@ -33,6 +33,27 @@ TEST_CASE(testBrowserFetchDispatch) {
         check(!calledGetArtists, "grouped load never calls the flat getArtists");
     }
     {
+        FakeBrowserClient fc;
+        fc.hidden = { BrowserNode::CatRadio, BrowserNode::CatPodcasts, BrowserNode::CatBookmarks };
+        std::string err;
+        auto roots = navidrome::buildRootNodes(fc, err);
+        check(roots.size() == 10 && roots.back()->type == BrowserNode::Artist,
+              "hidden categories are left out of the flat roots");
+        bool leaked = false;
+        for (auto& r : roots)
+            if (r->type == BrowserNode::Category && navidrome::containsCategory(fc.hidden, r->category))
+                leaked = true;
+        check(!leaked, "no hidden category node reaches the flat roots");
+    }
+    {
+        FakeBrowserClient fc; fc.groupIds = {"1", "2"};
+        for (const auto& c : navidrome::browserCategories()) fc.hidden.push_back(c.kind);
+        std::string err;
+        auto roots = navidrome::buildRootNodes(fc, err);
+        check(roots.size() == 2 && roots[0]->type == BrowserNode::Library,
+              "every category hidden leaves only the library nodes when grouped");
+    }
+    {
         FakeBrowserClient fc; fc.error = "boom";
         std::string err;
         auto roots = navidrome::buildRootNodes(fc, err);

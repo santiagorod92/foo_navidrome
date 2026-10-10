@@ -27,6 +27,22 @@ static inline void dbgLog(const std::string& msg) { NAVIDROME_LOG("UI", msg); }
 using navidrome::win::u8ToWide;
 using navidrome::win::wToU8;
 
+namespace navidrome {
+    extern cfg_string cfg_browser_hidden_categories;
+}
+
+std::vector<BrowserWindow*> BrowserWindow::s_open;
+
+void BrowserWindow::reloadAllOpen() {
+    const auto open = s_open;
+    NAVIDROME_LOG("UI", "browser sections changed, reloading " + std::to_string(open.size()) + " open browser(s)");
+    for (auto* w : open) {
+        if (!w->IsWindow()) continue;
+        w->m_search.SetWindowText(L"");
+        w->loadArtists();
+    }
+}
+
 BrowserWindow& BrowserWindow::get() {
     static BrowserWindow inst;
     return inst;
@@ -60,6 +76,7 @@ void BrowserWindow::createEmbedded(HWND parent) {
 }
 
 LRESULT BrowserWindow::OnCreate(LPCREATESTRUCT) {
+    s_open.push_back(this);
     HFONT hFont = navidrome::win::uiFont(*this);
     m_lineH = navidrome::win::lineHeight(*this, hFont);
 
@@ -149,6 +166,7 @@ HBRUSH BrowserWindow::OnCtlColorStatic(HDC dc, HWND) {
 }
 
 void BrowserWindow::OnDestroy() {
+    s_open.erase(std::remove(s_open.begin(), s_open.end(), this), s_open.end());
     KillTimer(kSearchDebounceTimer);
     ::RemoveWindowSubclass(m_tree, &BrowserWindow::TreeSubclassProc, 1);
     m_selAnchor = nullptr;
@@ -249,6 +267,8 @@ struct WinBrowserClient final : navidrome::IBrowserClient {
         return c.getLyrics(id, artist, title, e); }
     std::vector<std::string> groupingLibraryIds() override {
         return c.libraryGroupingIds(); }
+    navidrome::CategoryKindList hiddenCategories() override {
+        return navidrome::parseHiddenCategories(navidrome::cfg_browser_hidden_categories.get().c_str()); }
     std::vector<navidrome::MusicFolder> musicFolders() override {
         return c.cachedMusicFolders(); }
     bool setStarred(bool starred, const std::string& id, navidrome::StarKind kind,

@@ -10,7 +10,7 @@ Usage: ui-test.sh <command>
   wait REGEX [SECS]      wait for a new log line matching REGEX
   shot [FILE.png]        screenshot (build/ui-test/)
   prefs [PAGE]           Preferences on one of our pages, screenshot
-                         (main | audiomuse | libraries | radio | media | components)
+                         (main | audiomuse | libraries | sections | radio | media | components)
 USAGE
 }
 
@@ -90,10 +90,10 @@ restart() {
 prefs() {
   local guid p='A1B2C3D4-1111-2222-AABB-CCDDEEFF'
   case "${1:-main}" in
-    main) guid=${p}0105 ;; audiomuse) guid=${p}0405 ;; libraries) guid=${p}0112 ;;
+    main) guid=${p}0105 ;; audiomuse) guid=${p}0405 ;; libraries) guid=${p}0112 ;; sections) guid=${p}0117 ;;
     radio) guid=${p}010F ;; media) guid=${p}0109 ;;
     components) guid=0E966267-7DFB-433B-A07C-3F8CDD31A258 ;;
-    *) fail "unknown page '$1' (main | audiomuse | libraries | radio | media | components)" ;;
+    *) fail "unknown page '$1' (main | audiomuse | libraries | sections | radio | media | components)" ;;
   esac
   if running; then
     foobar2000 -exit >/dev/null 2>&1 || true

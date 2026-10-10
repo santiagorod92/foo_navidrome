@@ -161,4 +161,41 @@ TEST_CASE(testAudioMuseResolve) {
         std::string(56, 'x') + "\xC3\xA9\xC3\xA9\xC3\xA9");
     check(longName == "AudioMuse: " + std::string(56, 'x') + "...", "long name cut on a UTF-8 boundary");
 }
+
+TEST_CASE(testAudioMuseInstantMixFallback) {
+    FakePoster http;
+    std::string err;
+
+    check(am::canMixFrom(navidrome::BrowserNode::Song) && am::canMixFrom(navidrome::BrowserNode::Artist) &&
+          !am::canMixFrom(navidrome::BrowserNode::Album), "mix seeds: song and artist, not album");
+
+    auto none = am::similarTo(http, configured(), "al1", navidrome::BrowserNode::Album, err);
+    check(none.empty() && !err.empty() && http.calls == 0, "album seed isn't sent");
+    am::similarTo(http, am::Settings{}, "s1", navidrome::BrowserNode::Song, err);
+    check(!err.empty() && http.calls == 0, "unconfigured: no request");
+
+    http.answer.body = "{\"results\":[{\"item_id\":\"x\"},{\"item_id\":\"y\"}]}";
+    auto songs = am::similarTo(http, configured(), "s1", navidrome::BrowserNode::Song, err);
+    check(err.empty() && songs.size() == 2, "song seed answered");
+    check(http.url == "http://am.local:8000/api/alchemy" && http.timeoutMs == am::kSearchTimeoutMs &&
+          http.body == "{\"items\":[{\"id\":\"s1\",\"op\":\"ADD\",\"type\":\"song\"}],\"n\":25}",
+          "song seed = one-item alchemy, settings count");
+    am::similarTo(http, configured(), "ar1", navidrome::BrowserNode::Artist, err);
+    check(http.body.find("\"type\":\"artist\"") != std::string::npos, "artist seed typed artist");
+
+    http.answer.error = { navidrome::ErrorKind::Network, 0, 0, "connection refused" };
+    http.answer.body.clear();
+    am::similarTo(http, configured(), "s1", navidrome::BrowserNode::Song, err);
+    check(err == "Instant Mix: connection refused", "failure names Instant Mix, not Song Alchemy");
+
+    const std::string notConf = am::noSimilarMessage(am::MixFallback::NotConfigured, {});
+    check(notConf.find("last.fm") != std::string::npos &&
+          notConf.find("Preferences > Tools > Navidrome > AudioMuse-AI") != std::string::npos,
+          "not configured: explains the agents and points at the AudioMuse prefs");
+    check(am::noSimilarMessage(am::MixFallback::Failed, err).find(err) != std::string::npos,
+          "failed: quotes the AudioMuse error");
+    check(am::noSimilarMessage(am::MixFallback::Empty, {}).find("Neither") == 0, "empty on both sides");
+    check(am::noSimilarMessage(am::MixFallback::Unsupported, {}).find("artist") != std::string::npos,
+          "album: suggests a song or the artist");
+}
 }

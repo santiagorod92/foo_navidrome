@@ -51,6 +51,7 @@ static constexpr GUID guid_cfg_stream_format = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,
 static constexpr GUID guid_cfg_max_bitrate   = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x0d} };
 static constexpr GUID guid_cfg_library_filter = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x10} };
 static constexpr GUID guid_cfg_library_ids   = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x11} };
+static constexpr GUID guid_cfg_browser_hidden_categories = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x16} };
 
 namespace navidrome {
 
@@ -66,6 +67,7 @@ namespace navidrome {
 
     cfg_var_modern::cfg_bool cfg_library_filter(guid_cfg_library_filter, false);
     cfg_string cfg_library_ids(guid_cfg_library_ids, "");
+    cfg_string cfg_browser_hidden_categories(guid_cfg_browser_hidden_categories, "");
 }
 
 class NavidromeHeadersWindow : public CWindowImpl<NavidromeHeadersWindow> {

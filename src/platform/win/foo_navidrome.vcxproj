@@ -161,6 +161,7 @@
     <ClCompile Include="BrowserPrompts.cpp" />
     <ClCompile Include="RadioPrefsWin.cpp" />
     <ClCompile Include="LibrariesPrefsWin.cpp" />
+    <ClCompile Include="BrowserSectionsPrefsWin.cpp" />
     <ClCompile Include="NavidromeUiElementWin.cpp" />
     <ClCompile Include="NavidromeColumnsUiWin.cpp" />
     <ClCompile Include="..\..\..\third_party\columns_ui-sdk\ui_extension.cpp">
