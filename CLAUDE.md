@@ -58,6 +58,120 @@ Adding a new cross-component interface: follow the same shape, and add a bullet 
 interface, what it's for, and every known consumer — keeps both repos' CLAUDE.md honest about
 who depends on what without needing to grep across machines.
 
+## Shared conventions (foo_ui_panels ⇄ foo_navidrome)
+
+foo_ui_panels (Panels UI) and foo_navidrome are sister components, sibling checkouts under one
+parent (`../foo_ui_panels`, `../foo_navidrome`). They're developed together, installed together
+and tested in the same foobar2000. **This section is identical in both repos' CLAUDE.md** and
+holds only what's true for both; anything repo-specific stays in the repo's own sections.
+- **Editing it:** change both copies in the same round, keep the subsection order below, one
+  terse bullet per fact (`**Topic:** fact`), no narrative or session logs. Check they match:
+  `diff <(awk '/^## Shared conventions/{f=1} /^## /&&!/^## Shared/{f=0} f' ../foo_ui_panels/CLAUDE.md) <(awk '/^## Shared conventions/{f=1} /^## /&&!/^## Shared/{f=0} f' ../foo_navidrome/CLAUDE.md)`.
+- **What goes here:** a rule, tool, layout or gotcha that's useful in both repos (SDK, build
+  layout, versioning, logging, release, test environments, troubleshooting). If it's useful in
+  only one repo, it goes in that repo's own sections.
+
+### How they work together
+- **Contracts:** foo_navidrome publishes `service_base` interfaces, and foo_ui_panels vendors a
+  GUID-matched copy of the contract header and finds it with `service_enum_t` at runtime. There's
+  no build coupling, and the feature is a no-op when the other component is missing. foo_navidrome's
+  "Cross-compatibility with other same-author components" section is the full list: each
+  interface, its consumers and its vendored copies.
+- **Current links:** `navidrome_rating_api` drives Panels UI's star ratings on `navidrome://`
+  tracks, which also read the `NAVIDROME_RATING` field. `navidrome_library_api` feeds the
+  Panels UI album grid (`album_list`) and `library_tree`. `navidrome_lyrics_api` is published
+  but not wired into Panels UI's `lyrics_panel` yet.
+- **Changing a contract:** a change to a contract header (GUID, vtable order, sink signatures)
+  lands in both repos in the same round, and the vendored copy stays byte-identical to the
+  original. A new interface also gets a bullet in foo_navidrome's cross-compatibility list.
+- **Runtime check:** test a feature that crosses the boundary with both DLLs installed (Wine,
+  macOS VM). Also check that each side still works with the other component missing.
+
+### SDK
+- **Source:** `reupen/foobar2000-sdk-unmodified`, tags `SDK-YYYY-MM-DD`. Don't use the
+  `marc2k3` or `razielanarki` mirrors: they're stale and missing `helpers-mac/`.
+- **Location:** one checkout, shared by both repos: `../foobar2000/{SDK,helpers,helpers-mac,shared,
+  foobar2000_component_client}` + `../pfc`. A bump therefore affects both repos at once. CI
+  re-clones upstream's default branch on every run.
+- **In use: SDK-2026-10-01.** foobar2000 v2.26; C++20 is required (since 2026-09-16).
+- **Bump procedure:**
+  1. Clone the tag into a scratch dir.
+  2. Run `diff -rq` against the sibling SDK folders.
+  3. Read foobar2000.org/changelog-sdk.
+  4. `git grep` both repos for every symbol the diff touches.
+  5. Copy the changed files into the siblings.
+  6. Build every leg of both repos and run both test suites.
+  7. Update the version in "In use" above (both copies) and in each README's development table.
+- **Sync history:**
+  - 2026-09-16: C++20 is required. pfc now redirects to `shared.dll` through
+    `wrap_pfc_hooks.h`, and the ARM64EC link needed the hooks. `skipTrack.h` was added.
+  - 2026-10-01: pfc's ARM64EC `/alternatename` is fixed (`#` names). `now_playing_album_art_notify`
+    may now pass null data.
+- **Upstream breakage:** a sync can break a build with no change on our side (a renamed
+  target, a new required integration step). Diff the live upstream files and read the SDK
+  changelog before debugging our code.
+
+### Build, version, release
+- **Toolchain:** local Windows builds are done on Linux with clang-cl + lld-link + xwin (splat
+  `--arch x86,x86_64,aarch64`), static `/MT` CRT, x64 + x86. Release builds also include ARM64EC:
+  foo_ui_panels builds it with clang-cl, foo_navidrome with MSBuild in CI. macOS ships as a
+  universal bundle, and the x86_64 slice must stay (the VM guest is Intel).
+- **Version:** `scripts/version.sh` is the same resolver in both repos: env override
+  (`PUI_VERSION` / `NAVIDROME_VERSION`) → `git describe` against `v*` → `version.txt`
+  (`export-subst`). No version is kept by hand. CI checks out with `fetch-depth: 0`. Run
+  `git fetch --tags` after each release.
+- **Release:** semantic-release with Conventional Commits (`feat` = minor;
+  `fix`/`perf`/`refactor` = patch; `chore`/`docs`/`ci`/`style`/`test` = no release). `main`
+  is protected (PRs only) and nothing is committed back. `CHANGELOG.md` is kept by hand in the
+  release PR. `notify-n8n` publishes to foobar2000.org. If the head commit is non-releasing,
+  dispatch the workflow by hand.
+- **Commits:** author Santiago Rodriguez only, no AI trailers. Push only at the end of an
+  iteration.
+
+### Code style and working rules
+- **Cross-platform:** every feature or fix lands on Windows and macOS. Logic goes in shared,
+  SDK-free code covered by unit tests; only the wiring is per-platform.
+- **No code comments:** none in `src/`, `tests/`, `scripts/`, `tools/`, the `Makefile` or the
+  workflows. The *why* goes in CLAUDE.md or the commit message.
+- **README:** every user-visible change updates the README in the same change.
+- **Make targets:** a command run more than once, or with easy-to-forget flags, becomes a
+  `make` target.
+
+### Logging and diagnostics
+- **Log file:** `<profile>/<component>.log` (`foo_ui_panels.log`, `foo_navidrome.log`). Shape:
+  - WARN+ by default; INFO when the component's verbose toggle is on.
+  - Rotates to `.1` past 2 MB.
+  - Each session opens with an always-written NOTE banner (component, foobar2000, OS, arch,
+    Wine versions).
+  - Lines from before the log path is known are buffered.
+- **Copy Diagnostics:** an in-memory ring of recent lines feeds the Copy Diagnostics report in
+  Preferences, on both platforms. The text is pasted into public issues, so it is always
+  redacted: home → `~`, user name, server host, auth/URLs (`scrubAuth`). Issue forms live in
+  `.github/ISSUE_TEMPLATE/`.
+- **Keep the logging matched:** a new logging or diagnostics feature (level, field, redaction,
+  rotation) is mirrored in the other repo unless there's a stated reason not to.
+
+### Test environments
+- **Wine:** `~/.foobar2000` (fb2k v2.26 x64), with both components in
+  `profile/user-components-x64/<name>/`. Each repo's `win-build`/`deploy` installs its own DLL,
+  and the other stays as last installed. `tools/wclick.c` (originally from foo_ui_panels) posts
+  clicks and keys without touching the host pointer.
+- **macOS VM:** `../macos-devbox` (`mvm`, dockur/macos, Intel guest). **Windows 11 VM:**
+  `../windows-devbox` (`wvm`, dockur/windows), for Dark Mode, DPI and native theming that Wine
+  fakes. Never `docker prune`/`rm`/`rmi`.
+
+### Troubleshooting
+- **DLL fails to load** ("No access to memory location"; fb2k falls back to the Default UI):
+  usually a foobar2000 object created at static init. Create it lazily.
+- **Is the DLL loaded under Wine?** `grep -i foo_ /proc/$(pgrep -f 'foobar2000[.]exe')/maps`.
+  Check the component log for a new session banner.
+- **`pkill -f`/`pgrep -f`:** a pattern that also appears in your own command line kills your
+  shell. Use `'foobar2000[.]exe'`.
+- **No debugger:** logging is the diagnostic channel. Add log lines at decision points instead
+  of guessing.
+- **Build breaks right after an SDK sync:** see SDK › "Upstream breakage" before touching our
+  code.
+
 ## Architecture
 
 Shared C++ core + per-platform UI/HTTP layers, laid out like foo_ui_panels:
@@ -186,7 +300,7 @@ One resolver: `scripts/version.sh` → `version_generated.h` (gitignored) → `D
 - **`commit-analyzer` and `release-notes-generator` type lists must stay in sync** — the `conventionalcommits` preset hides `refactor`/`docs`/`build` by default; any type added to `releaseRules` with `release != false` needs a matching non-hidden entry in `release-notes-generator`'s `presetConfig.types` or its notes are empty.
 - Jobs: `version` (`semantic-release --dry-run`; exec's `verifyReleaseCmd` exports `next_version`) → `build-windows` (reusable `build-windows.yml` on that commit, stamped with that version) → `release` (macOS: `make mac-test`, then semantic-release for real) → `merge-component` → `notify-n8n`. Nothing is published unless both platforms built.
 - Plugin chain: `commit-analyzer` → `release-notes-generator` → `exec` (`mac-ci-build.sh <version>`, xcodebuild + package `.fb2k-component`) → `github` (tag + release + asset; notes = changelog). **`main` is branch-protected (PRs only)**, so no `git`/`changelog` plugins: nothing is committed back — nothing to keep in sync in the repo: every build derives its version from the tags (see Versioning), `CHANGELOG.md` is kept by hand: add the next version's entry inside the release PR itself (heading `## [x.y.z](compare link) (date)` with the version the PR's commit type will produce), since semantic-release never commits it back; GitHub Releases still get the auto-generated notes.
-- SDK cloned from `marc2k3/foobar2000-sdk` + `marc2k3/pfc` into sibling layout at CI time.
+- SDK cloned from `reupen/foobar2000-sdk-unmodified` into the sibling layout at CI time (see Shared conventions › SDK).
 - **`release.yml` only checks the push's top commit type** — a `chore:` HEAD (or a PR squash-merged as `ci:`/`docs:`) skips release even with a `feat`/`fix` underneath it; dispatch the workflow by hand then.
 - First-time setup needs a starting tag (`git tag v<x.y.z> && git push --tags`) or semantic-release treats next release as v1.0.0.
 
@@ -215,7 +329,7 @@ One resolver: `scripts/version.sh` → `version_generated.h` (gitignored) → `D
 - **Enter in the browser tree replaces the active playlist; double-click/Add/Play still append.** `clearFirst` bool threaded through both platforms' enqueue chain, `true` only on the Enter/`NM_RETURN` path (clears the active playlist only, nothing else).
 
 - **Auto-skip stale/deleted tracks via `fb2k::skipTrack` (new SDK 2.26 extension point, 2026-09-16 sync).** A stale playlist/shuffle/repeat/Random Mix loop that keeps hitting a Navidrome track since deleted server-side used to retry the doomed HTTP GET every time it came up. Now: `decode_initialize()` on both platforms catches `exception_io_not_found` specifically (not `exception_io_net`/`exception_io_timeout` — those are transient, must still retry) around `g_open_for_decoding`+`initialize()`, marks the id in `navidrome::brokenTrackRegistry()` (`SubsonicTypes.h`, mutex-guarded `unordered_set`, session-scoped — never cleared mid-run, matches every other session-only cache here), then rethrows so the existing error path is unchanged. Each platform's `NavidromeInput.mm`/`src/platform/win/NavidromeInputWin.cpp` also registers a `fb2k::skipTrack` implementation (`navidrome_skip_track`/`navidrome_skip_track_win`, `FB2K_SERVICE_FACTORY`) whose `testTrack()` is the core's preflight before it ever opens a track — a hit skips without attempting the decode at all. Registry logic is SDK-free and unit-tested (`testBrokenTrackRegistry`); the `fb2k::skipTrack`/`exception_io_not_found` wiring itself needs live playback to verify and is SDK-only, so it isn't (and can't be) covered by the `tests/` suite.
-  - **Requires an SDK sibling with `skipTrack.h`** (post-2026-09-16 sync). This machine's local `../foobar2000` sibling predates that sync and is missing it — `make test` still passes (SDK-free), but `make win-build`/`mac-build` won't see the new header until that sibling is refreshed from `reupen/foobar2000-sdk-unmodified`. CI already reclones fresh every run, so the release pipeline is unaffected.
+  - **Requires an SDK sibling with `skipTrack.h`** (SDK-2026-09-16 or newer).
 
 - **Album art is a full `album_art_extractor`, not `album_art_fallback`** — guarantees `open()` is called, more reliable for streamed content. `is_our_path` matches `navidrome://` URIs and legacy `/rest/stream.view` URLs (old playlists). Art id priority: `coverArt=` → `id=` → `<id>` segment of the URI.
 
