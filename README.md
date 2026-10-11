@@ -627,7 +627,7 @@ project is developed and tested with today:
 |---|---|---|
 | **Dev OS** | Linux ([Omarchy](https://omarchy.org), Arch-based) | macOS or Windows work too (see the table below) |
 | **foobar2000** | v2.26 for Windows (x64, under Wine 11 Staging) and v2 for Mac (latest) | v2.0+ (auto-skipping tracks deleted on the server needs 2.26) |
-| **foobar2000 SDK** | `SDK-2026-09-16` from [reupen/foobar2000-sdk-unmodified](https://github.com/reupen/foobar2000-sdk-unmodified) (CI clones the latest tag) | `SDK-2026-09-16` or newer: it adds `skipTrack.h` and requires C++20 |
+| **foobar2000 SDK** | `SDK-2026-10-01` from [reupen/foobar2000-sdk-unmodified](https://github.com/reupen/foobar2000-sdk-unmodified) (CI clones the latest tag) | `SDK-2026-09-16` or newer: it adds `skipTrack.h` and requires C++20 |
 | **C++ standard** | C++20 for the component, C++17 for the SDK-free unit tests | |
 | **Windows compiler** | clang-cl / lld-link (LLVM 22) cross-compiling on Linux | Visual Studio 2022 (MSVC toolset **v143**, *Desktop development with C++* + ATL); this is what CI uses (`windows-2022` runner) |
 | **Windows SDK / CRT / ATL** | Windows SDK 10.0.26100 + MSVC CRT/ATL, fetched by [xwin](https://github.com/Jake-Shadle/xwin) 0.9.0 | whatever VS 2022 installs |
