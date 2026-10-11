@@ -1,5 +1,5 @@
 .PHONY: help test test-clean mac-test mac-test-clean \
-	win-build win-build-release-log win-build-patch win-build-minor win-build-major win-build-launch win-install win-test win-logs win-ui-smoke win-ui \
+	win-build win-build-x86 win-build-release-log win-build-patch win-build-minor win-build-major win-build-launch win-install win-test win-logs win-ui-smoke win-ui \
 	mac-build mac-build-patch mac-build-minor mac-build-major mac-build-no-install mac-install mac-release mac-ci-build mac-logs \
 	win-vm-setup win-vm-fetch win-vm-install win-vm-test \
 	mac-vm mac-vm-vnc mac-vm-open mac-vm-smoke mac-vm-ui mac-vm-test mac-vm-release mac-vm-build mac-vm-build-test \
@@ -19,6 +19,7 @@ help:
 	@echo "  mac-test-clean        same, forcing a clean recompile"
 	@echo ""
 	@echo "  win-build             cross-compile Windows x64 component locally (win-build-local.sh, no version bump)"
+	@echo "  win-build-x86         cross-compile the 32-bit (x86) DLL -> build-win-x86/ + _win-x86.fb2k-component"
 	@echo "  win-build-patch       stamp last release + patch, then cross-compile"
 	@echo "  win-build-minor       stamp last release + minor, then cross-compile"
 	@echo "  win-build-major       stamp last release + major, then cross-compile"
@@ -92,6 +93,9 @@ mac-test-clean:
 
 win-build:
 	./scripts/win-build-local.sh
+
+win-build-x86:
+	./scripts/win-build-local.sh --x86
 
 win-build-patch:
 	./scripts/win-build-local.sh --patch

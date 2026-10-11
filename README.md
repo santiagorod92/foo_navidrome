@@ -382,6 +382,12 @@ and a distributable `foo_navidrome_<version>_win-x64.fb2k-component` is written 
 repo root. `scripts/install-windows.sh` handles the install + packaging and can be run
 standalone after a build.
 
+`./scripts/win-build-local.sh --x86` (`make win-build-x86`) builds the **32-bit** DLL
+instead, into `build-win-x86/`, packaged as `foo_navidrome_<version>_win-x86.fb2k-component`
+(DLL at the zip root, where 32-bit foobar2000 looks). It isn't installed into the x64 Wine
+foobar2000; set `FB2K_COMPONENTS` to a 32-bit foobar2000's `profile/user-components` to
+install it there.
+
 ---
 
 ## Scripts

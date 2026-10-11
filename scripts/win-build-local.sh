@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 usage() {
   cat <<'USAGE'
-Usage: win-build-local.sh [--launch] [--clean] [--no-test] [--release-log] [--minor|--major|--patch] [-j N]
+Usage: win-build-local.sh [--x86] [--launch] [--clean] [--no-test] [--release-log] [--minor|--major|--patch] [-j N]
+  --x86          build the 32-bit DLL (build-win-x86/, packaged as _win-x86; installed only
+                 when FB2K_COMPONENTS points at a 32-bit foobar2000's user-components)
   --launch       relaunch foobar2000 after installing
   --clean        wipe the object cache and rebuild everything
   --no-test      skip the unit tests that gate the build
@@ -19,17 +21,12 @@ PFC_ROOT="${PFC_ROOT:-$(cd "$REPO/../pfc" 2>/dev/null && pwd || true)}"
 LIBPPUI_ROOT="${LIBPPUI_ROOT:-$(cd "$REPO/../libPPUI" 2>/dev/null && pwd || true)}"
 XWIN_SDK="${XWIN_SDK:-$HOME/.local/share/xwin/sdk}"
 WTL_INC="${WTL_INC:-$HOME/.local/share/wtl/Include}"
-BUILD="${BUILD:-$REPO/build-win}"
-OBJ_DIR="$BUILD/obj"
-OUT_DLL="$BUILD/foo_navidrome.dll"
-COMPONENT_DIR="$HOME/.foobar2000/profile/user-components-x64/foo_navidrome"
 FOOBAR_LAUNCHER="foobar2000"
-TARGET="x86_64-pc-windows-msvc"
-ARCH_DIR="x86_64"
 
-LAUNCH=0; CLEAN=0; RUN_TESTS=1; RELEASE_LOG=0; BUMP=none; JOBS="$(nproc 2>/dev/null || echo 4)"
+WIN_ARCH="${WIN_ARCH:-x64}"; LAUNCH=0; CLEAN=0; RUN_TESTS=1; RELEASE_LOG=0; BUMP=none; JOBS="$(nproc 2>/dev/null || echo 4)"
 while [ $# -gt 0 ]; do
   case "$1" in
+    --x86)    WIN_ARCH=x86; shift ;;
     --launch) LAUNCH=1; shift ;;
     --clean)  CLEAN=1; shift ;;
     --no-test) RUN_TESTS=0; shift ;;
@@ -44,12 +41,23 @@ while [ $# -gt 0 ]; do
 done
 
 fail() { echo "ERROR: $*" >&2; exit 1; }
+case "$WIN_ARCH" in
+  x64) TARGET="x86_64-pc-windows-msvc"; ARCH_DIR="x86_64"; MACHINE="x64"
+       SHARED_LIB="shared-x64.lib"; BUILD="${BUILD:-$REPO/build-win}" ;;
+  x86) TARGET="i686-pc-windows-msvc"; ARCH_DIR="x86"; MACHINE="x86"
+       SHARED_LIB="shared-Win32.lib"; BUILD="${BUILD:-$REPO/build-win-x86}" ;;
+  *) fail "WIN_ARCH must be x64 or x86 (got '$WIN_ARCH')" ;;
+esac
+[ "$WIN_ARCH" = "x86" ] && [ "$LAUNCH" = "1" ] && fail "--launch relaunches the x64 Wine foobar2000; it can't load the x86 DLL"
+OBJ_DIR="$BUILD/obj"
+OUT_DLL="$BUILD/foo_navidrome.dll"
 for t in clang-cl lld-link; do command -v "$t" >/dev/null || fail "$t not found (pacman -S llvm clang lld)"; done
 [ -n "$SDK_ROOT" ] && [ -f "$SDK_ROOT/helpers/foobar2000+atl.h" ] || fail "foobar2000 SDK sibling not found at ../foobar2000 (set SDK_ROOT)"
 [ -n "$PFC_ROOT" ] && [ -d "$PFC_ROOT" ] || fail "pfc sibling not found at ../pfc (set PFC_ROOT)"
 [ -f "$XWIN_SDK/crt/include/atlbase.h" ] || fail "xwin SDK (with ATL) not found at $XWIN_SDK — run ./win-setup-toolchain.sh"
 [ -f "$WTL_INC/atlapp.h" ] || fail "WTL headers not found at $WTL_INC — run ./win-setup-toolchain.sh"
-[ -f "$SDK_ROOT/shared/shared-x64.lib" ] || fail "shared-x64.lib not found in $SDK_ROOT/shared"
+[ -f "$SDK_ROOT/shared/$SHARED_LIB" ] || fail "$SHARED_LIB not found in $SDK_ROOT/shared"
+[ -d "$XWIN_SDK/crt/lib/$ARCH_DIR" ] || fail "xwin SDK has no $ARCH_DIR libs at $XWIN_SDK — re-run ./win-setup-toolchain.sh"
 [ -n "$LIBPPUI_ROOT" ] && [ -d "$LIBPPUI_ROOT" ] || fail "libPPUI sibling not found at ../libPPUI (set LIBPPUI_ROOT)"
 
 [ "$CLEAN" = "1" ] && rm -rf "$BUILD"
@@ -212,15 +220,15 @@ SYSLIBS=( winhttp.lib crypt32.lib comctl32.lib winmm.lib
           user32.lib gdi32.lib gdiplus.lib msimg32.lib uxtheme.lib
           ole32.lib oleaut32.lib uuid.lib shell32.lib shlwapi.lib
           advapi32.lib version.lib kernel32.lib ws2_32.lib )
-lld-link /dll /nologo /machine:x64 \
+lld-link /dll /nologo "/machine:$MACHINE" \
   "/out:$OUT_DLL" \
   "${LIBPATHS[@]}" \
-  "$SDK_ROOT/shared/shared-x64.lib" \
+  "$SDK_ROOT/shared/$SHARED_LIB" \
   "${OBJS[@]}" \
   "${SYSLIBS[@]}" 2>"$BUILD/link.log" || { echo "===== LINK FAILED ====="; cat "$BUILD/link.log"; exit 1; }
 echo "==> built $OUT_DLL ($(du -h "$OUT_DLL" | cut -f1))"
 
-BUILT_DLL="$OUT_DLL" "$REPO/scripts/install-windows.sh"
+WIN_ARCH="$WIN_ARCH" BUILT_DLL="$OUT_DLL" "$REPO/scripts/install-windows.sh"
 
 DBG_LOG="${NAVIDROME_DEBUG_LOG_FILE:-/tmp/foo_navidrome_debug.log}"
 

@@ -19,14 +19,14 @@ else
   say "clang-cl / lld-link already present"
 fi
 
-if [ ! -f "$XWIN_SDK/crt/include/atlbase.h" ]; then
+if [ ! -f "$XWIN_SDK/crt/include/atlbase.h" ] || [ ! -f "$XWIN_SDK/crt/lib/x86/atls.lib" ]; then
   say "fetching xwin $XWIN_VER ..."
   tmp="$(mktemp -d)"
   curl -fsSL "https://github.com/Jake-Shadle/xwin/releases/download/${XWIN_VER}/xwin-${XWIN_VER}-x86_64-unknown-linux-musl.tar.gz" \
     | tar xz -C "$tmp"
   xbin="$(find "$tmp" -name xwin -type f | head -1)"
   say "downloading Windows SDK/CRT/ATL (~1.5GB, with --include-atl) ..."
-  "$xbin" --accept-license --include-atl --cache-dir "$HOME/.cache/xwin" \
+  "$xbin" --accept-license --include-atl --arch x86,x86_64 --cache-dir "$HOME/.cache/xwin" \
     splat --output "$XWIN_SDK"
   rm -rf "$tmp"
 else

@@ -13,8 +13,15 @@ done
 COMPONENT_NAME="foo_navidrome"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-BUILT_DLL="${BUILT_DLL:-${ROOT}/build-win/${COMPONENT_NAME}.dll}"
-FB2K_COMPONENTS="${FB2K_COMPONENTS:-${HOME}/.foobar2000/profile/user-components-x64}"
+WIN_ARCH="${WIN_ARCH:-x64}"
+case "$WIN_ARCH" in
+    x64) BUILD_DIR="build-win"; PKG_DIR="x64"
+         FB2K_COMPONENTS="${FB2K_COMPONENTS:-${HOME}/.foobar2000/profile/user-components-x64}" ;;
+    x86) BUILD_DIR="build-win-x86"; PKG_DIR="."
+         FB2K_COMPONENTS="${FB2K_COMPONENTS:-}" ;;
+    *) echo "ERROR: WIN_ARCH must be x64 or x86 (got '$WIN_ARCH')"; exit 1 ;;
+esac
+BUILT_DLL="${BUILT_DLL:-${ROOT}/${BUILD_DIR}/${COMPONENT_NAME}.dll}"
 
 if [ ! -f "$BUILT_DLL" ]; then
     echo "ERROR: ${BUILT_DLL} not found."
@@ -22,11 +29,14 @@ if [ ! -f "$BUILT_DLL" ]; then
     exit 1
 fi
 
-DEST="${FB2K_COMPONENTS}/${COMPONENT_NAME}"
-echo "Installing: $BUILT_DLL"
-echo "       To:  $DEST"
-mkdir -p "$DEST"
-cp -f "$BUILT_DLL" "$DEST/${COMPONENT_NAME}.dll"
+DEST=""
+if [ -n "$FB2K_COMPONENTS" ]; then
+    DEST="${FB2K_COMPONENTS}/${COMPONENT_NAME}"
+    echo "Installing: $BUILT_DLL"
+    echo "       To:  $DEST"
+    mkdir -p "$DEST"
+    cp -f "$BUILT_DLL" "$DEST/${COMPONENT_NAME}.dll"
+fi
 
 VERSION=""
 VERSION_HEADER="${ROOT}/version_generated.h"
@@ -35,19 +45,19 @@ if [ -f "$VERSION_HEADER" ]; then
 fi
 VERSION_SUFFIX="${VERSION:+_${VERSION}}"
 
-OUTPUT="${ROOT}/${COMPONENT_NAME}${VERSION_SUFFIX}_win-x64.fb2k-component"
+OUTPUT="${ROOT}/${COMPONENT_NAME}${VERSION_SUFFIX}_win-${WIN_ARCH}.fb2k-component"
 echo "Packaging:  $OUTPUT"
 
 TMPDIR_PKG=$(mktemp -d)
 trap 'rm -rf "$TMPDIR_PKG"' EXIT
 
-mkdir -p "$TMPDIR_PKG/x64"
-cp -f "$BUILT_DLL" "$TMPDIR_PKG/x64/${COMPONENT_NAME}.dll"
+mkdir -p "$TMPDIR_PKG/$PKG_DIR"
+cp -f "$BUILT_DLL" "$TMPDIR_PKG/$PKG_DIR/${COMPONENT_NAME}.dll"
 rm -f "$OUTPUT"
-( cd "$TMPDIR_PKG" && zip -rq "$OUTPUT" x64 )
+( cd "$TMPDIR_PKG" && zip -rq "$OUTPUT" . )
 
 echo ""
-echo "Local install:  ${DEST}/${COMPONENT_NAME}.dll"
+[ -n "$DEST" ] && echo "Local install:  ${DEST}/${COMPONENT_NAME}.dll"
 echo "Distributable:  $OUTPUT"
 echo ""
 echo "Restart foobar2000 to load the component."

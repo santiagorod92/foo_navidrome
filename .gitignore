@@ -42,6 +42,7 @@ build/
 
 # Windows
 build-win/
+build-win-x86/
 
 build-win-mac/
 

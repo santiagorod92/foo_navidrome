@@ -156,6 +156,7 @@ Standalone console exe, no SDK. One file per shared module: `MediaEnrichmentTest
 - Windows/MSVC: `tests/MediaEnrichmentTests.vcxproj` (CI runs every time, doesn't use the script).
 - macOS: `make mac-test` → plain clang++ -Wall -Wextra -Werror.
 - Linux: `make test` → clang-cl + xwin + wine (no foobar SDK siblings needed).
+- Linux 32-bit: `win-build-local.sh --x86` (`make win-build-x86`) → `build-win-x86/`, `shared-Win32.lib`, needs the xwin `x86` splat (`win-setup-toolchain.sh` fetches `--arch x86,x86_64`). Runtime check: the 32-bit fb2k installer unpacks with `7z x` into a portable folder (components in `profile/user-components/`); `-command:` isn't accepted there, open the browser via File menu (SC_KEYMENU + `menukey`).
 
 Both local build scripts (`win-build-local.sh`, `mac-dev-build.sh`) gate on tests (`--no-test` to skip). Add new assertions once under `tests/` — all hosts pick them up.
 
