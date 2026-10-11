@@ -3,6 +3,24 @@ name: Release
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**.md'
+      - '.github/ISSUE_TEMPLATE/**'
+      - 'LICENSE'
+      - '.gitignore'
+      - 'dev/**'
+      - 'tools/**'
+      - 'scripts/mac-vm/**'
+      - 'scripts/win-vm/**'
+      - 'scripts/win11/**'
+      - 'scripts/audiomuse-dev.sh'
+      - 'scripts/install-macos.sh'
+      - 'scripts/install-windows.sh'
+      - 'scripts/navidrome-logs.sh'
+      - 'scripts/ui-test.sh'
+      - 'scripts/win-test.sh'
+      - 'scripts/win-build-local.sh'
+      - 'scripts/mac-dev-build.sh'
   workflow_dispatch:
 
 permissions:
@@ -65,13 +83,10 @@ jobs:
       ref: ${{ github.sha }}
       version: ${{ needs.version.outputs.next_version }}
 
-  release:
-    needs: [version, build-windows]
+  build-mac:
+    needs: version
     if: needs.version.outputs.next_version != ''
     runs-on: macos-14
-
-    outputs:
-      released_version: ${{ steps.semantic_release.outputs.released_version }}
 
     steps:
       - name: Checkout foo_navidrome
@@ -79,7 +94,6 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
-          persist-credentials: true
           path: foobar2000/foo_navidrome
 
       - name: Checkout foobar2000 SDK bundle
@@ -122,26 +136,17 @@ jobs:
         working-directory: foobar2000/foo_navidrome
         run: make mac-test
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - name: Build + package the macOS component
+        working-directory: foobar2000/foo_navidrome
+        run: ./scripts/mac-ci-build.sh "${{ needs.version.outputs.next_version }}"
+
+      - name: Upload macOS component
+        uses: actions/upload-artifact@v6
         with:
-          node-version: '24'
-
-      - name: Install semantic-release + plugins
-        working-directory: foobar2000/foo_navidrome
-        run: |
-          npm install --no-save --no-package-lock \
-            semantic-release@22 \
-            conventional-changelog-conventionalcommits@7 \
-            @semantic-release/exec@6 \
-            @semantic-release/github@9
-
-      - name: Run semantic-release
-        id: semantic_release
-        working-directory: foobar2000/foo_navidrome
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx semantic-release
+          name: mac-component
+          path: foobar2000/foo_navidrome/foo_navidrome_${{ needs.version.outputs.next_version }}.fb2k-component
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Upload xcodebuild log on failure
         if: failure()
@@ -152,49 +157,56 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  merge-component:
-    needs: [release, build-windows]
-    if: needs.release.outputs.released_version != ''
+  release:
+    needs: [version, build-windows, build-mac]
+    if: needs.version.outputs.next_version != ''
     runs-on: ubuntu-latest
+
+    outputs:
+      released_version: ${{ steps.semantic_release.outputs.released_version }}
+
     steps:
-      - name: Download Windows component artifact
+      - name: Checkout foo_navidrome
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Download the macOS component
+        uses: actions/download-artifact@v7
+        with:
+          name: mac-component
+          path: prebuilt/mac
+
+      - name: Download the Windows component
         uses: actions/download-artifact@v7
         with:
           name: ${{ needs.build-windows.outputs.artifact-name }}
-          path: dist
+          path: prebuilt/win
 
-      - name: Merge mac bundle + win-x64 DLL into one .fb2k-component
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ needs.release.outputs.released_version }}
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Install semantic-release + plugins
         run: |
-          set -euo pipefail
-          ASSET="foo_navidrome_${VERSION}.fb2k-component"
+          npm install --no-save --no-package-lock \
+            semantic-release@22 \
+            conventional-changelog-conventionalcommits@7 \
+            @semantic-release/exec@6 \
+            @semantic-release/github@9
 
-          gh release download "v${VERSION}" \
-            --repo "$GITHUB_REPOSITORY" \
-            --pattern "$ASSET" \
-            --dir .
-
-          test -f dist/foo_navidrome.dll
-          test -f dist/x64/foo_navidrome.dll
-          test -f dist/arm64ec/foo_navidrome.dll
-          mkdir -p x64 arm64ec
-          cp dist/foo_navidrome.dll foo_navidrome.dll
-          cp dist/x64/foo_navidrome.dll x64/foo_navidrome.dll
-          cp dist/arm64ec/foo_navidrome.dll arm64ec/foo_navidrome.dll
-
-          zip -g "$ASSET" foo_navidrome.dll x64/foo_navidrome.dll arm64ec/foo_navidrome.dll
-          echo "merged multi-platform component contents:"
-          unzip -l "$ASSET"
-
-          gh release upload "v${VERSION}" \
-            "${ASSET}#foo_navidrome ${VERSION} (macOS + Windows x86/x64/ARM64)" \
-            --clobber --repo "$GITHUB_REPOSITORY"
-          echo "uploaded multi-platform $ASSET to release v${VERSION}"
+      - name: Run semantic-release
+        id: semantic_release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PREBUILT_DIR: ${{ github.workspace }}/prebuilt
+        run: npx semantic-release
 
   notify-n8n:
-    needs: [release, merge-component]
+    needs: release
     if: needs.release.outputs.released_version != ''
     runs-on: [self-hosted, homelab]
     steps:

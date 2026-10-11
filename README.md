@@ -536,7 +536,8 @@ above stay the fast loop. The guest's `Z:` is a host folder, so the debug build'
 
 | Script | What it does |
 |--------|--------------|
-| `scripts/mac-ci-build.sh <version>` | macOS Release build + packaging, invoked by semantic-release during a release |
+| `scripts/mac-ci-build.sh <version>` | macOS Release build + packaging, run by the release workflow's `build-mac` job (in parallel with the Windows builds) |
+| `scripts/release-package.sh <version>` | merges the prebuilt macOS component and Windows DLLs into the release asset, invoked by semantic-release during a release |
 
 The Windows CI build is driven by `.github/workflows/build-windows.yml` (MSBuild on a
 `windows-latest` runner) — no shell script involved.

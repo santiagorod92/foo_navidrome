@@ -16,10 +16,10 @@ on:
     outputs:
       artifact-name:
         description: "Name of the uploaded artifact"
-        value: ${{ jobs.build.outputs.artifact-name }}
+        value: ${{ jobs.package.outputs.artifact-name }}
       asset-name:
         description: "Filename of the packaged .fb2k-component"
-        value: ${{ jobs.build.outputs.asset-name }}
+        value: ${{ jobs.package.outputs.asset-name }}
   workflow_dispatch:
     inputs:
       ref:
@@ -31,10 +31,17 @@ on:
 jobs:
   build:
     runs-on: windows-2022
-
-    outputs:
-      artifact-name: ${{ steps.pkg.outputs.artifact_name }}
-      asset-name: ${{ steps.pkg.outputs.asset_name }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - platform: x64
+            sub: x64
+          - platform: ARM64EC
+            sub: arm64ec
+          - platform: Win32
+            sub: root
+    name: build (${{ matrix.platform }})
 
     steps:
       - name: Checkout foo_navidrome
@@ -117,44 +124,38 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v3
 
-      - name: Build Release (x64 + Win32)
+      - name: Build Release (${{ matrix.platform }})
         shell: pwsh
         working-directory: foobar2000/foo_navidrome
+        env:
+          PLATFORM: ${{ matrix.platform }}
         run: |
           $ErrorActionPreference = 'Stop'
           $sln = "$PWD\"
           $log = "$env:RUNNER_TEMP\msbuild.log"
-          $dist = "$PWD\dist"
-          $targets = @(
-            @{ Platform = 'x64';     ZipSub = 'x64'     },
-            @{ Platform = 'ARM64EC'; ZipSub = 'arm64ec' },
-            @{ Platform = 'Win32';   ZipSub = ''        }
-          )
-          foreach ($t in $targets) {
-            $out = "$PWD\out\$($t.Platform)\"
-            msbuild src\platform\win\foo_navidrome.vcxproj `
-              /p:Configuration=Release `
-              /p:Platform=$($t.Platform) `
-              /p:PlatformToolset=v143 `
-              /p:SolutionDir=$sln `
-              /p:OutDir=$out `
-              /m /nologo /v:minimal `
-              /flp:"logfile=$log;verbosity=detailed;append" `
-              "/clp:WarningsOnly;ErrorsOnly;Summary"
-            if ($LASTEXITCODE -ne 0) {
-              Write-Host "===== MSBuild FAILED for $($t.Platform) (rc=$LASTEXITCODE) — error lines ====="
-              if (Test-Path $log) { Select-String -Path $log -Pattern 'error|fatal' | Select-Object -Last 60 | ForEach-Object { $_.Line } }
-              exit $LASTEXITCODE
-            }
-            $dll = "$out\foo_navidrome.dll"
-            if (-not (Test-Path $dll)) { Write-Error "foo_navidrome.dll not found for $($t.Platform) at $dll"; exit 1 }
-            $destDir = if ($t.ZipSub) { "$dist\$($t.ZipSub)" } else { $dist }
-            New-Item -ItemType Directory -Force -Path $destDir | Out-Null
-            Copy-Item $dll "$destDir\foo_navidrome.dll" -Force
-            Write-Host "built $($t.Platform) -> $destDir\foo_navidrome.dll"
+          $out = "$PWD\out\$env:PLATFORM\"
+          msbuild src\platform\win\foo_navidrome.vcxproj `
+            /p:Configuration=Release `
+            /p:Platform=$env:PLATFORM `
+            /p:PlatformToolset=v143 `
+            /p:SolutionDir=$sln `
+            /p:OutDir=$out `
+            /m /nologo /v:minimal `
+            /flp:"logfile=$log;verbosity=detailed;append" `
+            "/clp:WarningsOnly;ErrorsOnly;Summary"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "===== MSBuild FAILED for $env:PLATFORM (rc=$LASTEXITCODE) — error lines ====="
+            if (Test-Path $log) { Select-String -Path $log -Pattern 'error|fatal' | Select-Object -Last 60 | ForEach-Object { $_.Line } }
+            exit $LASTEXITCODE
           }
+          $dll = "$out\foo_navidrome.dll"
+          if (-not (Test-Path $dll)) { Write-Error "foo_navidrome.dll not found for $env:PLATFORM at $dll"; exit 1 }
+          New-Item -ItemType Directory -Force -Path "$PWD\dist" | Out-Null
+          Copy-Item $dll "$PWD\dist\foo_navidrome.dll" -Force
+          Write-Host "built $env:PLATFORM -> dist\foo_navidrome.dll"
 
       - name: Build and run MediaEnrichmentLogic unit tests
+        if: matrix.platform == 'x64'
         shell: pwsh
         working-directory: foobar2000/foo_navidrome
         run: |
@@ -172,34 +173,65 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v6
         with:
-          name: msbuild-log
+          name: msbuild-log-${{ matrix.sub }}
           path: ${{ runner.temp }}/msbuild.log
           if-no-files-found: ignore
           retention-days: 7
 
+      - name: Upload foo_navidrome.dll (${{ matrix.platform }})
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-dll-${{ matrix.sub }}
+          path: foobar2000/foo_navidrome/dist/foo_navidrome.dll
+          if-no-files-found: error
+          retention-days: 7
+
+  package:
+    needs: build
+    runs-on: ubuntu-latest
+
+    outputs:
+      artifact-name: ${{ steps.pkg.outputs.artifact_name }}
+      asset-name: ${{ steps.pkg.outputs.asset_name }}
+
+    steps:
+      - name: Checkout foo_navidrome
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 0
+
+      - name: Download the per-arch DLLs
+        uses: actions/download-artifact@v7
+        with:
+          pattern: windows-dll-*
+          path: dlls
+
       - name: Package .fb2k-component
         id: pkg
-        shell: pwsh
-        working-directory: foobar2000/foo_navidrome
+        env:
+          NAVIDROME_VERSION: ${{ inputs.version }}
         run: |
-          $ErrorActionPreference = 'Stop'
-          $dist = "$PWD\dist"
-          $asset = "foo_navidrome_win_$env:VERSION.fb2k-component"
-          $zip = "$dist\$asset"
-          Compress-Archive -Path "$dist\foo_navidrome.dll","$dist\x64","$dist\arm64ec" -DestinationPath "$dist\_tmp.zip" -Force
-          Move-Item "$dist\_tmp.zip" $zip -Force
-          "asset_name=$asset"            | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          "artifact_name=windows-component" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          Write-Host "packaged: $zip"
+          set -euo pipefail
+          VERSION="$(scripts/version.sh)"
+          mkdir -p dist/x64 dist/arm64ec
+          cp dlls/windows-dll-root/foo_navidrome.dll dist/foo_navidrome.dll
+          cp dlls/windows-dll-x64/foo_navidrome.dll dist/x64/foo_navidrome.dll
+          cp dlls/windows-dll-arm64ec/foo_navidrome.dll dist/arm64ec/foo_navidrome.dll
+          ASSET="foo_navidrome_win_${VERSION}.fb2k-component"
+          (cd dist && zip -q -r "$ASSET" foo_navidrome.dll x64 arm64ec)
+          unzip -l "dist/$ASSET"
+          echo "asset_name=$ASSET" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=windows-component" >> "$GITHUB_OUTPUT"
 
       - name: Upload component artifact
         uses: actions/upload-artifact@v6
         with:
           name: windows-component
           path: |
-            foobar2000/foo_navidrome/dist/foo_navidrome_win_*.fb2k-component
-            foobar2000/foo_navidrome/dist/foo_navidrome.dll
-            foobar2000/foo_navidrome/dist/x64/foo_navidrome.dll
-            foobar2000/foo_navidrome/dist/arm64ec/foo_navidrome.dll
+            dist/foo_navidrome_win_*.fb2k-component
+            dist/foo_navidrome.dll
+            dist/x64/foo_navidrome.dll
+            dist/arm64ec/foo_navidrome.dll
           if-no-files-found: error
           retention-days: 14

@@ -127,6 +127,13 @@ holds only what's true for both; anything repo-specific stays in the repo's own 
   dispatch the workflow by hand.
 - **Commits:** author Santiago Rodriguez only, no AI trailers. Push only at the end of an
   iteration.
+- **CI path filters:** files that aren't part of the component don't trigger CI builds:
+  `**.md`, issue forms, `LICENSE`, `.gitignore`, and local-only dev/test scripts and tools. The
+  `paths-ignore` lists live in foo_ui_panels' `build.yml` (push + PR; a new PR push cancels the
+  superseded run) and in foo_navidrome's `release.yml` (push). A new local-only script or tool
+  is added to that list in the same change. Anything CI builds, tests or packages with stays off
+  it. A release-worthy commit that only touches ignored paths doesn't release; dispatch the
+  workflow by hand.
 
 ### Code style and working rules
 - **Cross-platform:** every feature or fix lands on Windows and macOS. Logic goes in shared,
@@ -298,8 +305,8 @@ One resolver: `scripts/version.sh` → `version_generated.h` (gitignored) → `D
 `.github/workflows/release.yml` on push to `main`, via [semantic-release](https://semantic-release.gitbook.io/) reading [Conventional Commits](https://www.conventionalcommits.org/) (config `.releaserc.json`):
 - `feat:` → minor · `fix:`/`perf:`/`refactor:` → patch · `chore:`/`docs:`/`style:`/`test:`/`ci:` → no release · `!`/breaking footer → major.
 - **`commit-analyzer` and `release-notes-generator` type lists must stay in sync** — the `conventionalcommits` preset hides `refactor`/`docs`/`build` by default; any type added to `releaseRules` with `release != false` needs a matching non-hidden entry in `release-notes-generator`'s `presetConfig.types` or its notes are empty.
-- Jobs: `version` (`semantic-release --dry-run`; exec's `verifyReleaseCmd` exports `next_version`) → `build-windows` (reusable `build-windows.yml` on that commit, stamped with that version) → `release` (macOS: `make mac-test`, then semantic-release for real) → `merge-component` → `notify-n8n`. Nothing is published unless both platforms built.
-- Plugin chain: `commit-analyzer` → `release-notes-generator` → `exec` (`mac-ci-build.sh <version>`, xcodebuild + package `.fb2k-component`) → `github` (tag + release + asset; notes = changelog). **`main` is branch-protected (PRs only)**, so no `git`/`changelog` plugins: nothing is committed back — nothing to keep in sync in the repo: every build derives its version from the tags (see Versioning), `CHANGELOG.md` is kept by hand: add the next version's entry inside the release PR itself (heading `## [x.y.z](compare link) (date)` with the version the PR's commit type will produce), since semantic-release never commits it back; GitHub Releases still get the auto-generated notes.
+- Jobs: `version` (`semantic-release --dry-run`; exec's `verifyReleaseCmd` exports `next_version`) → in parallel `build-windows` (reusable `build-windows.yml`: one MSBuild job per arch — x64 / ARM64EC / Win32 matrix, unit tests on the x64 leg — then a Linux `package` job zips the Windows-only component, all stamped with that version) and `build-mac` (`make mac-test` + `mac-ci-build.sh <next_version>`, artifact `mac-component`) → `release` (Linux: semantic-release for real; its prepare step `scripts/release-package.sh` merges the mac component + Windows DLLs into the one asset, and fails if the mac build isn't stamped with the real next version) → `notify-n8n`. Nothing is published unless both platforms built.
+- Plugin chain: `commit-analyzer` → `release-notes-generator` → `exec` (`release-package.sh <version>`, merges the prebuilt mac + Windows builds into the `.fb2k-component`) → `github` (tag + release + asset; notes = changelog). **`main` is branch-protected (PRs only)**, so no `git`/`changelog` plugins: nothing is committed back — nothing to keep in sync in the repo: every build derives its version from the tags (see Versioning), `CHANGELOG.md` is kept by hand: add the next version's entry inside the release PR itself (heading `## [x.y.z](compare link) (date)` with the version the PR's commit type will produce), since semantic-release never commits it back; GitHub Releases still get the auto-generated notes.
 - SDK cloned from `reupen/foobar2000-sdk-unmodified` into the sibling layout at CI time (see Shared conventions › SDK).
 - **`release.yml` only checks the push's top commit type** — a `chore:` HEAD (or a PR squash-merged as `ci:`/`docs:`) skips release even with a `feat`/`fix` underneath it; dispatch the workflow by hand then.
 - First-time setup needs a starting tag (`git tag v<x.y.z> && git push --tags`) or semantic-release treats next release as v1.0.0.

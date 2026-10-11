@@ -46,7 +46,7 @@
       "@semantic-release/exec",
       {
         "verifyReleaseCmd": "echo \"next_version=${nextRelease.version}\" >> \"$GITHUB_OUTPUT\"",
-        "prepareCmd": "./scripts/mac-ci-build.sh ${nextRelease.version}"
+        "prepareCmd": "./scripts/release-package.sh ${nextRelease.version}"
       }
     ],
     [
@@ -55,7 +55,7 @@
         "assets": [
           {
             "path": "foo_navidrome_*.fb2k-component",
-            "label": "foo_navidrome ${nextRelease.version} (macOS, foobar2000 v2)"
+            "label": "foo_navidrome ${nextRelease.version} (macOS + Windows x86/x64/ARM64)"
           }
         ]
       }
