@@ -125,6 +125,9 @@ holds only what's true for both; anything repo-specific stays in the repo's own 
   is protected (PRs only) and nothing is committed back. `CHANGELOG.md` is kept by hand in the
   release PR. `notify-n8n` publishes to foobar2000.org. If the head commit is non-releasing,
   dispatch the workflow by hand.
+- **Release asset:** one `<component>_<version>.fb2k-component` per release, labelled
+  `<component> <version> (macOS + Windows x86/x64/ARM64)`. Every place that uploads it
+  (`.releaserc.json`, any `gh release upload --clobber` re-upload) uses that same label.
 - **Commits:** author Santiago Rodriguez only, no AI trailers. Push only at the end of an
   iteration.
 - **CI path filters:** files that aren't part of the component don't trigger CI builds:
