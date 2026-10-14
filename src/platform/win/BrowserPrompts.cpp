@@ -304,6 +304,29 @@ bool navidrome::win::pickFolder(HWND owner, std::wstring& outPath) {
     return ok;
 }
 
+namespace {
+
+constexpr COLORREF kDarkListBg   = RGB(0x20, 0x20, 0x20);
+constexpr COLORREF kDarkListText = RGB(0xDE, 0xDE, 0xDE);
+
+LRESULT CALLBACK darkListHeaderTextProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp, UINT_PTR, DWORD_PTR) {
+    if (msg == WM_NOTIFY) {
+        auto* hdr = reinterpret_cast<NMHDR*>(lp);
+        if (hdr->code == NM_CUSTOMDRAW && hdr->hwndFrom == ListView_GetHeader(wnd)) {
+            auto* cd = reinterpret_cast<NMCUSTOMDRAW*>(lp);
+            if (cd->dwDrawStage == CDDS_PREPAINT) return CDRF_NOTIFYITEMDRAW;
+            if (cd->dwDrawStage == CDDS_ITEMPREPAINT) {
+                ::SetTextColor(cd->hdc, kDarkListText);
+                return CDRF_DODEFAULT;
+            }
+        }
+    } else if (msg == WM_NCDESTROY) {
+        ::RemoveWindowSubclass(wnd, darkListHeaderTextProc, 1);
+    }
+    return ::DefSubclassProc(wnd, msg, wp, lp);
+}
+}
+
 void navidrome::win::addDarkModeHooksKeepingLists(fb2k::CCoreDarkModeHooks& dark, HWND page) {
     dark.AddDialog(page);
     for (HWND c = ::GetWindow(page, GW_CHILD); c; c = ::GetWindow(c, GW_HWNDNEXT)) {
@@ -311,12 +334,13 @@ void navidrome::win::addDarkModeHooksKeepingLists(fb2k::CCoreDarkModeHooks& dark
         ::GetClassNameW(c, cls, 64);
         if (::lstrcmpiW(cls, WC_LISTVIEWW) != 0) { dark.AddCtrlAuto(c); continue; }
         if (!dark) continue;
-        const COLORREF bg = RGB(0x20, 0x20, 0x20), text = RGB(0xDE, 0xDE, 0xDE);
-        ListView_SetBkColor(c, bg);
-        ListView_SetTextBkColor(c, bg);
-        ListView_SetTextColor(c, text);
+        ListView_SetBkColor(c, kDarkListBg);
+        ListView_SetTextBkColor(c, kDarkListBg);
+        ListView_SetTextColor(c, kDarkListText);
         ::SetWindowTheme(c, L"DarkMode_Explorer", nullptr);
-        if (HWND header = ListView_GetHeader(c))
+        if (HWND header = ListView_GetHeader(c)) {
             ::SetWindowTheme(header, L"DarkMode_ItemsView", nullptr);
+            ::SetWindowSubclass(c, darkListHeaderTextProc, 1, 0);
+        }
     }
 }
