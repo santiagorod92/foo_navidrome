@@ -25,7 +25,10 @@ A [foobar2000](https://www.foobar2000.org/) component that lets you browse and s
 - **Now Playing** — see what everyone else on the server is listening to right now under the **Now Playing** smart list
 - **Multi-library support** — if your Navidrome exposes more than one library, the browser tree groups by library automatically: one node per library at the top, artists nested underneath, so each library's contents stay separate all the way down to the album list. The **Preferences › Media Library › Navidrome › Libraries** sub-page lets you restrict browsing/search to a chosen subset (tick "Only include selected libraries" and pick two or more); off by default (all libraries shown), and inert when the server only has one
 - **Choose which sections the tree shows** — **Preferences › Tools › Navidrome › Browser Sections** has a checkbox per top-level section (All Songs, ★ Starred, Recently Added, … Radio, Podcasts, Now Playing). Untick the ones you never use and the tree keeps just those plus your artists (and libraries); open browsers update on Apply (Windows) or as you click (macOS). Everything is shown by default
-- **Streaming quality**: ask the server to transcode on the fly (MP3 / Opus / AAC) and cap the bitrate — useful on slow links. Set in Preferences; "Original" always sends the stored file
+- **Streaming quality**: ask the server to transcode on the fly (MP3 / Opus / AAC) and cap the bitrate — useful on slow links. Set in Preferences; "Original" always sends the stored file. Seeking works in transcoded streams too: when the stream itself can't seek, the track is reopened at the new position (needs a server with the OpenSubsonic `transcodeOffset` extension, which current Navidrome has)
+- **Full tags from the server**: besides title / artist / album / track / date, every track carries **album artist**, **disc number**, **genre** (all of them, as a multi-value field), **composer**, **BPM** and its **MusicBrainz** recording id (`MUSICBRAINZ_TRACKID`), so compilations and multi-disc albums group and sort properly
+- **ReplayGain**: the server's track/album gain and peak values are passed to foobar2000, so *Playback › ReplayGain* evens out the volume of streamed tracks like it does for local files (needs an OpenSubsonic server that reports `replayGain`, such as current Navidrome, and files with ReplayGain tags)
+- **Play queue sync** — **File › Save Play Queue to Navidrome** stores the playing (or active) playlist, the current track and its position on the server; **File › Restore Play Queue from Navidrome** loads the queue saved there by any Subsonic client (Symfonium, Feishin, Tempo, …) into a *Navidrome Play Queue* playlist and resumes where it left off. See [Play queue sync](#play-queue-sync)
 - **Download Original Files…** from the right-click menu — saves the selected tracks to a folder, always in their stored format regardless of the streaming setting
 - Add albums or artists to playlist in one click (loads all songs automatically)
 - Right-click any row for a **Play Now / Add to Playlist** context menu
@@ -232,6 +235,21 @@ again. Whenever Add/Play can't load some or all of the tracks, an error window
 explains what happened, shows the server's error and suggests **Refresh**, which
 still reloads the list on demand.
 
+#### Play queue sync
+
+Subsonic keeps one play queue per user on the server, which phone and desktop clients use to
+hand playback over to each other. **File › Save Play Queue to Navidrome** saves the playlist
+that's playing (or the active one, with its focused track, when nothing plays) together with
+the position in the current track. Items that aren't Navidrome tracks are skipped, and a
+playlist longer than 100 tracks is saved as the 100 starting at the current one.
+
+**File › Restore Play Queue from Navidrome** reads the saved queue, puts it in a playlist
+called *Navidrome Play Queue* (replaced each time) and starts playing the saved track at the
+saved position. Tracks added this way carry the same tags as tracks added from the browser.
+
+Tracks added before this version don't have the new tags (album artist, disc, genre,
+ReplayGain, …) in their playlist entry; add them again from the browser to pick them up.
+
 #### Showing ratings in the playlist
 
 The server-side rating and favorite flag travel with the track into foobar's
@@ -432,7 +450,7 @@ make win11-smoke     # Windows 11 VM on Linux (../windows-devbox): build, deploy
 | `./scripts/win-build-local.sh` | Cross-compile the x64 DLL and install it into the Wine foobar2000 |
 | `./scripts/win-build-local.sh --launch` | …same, then relaunch foobar2000 |
 | `./scripts/win-build-local.sh --clean` | Wipe the object cache and rebuild from scratch |
-| `./scripts/ui-test.sh smoke` | Scripted UI smoke test in the Wine foobar2000 (`make win-ui-smoke`): opens the browser, expands an artist, plays an album, then checks the debug log, the process and a screenshot in `build/ui-test/`. Other subcommands drive it by hand: `click`, `key`, `wait`, `shot` |
+| `./scripts/ui-test.sh <wine\|win11\|mac> <scenario>` | One UI test driver for every platform: `smoke`, `playqueue`, `search`, `cui`, `prefs PAGE`; `./scripts/ui-test.sh compare <scenario> wine win11 mac` runs one on several platforms and prints a step matrix (`make ui-compare ARGS=…`, `PARALLEL=1` for all at once). The Wine smoke (`make win-ui-smoke`): opens the browser, expands an artist, plays an album, then checks the debug log, the process and a screenshot in `build/ui-test/`. Other subcommands drive it by hand: `click`, `key`, `wait`, `shot` |
 | `./scripts/navidrome-logs.sh` | Follow the local debug log, colourised by level/tag (run in a second pane; also `make win-logs` / `make mac-logs`) |
 | `./scripts/install-windows.sh` | Install an already-built DLL + package the `.fb2k-component` (called by `win-build-local.sh`; `--new-release` to publish) |
 | `./scripts/win-test.sh` | Build the DLL on a GitHub Actions Windows runner (real MSVC/MSBuild), download the artifact, install it locally |
@@ -506,7 +524,7 @@ hardware. See [`scripts/mac-vm/README.md`](scripts/mac-vm/README.md).
 | `make mac-vm-open` | Open the VM screen once macOS has booted (waits for the guest's sshd first) |
 | `make mac-vm-test [COMPONENT=…]` | Deploy a local `.fb2k-component` (default: newest in repo root), re-sign, relaunch |
 | `make mac-vm-smoke` | Build in the guest with the debug log, deploy, then run the scripted UI smoke test (open browser → expand artist → play album) with log/crash assertions and screenshots |
-| `make mac-vm-ui ARGS=…` | Same driver without the build: `smoke [COMPONENT]`, `browser`, `log 50` |
+| `make mac-vm-ui ARGS=…` | `ui-test.sh mac` without the build: `smoke [COMPONENT]`, `playqueue`, `browser`, `log 50` |
 | `make mac-vm-build[-test]` | Build in the guest with xcodebuild, pull the `.fb2k-component` back (then deploy) |
 | `make mac-vm-<cmd>` | Any `mvm` command: `-up`, `-down`, `-ssh`, `-shot`, `-snapshot ARGS=name`, … |
 
@@ -528,7 +546,7 @@ above stay the fast loop. The guest's `Z:` is a host folder, so the debug build'
 | `make win11-seed` | Copy foo_navidrome's settings (server, account, AudioMuse…) from the Wine profile into the VM's foobar2000 |
 | `make win11-test` | Cross-build the x64 DLL (debug log on), deploy it into the VM, relaunch |
 | `make win11-smoke` | Build, deploy, then run the scripted UI smoke test (open browser → expand artist → play album) with log/crash assertions and screenshots |
-| `make win11-ui ARGS=…` | Same driver without the build: `smoke [DLL]`, `browser`, `prefs radio`, `log 50` |
+| `make win11-ui ARGS=…` | `ui-test.sh win11` without the build: `smoke [DLL]`, `playqueue`, `search`, `cui`, `prefs radio`, `log 50` |
 | `make win11-logs` | Follow the guest's debug log |
 | `make win11-<cmd>` | Any `wvm` command: `-up`, `-down`, `-shot`, `-snapshot ARGS=name`, `-dpi ARGS=144`, `-theme ARGS=dark`, … |
 
@@ -719,9 +737,16 @@ under `build/ui-test/`:
 
 | Platform | Run the scenario | Drive it step by step |
 |---|---|---|
-| Wine | `make win-ui-smoke` | `make win-ui ARGS='click X Y'` / `'key 0x28'` / `'wait REGEX'` / `'shot'` / `'prefs main'` |
-| Windows 11 VM | `make win11-smoke` | `make win11-ui ARGS='prefs radio'` / `'browser'` / `'log 50'` |
-| macOS VM | `make mac-vm-smoke` | `make mac-vm-ui ARGS='browser'` / `'log 50'`, `make mac-vm-click ARGS='x y'` |
+| Wine | `make win-ui-smoke`, `make win-ui ARGS=playqueue` / `search` | `make win-ui ARGS='click X Y'` / `'key down'` / `'shot'` / `'prefs main'` |
+| Windows 11 VM | `make win11-smoke`, `make win11-ui ARGS=playqueue` / `search` / `cui` | `make win11-ui ARGS='prefs radio'` / `'browser'` / `'log 50'` |
+| macOS VM | `make mac-vm-smoke`, `make mac-vm-ui ARGS=playqueue` | `make mac-vm-ui ARGS='browser'` / `'log 50'`, `make mac-vm-click ARGS='x y'` |
+
+All three rows are the same script, `scripts/ui-test.sh <platform> <scenario>`: a scenario is
+written once and each platform only supplies the low-level actions. To see whether Wine
+behaves like real Windows (it's an emulation, and it doesn't always), run the same scenario
+on both and compare: `make ui-compare ARGS='playqueue wine win11'` prints a step-by-step
+matrix and marks the rows where the platforms differ (`PARALLEL=1` runs them at the same
+time; add `mac` for the macOS VM).
 
 Under Wine, input goes to the browser window as posted messages (`tools/wclick.c`), so your
 own mouse and keyboard stay free. Screenshots use `grim` + `hyprctl`, i.e. a Hyprland host.

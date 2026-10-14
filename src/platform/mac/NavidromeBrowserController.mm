@@ -32,6 +32,7 @@ navidrome::IBrowserClient& NBCBrowserClient() {
     n.suffix       = s.suffix;
     n.starred      = s.starred;
     n.rating       = s.rating;
+    n.tags         = s.tags;
     n.children     = [NSMutableArray array];
     n.childrenLoaded = YES;
     return n;
@@ -83,6 +84,7 @@ navidrome::IBrowserClient& NBCBrowserClient() {
     n.rating      = c.rating;
     n.bookmarkPositionMs = c.bookmarkPositionMs;
     n.infoText    = c.infoText.empty()   ? nil : @(c.infoText.c_str());
+    n.tags        = c.tags;
     n.childrenLoaded = c.childrenLoaded;
     n.children    = [NSMutableArray array];
     return n;
@@ -107,6 +109,7 @@ navidrome::IBrowserClient& NBCBrowserClient() {
     c.rating     = (int)self.rating;
     c.bookmarkPositionMs = self.bookmarkPositionMs;
     c.infoText   = NBCStr(self.infoText);
+    c.tags       = self.tags;
     c.childrenLoaded = self.childrenLoaded ? true : false;
     return c;
 }
@@ -597,6 +600,8 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
         _statusLabel.stringValue = @"Select at least one item first";
         return;
     }
+    NAVIDROME_LOG("UI", "queueNodes: " + std::to_string((unsigned long)nodes.count) +
+                  " selected node(s), play=" + (play ? "1" : "0"));
 
     BOOL allSongs = YES;
     for (NavidromeNode *n in nodes)

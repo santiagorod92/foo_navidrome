@@ -496,8 +496,24 @@ bool navidrome::SubsonicClientWin::scrobble(const std::string& songId, bool subm
     return m_core->scrobble(songId, submission, outError);
 }
 
-std::string navidrome::SubsonicClientWin::streamURL(const std::string& songId) {
-    return m_core->streamURL(songId);
+std::string navidrome::SubsonicClientWin::streamURL(const std::string& songId,
+                                                    const std::string& coverArtId,
+                                                    double timeOffsetSeconds) {
+    return m_core->streamURL(songId, coverArtId, timeOffsetSeconds);
+}
+
+bool navidrome::SubsonicClientWin::canSeekByTimeOffset() {
+    return m_core->canSeekByTimeOffset();
+}
+
+bool navidrome::SubsonicClientWin::getPlayQueue(PlayQueue& out, std::string& outError) {
+    return m_core->getPlayQueue(out, outError);
+}
+
+bool navidrome::SubsonicClientWin::savePlayQueue(const std::vector<std::string>& songIds,
+                                                 const std::string& currentId,
+                                                 double positionMs, std::string& outError) {
+    return m_core->savePlayQueue(songIds, currentId, positionMs, outError);
 }
 std::string navidrome::SubsonicClientWin::downloadURL(const std::string& songId) {
     return m_core->downloadURL(songId);

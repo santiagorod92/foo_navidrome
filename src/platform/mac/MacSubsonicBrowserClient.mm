@@ -59,6 +59,7 @@ navidrome::Song conv(SubsonicSong *x) {
     r.duration   = x.duration;
     r.starred    = x.starred;
     r.rating     = (int)x.rating;
+    r.tags       = x.tags;
     return r;
 }
 
@@ -342,6 +343,13 @@ struct MacBrowserClient final : navidrome::IBrowserClient {
         out = conv(s);
         return true;
     }
+    bool getPlayQueue(navidrome::PlayQueue& out, std::string& e) override {
+        return [client core].getPlayQueue(out, e);
+    }
+    bool savePlayQueue(const std::vector<std::string>& ids, const std::string& current,
+                       double positionMs, std::string& e) override {
+        return [client core].savePlayQueue(ids, current, positionMs, e);
+    }
 };
 }
 
@@ -358,6 +366,15 @@ navidrome::IBrowserClient& navidrome::libraryClient() {
 
 bool navidrome::libraryServerInfo(ServerInfo& out, std::string& outError) {
     return [SubsonicClient.sharedClient serverInfo:out error:outError];
+}
+
+std::string navidrome::libraryStreamURL(const std::string& songId, const std::string& coverArtId,
+                                        double timeOffsetSeconds) {
+    return [SubsonicClient.sharedClient core].streamURL(songId, coverArtId, timeOffsetSeconds);
+}
+
+bool navidrome::libraryCanSeekByTimeOffset() {
+    return [SubsonicClient.sharedClient core].canSeekByTimeOffset();
 }
 
 std::vector<uint8_t> navidrome::libraryFetchCover(const std::string& id, int size, abort_callback& abort) {

@@ -166,6 +166,28 @@ struct FakeBrowserClient : navidrome::IBrowserClient {
         e.clear();
         return true;
     }
+    navidrome::PlayQueue queue;
+    std::vector<std::string> savedIds;
+    std::string savedCurrent;
+    double savedPositionMs = -1.0;
+
+    bool getPlayQueue(navidrome::PlayQueue& out, std::string& e) override {
+        calls.push_back("getPlayQueue");
+        e = error;
+        if (!error.empty()) return false;
+        out = queue;
+        return true;
+    }
+    bool savePlayQueue(const std::vector<std::string>& ids, const std::string& current,
+                       double positionMs, std::string& e) override {
+        calls.push_back("savePlayQueue:" + std::to_string(ids.size()));
+        e = error;
+        if (!error.empty()) return false;
+        savedIds = ids;
+        savedCurrent = current;
+        savedPositionMs = positionMs;
+        return true;
+    }
     bool getSong(const std::string& id, navidrome::Song& out, std::string& e) override {
         calls.push_back("getSong:" + id);
         if (failIds.count(id)) { e = "song " + id + " not found"; return false; }

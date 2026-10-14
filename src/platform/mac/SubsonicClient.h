@@ -2,6 +2,7 @@
 #import <Foundation/Foundation.h>
 #include "../../core/stdafx.h"
 #include "../../core/SubsonicTypes.h"
+#include "../../core/SubsonicCore.h"
 
 @interface SubsonicArtist : NSObject
 @property (nonatomic, copy) NSString *artistId;
@@ -36,6 +37,7 @@
 @property (nonatomic, copy) NSString *suffix;
 @property (nonatomic, assign) BOOL starred;
 @property (nonatomic, assign) NSInteger rating;
+@property (nonatomic, assign) navidrome::TrackTags tags;
 @end
 
 @interface SubsonicPlaylist : NSObject
@@ -121,6 +123,8 @@ typedef NS_ENUM(NSInteger, SubsonicStarKind) {
 - (BOOL)serverInfo:(navidrome::ServerInfo &)info error:(std::string &)error;
 
 - (navidrome::Error)lastError;
+
+- (navidrome::SubsonicCore &)core;
 
 - (NSArray<SubsonicMusicFolder *> *)getMusicFoldersWithError:(NSError **)error;
 - (NSArray<SubsonicMusicFolder *> *)cachedMusicFolders;

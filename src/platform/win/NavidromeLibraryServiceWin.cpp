@@ -11,6 +11,15 @@ bool navidrome::libraryServerInfo(ServerInfo& out, std::string& outError) {
     return navidrome::SubsonicClientWin::get().serverInfo(out, outError);
 }
 
+std::string navidrome::libraryStreamURL(const std::string& songId, const std::string& coverArtId,
+                                        double timeOffsetSeconds) {
+    return navidrome::SubsonicClientWin::get().streamURL(songId, coverArtId, timeOffsetSeconds);
+}
+
+bool navidrome::libraryCanSeekByTimeOffset() {
+    return navidrome::SubsonicClientWin::get().canSeekByTimeOffset();
+}
+
 std::vector<uint8_t> navidrome::libraryFetchCover(const std::string& id, int size, abort_callback& abort) {
     auto& client = navidrome::SubsonicClientWin::get();
     auto ctx = client.snapshot();

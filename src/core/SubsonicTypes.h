@@ -29,6 +29,34 @@ inline std::string streamTranscodeParams(const std::string& format, int maxBitRa
     return out;
 }
 
+inline bool streamMayBeTranscoded(const std::string& format, int maxBitRate) {
+    return !(format == "raw" && maxBitRate <= 0);
+}
+
+inline std::string streamTimeOffsetParam(double offsetSeconds) {
+    if (offsetSeconds < 1.0) return std::string();
+    return "&timeOffset=" + std::to_string(static_cast<long long>(offsetSeconds));
+}
+
+constexpr std::size_t kPlayQueueMaxIds = 100;
+
+struct PlayQueueWindow {
+    std::size_t begin = 0;
+    std::size_t end   = 0;
+};
+
+inline PlayQueueWindow playQueueWindow(std::size_t count, std::size_t current,
+                                       std::size_t maxIds = kPlayQueueMaxIds) {
+    PlayQueueWindow w;
+    if (count == 0 || maxIds == 0) return w;
+    if (current >= count) current = 0;
+    if (count <= maxIds) { w.end = count; return w; }
+    w.begin = current;
+    w.end   = (std::min)(count, current + maxIds);
+    if (w.end - w.begin < maxIds) w.begin = w.end - maxIds;
+    return w;
+}
+
 struct StreamFormatOption { const char* label; const char* value; };
 
 inline const std::vector<StreamFormatOption>& streamFormatOptions() {

@@ -52,6 +52,7 @@ struct BrowserNode {
     int          rating     = 0;
     double       bookmarkPositionMs = 0.0;
     std::string  infoText;
+    TrackTags    tags;
 
     bool         childrenLoaded = false;
     bool         isLoading       = false;
@@ -112,9 +113,28 @@ inline BrowserNodePtr makeSongNode(const Song& s, double bookmarkPositionMs = 0.
     n->duration       = s.duration;
     n->starred        = s.starred;
     n->rating         = s.rating;
+    n->tags           = s.tags;
     n->bookmarkPositionMs = bookmarkPositionMs;
     n->childrenLoaded = true;
     return n;
+}
+
+inline TrackURI trackURIFromNode(const BrowserNode& n) {
+    TrackURI t;
+    t.id         = n.id;
+    t.title      = n.displayName;
+    t.artist     = n.subtitle;
+    t.album      = n.album;
+    t.coverArtId = n.coverArtId;
+    t.suffix     = n.suffix;
+    t.albumId    = n.albumId;
+    t.track      = n.track;
+    t.year       = n.year;
+    t.rating     = n.rating;
+    t.duration   = n.duration;
+    t.starred    = n.starred;
+    t.tags       = n.tags;
+    return t;
 }
 
 inline BrowserNodePtr makePlaylistNode(const Playlist& p) {
@@ -385,9 +405,37 @@ struct IBrowserClient {
                            std::string& outError) = 0;
 
     virtual bool getSong(const std::string& songId, Song& out, std::string& outError) = 0;
+
+    virtual bool getPlayQueue(PlayQueue& out, std::string& outError) = 0;
+    virtual bool savePlayQueue(const std::vector<std::string>& songIds, const std::string& currentId,
+                               double positionMs, std::string& outError) = 0;
 };
 
 std::vector<BrowserNodePtr> buildRootNodes(IBrowserClient& client, std::string& outError);
+
+struct PlayQueueRestorePlan {
+    std::vector<BrowserNodePtr> nodes;
+    std::size_t                 startIndex = 0;
+    double                      positionSeconds = 0.0;
+};
+
+PlayQueueRestorePlan planPlayQueueRestore(const PlayQueue& queue);
+
+struct PlayQueueSavePlan {
+    std::vector<std::string> songIds;
+    std::string              currentId;
+    double                   positionMs = 0.0;
+    std::size_t              skippedForeign = 0;
+    std::size_t              truncated = 0;
+};
+
+constexpr std::size_t kNoCurrentTrack = static_cast<std::size_t>(-1);
+
+PlayQueueSavePlan planPlayQueueSave(const std::vector<std::string>& paths,
+                                    std::size_t currentIndex, double positionSeconds,
+                                    std::size_t maxIds = kPlayQueueMaxIds);
+
+std::string playQueueSaveSummary(const PlayQueueSavePlan& plan);
 
 Lyrics lyricsForTrackURI(IBrowserClient& client, const std::string& uri, std::string& outError);
 LyricsCache& lyricsCache();

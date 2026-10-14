@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+#include "TrackTags.h"
+
 namespace navidrome {
 
 struct Artist {
@@ -39,6 +41,7 @@ struct Song {
     double duration = 0.0;
     bool   starred  = false;
     int    rating   = 0;
+    TrackTags tags;
 };
 
 struct Playlist {
@@ -90,6 +93,13 @@ struct PodcastChannel {
     std::string description;
     std::string status;
     std::string errorMessage;
+};
+
+struct PlayQueue {
+    std::vector<Song> entries;
+    std::string       currentId;
+    double            positionMs = 0.0;
+    std::string       changedBy;
 };
 
 struct NowPlayingEntry {

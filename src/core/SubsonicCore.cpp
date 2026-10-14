@@ -101,12 +101,22 @@ std::string SubsonicCore::buildURL(const std::string& endpoint, const std::strin
     return url;
 }
 
-std::string SubsonicCore::streamURL(const std::string& songId, const std::string& coverArtId) const {
+std::string SubsonicCore::streamURL(const std::string& songId, const std::string& coverArtId,
+                                    double timeOffsetSeconds) const {
     const SubsonicSettings s = m_settings.load();
     std::string extra = "id=" + enc(songId);
     if (!coverArtId.empty()) extra += "&coverArt=" + enc(coverArtId);
     extra += streamTranscodeParams(s.streamFormat, s.maxBitrate);
+    extra += streamTimeOffsetParam(timeOffsetSeconds);
     return buildURL("stream.view", extra);
+}
+
+bool SubsonicCore::canSeekByTimeOffset() {
+    const SubsonicSettings s = m_settings.load();
+    if (!streamMayBeTranscoded(s.streamFormat, s.maxBitrate)) return false;
+    ServerInfo caps;
+    if (!capabilities(caps)) return false;
+    return caps.hasExtension("transcodeOffset");
 }
 
 std::string SubsonicCore::downloadURL(const std::string& songId) const {
@@ -909,6 +919,31 @@ bool SubsonicCore::createBookmark(const std::string& songId, double positionMs,
 bool SubsonicCore::deleteBookmark(const std::string& songId, std::string& outError) {
     if (songId.empty()) return false;
     std::string body = httpGet(buildURL("deleteBookmark.view", "id=" + enc(songId)), outError);
+    if (body.empty()) return false;
+    return !checkResponse(body, outError).isNull();
+}
+
+bool SubsonicCore::getPlayQueue(PlayQueue& out, std::string& outError) {
+    out = PlayQueue{};
+    std::string body = httpGet(buildURL("getPlayQueue.view"), outError);
+    if (body.empty()) return false;
+    auto root = checkResponse(body, outError);
+    if (root.isNull()) return false;
+    out = parsePlayQueue(root["playQueue"]);
+    return true;
+}
+
+bool SubsonicCore::savePlayQueue(const std::vector<std::string>& songIds, const std::string& currentId,
+                                 double positionMs, std::string& outError) {
+    if (songIds.empty()) { outError = "Play queue is empty"; return false; }
+    std::string params;
+    for (const auto& id : songIds) {
+        if (!params.empty()) params += "&";
+        params += "id=" + enc(id);
+    }
+    if (!currentId.empty()) params += "&current=" + enc(currentId);
+    if (positionMs > 0) params += "&position=" + std::to_string(static_cast<long long>(positionMs));
+    std::string body = httpGet(buildURL("savePlayQueue.view", params), outError);
     if (body.empty()) return false;
     return !checkResponse(body, outError).isNull();
 }

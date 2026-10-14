@@ -278,6 +278,11 @@ struct WinBrowserClient final : navidrome::IBrowserClient {
         return c.setRating(stars, id, e); }
     bool getSong(const std::string& id, navidrome::Song& out, std::string& e) override {
         return c.getSong(id, out, e); }
+    bool getPlayQueue(navidrome::PlayQueue& out, std::string& e) override {
+        return c.getPlayQueue(out, e); }
+    bool savePlayQueue(const std::vector<std::string>& ids, const std::string& current,
+                       double positionMs, std::string& e) override {
+        return c.savePlayQueue(ids, current, positionMs, e); }
 };
 
 navidrome::IBrowserClient& browserClient() {

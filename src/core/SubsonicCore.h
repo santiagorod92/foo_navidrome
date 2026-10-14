@@ -110,6 +110,10 @@ public:
                         std::string& outError);
     bool deleteBookmark(const std::string& songId, std::string& outError);
 
+    bool getPlayQueue(PlayQueue& out, std::string& outError);
+    bool savePlayQueue(const std::vector<std::string>& songIds, const std::string& currentId,
+                       double positionMs, std::string& outError);
+
     ScanStatus startScan(std::string& outError);
     ScanStatus getScanStatus(std::string& outError);
 
@@ -117,7 +121,9 @@ public:
 
     std::string authParams() const;
     std::string buildURL(const std::string& endpoint, const std::string& extra = "") const;
-    std::string streamURL(const std::string& songId, const std::string& coverArtId = "") const;
+    std::string streamURL(const std::string& songId, const std::string& coverArtId = "",
+                          double timeOffsetSeconds = 0.0) const;
+    bool        canSeekByTimeOffset();
     std::string downloadURL(const std::string& songId) const;
     std::string coverArtURL(const std::string& id, int size = 0) const;
 

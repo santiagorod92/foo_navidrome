@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+#include "TrackTags.h"
+
 namespace navidrome {
 
 inline std::string sanitizeFileName(const std::string& name) {
@@ -77,7 +79,14 @@ struct TrackURI {
     int    rating   = 0;
     double duration = 0.0;
     bool   starred  = false;
+    TrackTags tags;
 };
+
+inline std::string formatUriNumber(double v) {
+    char b[32];
+    std::snprintf(b, sizeof(b), "%.6g", v);
+    return b;
+}
 
 inline std::string buildTrackURI(const TrackURI& t) {
     if (t.id.empty()) return std::string();
@@ -99,6 +108,20 @@ inline std::string buildTrackURI(const TrackURI& t) {
     if (t.rating > 0)          q.push_back("rating="   + std::to_string(t.rating));
     if (t.starred)             q.push_back("starred=1");
     if (!t.albumId.empty())    q.push_back("albumId=" + percentEncode(t.albumId));
+
+    const TrackTags& g = t.tags;
+    if (!g.albumArtist.empty())   q.push_back("albumArtist=" + percentEncode(g.albumArtist));
+    if (!g.composer.empty())      q.push_back("composer=" + percentEncode(g.composer));
+    for (const auto& genre : g.genres)
+        if (!genre.empty())       q.push_back("genre=" + percentEncode(genre));
+    if (g.discNumber > 0)         q.push_back("disc=" + std::to_string(g.discNumber));
+    if (g.bpm > 0)                q.push_back("bpm=" + std::to_string(g.bpm));
+    if (!g.musicBrainzId.empty()) q.push_back("mbid=" + percentEncode(g.musicBrainzId));
+    const ReplayGain& rg = g.replayGain;
+    if (rg.hasTrackGain) q.push_back("rgTrackGain=" + formatUriNumber(rg.trackGain));
+    if (rg.hasAlbumGain) q.push_back("rgAlbumGain=" + formatUriNumber(rg.albumGain));
+    if (rg.hasTrackPeak) q.push_back("rgTrackPeak=" + formatUriNumber(rg.trackPeak));
+    if (rg.hasAlbumPeak) q.push_back("rgAlbumPeak=" + formatUriNumber(rg.albumPeak));
 
     for (std::size_t i = 0; i < q.size(); ++i) {
         uri += (i == 0 ? '?' : '&');
@@ -142,11 +165,32 @@ inline TrackURI parseTrackURI(const std::string& uri) {
         else if (k == "rating")      t.rating      = std::atoi(v.c_str());
         else if (k == "starred")     t.starred     = (std::atoi(v.c_str()) != 0);
         else if (k == "albumId")     t.albumId     = v;
+        else if (k == "albumArtist") t.tags.albumArtist   = v;
+        else if (k == "composer")    t.tags.composer      = v;
+        else if (k == "genre")       { if (!v.empty()) t.tags.genres.push_back(v); }
+        else if (k == "disc")        t.tags.discNumber    = std::atoi(v.c_str());
+        else if (k == "bpm")         t.tags.bpm           = std::atoi(v.c_str());
+        else if (k == "mbid")        t.tags.musicBrainzId = v;
+        else if (k == "rgTrackGain") { t.tags.replayGain.trackGain = std::atof(v.c_str()); t.tags.replayGain.hasTrackGain = true; }
+        else if (k == "rgAlbumGain") { t.tags.replayGain.albumGain = std::atof(v.c_str()); t.tags.replayGain.hasAlbumGain = true; }
+        else if (k == "rgTrackPeak") { t.tags.replayGain.trackPeak = std::atof(v.c_str()); t.tags.replayGain.hasTrackPeak = true; }
+        else if (k == "rgAlbumPeak") { t.tags.replayGain.albumPeak = std::atof(v.c_str()); t.tags.replayGain.hasAlbumPeak = true; }
 
         if (amp == std::string::npos) break;
         pos = amp + 1;
     }
     return t;
+}
+
+inline std::vector<std::pair<std::string, std::string>> trackMetaFields(const TrackURI& t) {
+    std::vector<std::pair<std::string, std::string>> out;
+    if (!t.title.empty())  out.emplace_back("title", t.title);
+    if (!t.artist.empty()) out.emplace_back("artist", t.artist);
+    if (!t.album.empty())  out.emplace_back("album", t.album);
+    if (t.track > 0)       out.emplace_back("tracknumber", std::to_string(t.track));
+    if (t.year > 0)        out.emplace_back("date", std::to_string(t.year));
+    for (auto& f : trackTagMetaFields(t.tags)) out.push_back(std::move(f));
+    return out;
 }
 
 inline std::string trackIdFromURI(const std::string& uri) {

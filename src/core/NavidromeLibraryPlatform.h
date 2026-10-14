@@ -14,4 +14,9 @@ bool libraryServerInfo(ServerInfo& out, std::string& outError);
 IBrowserClient& libraryClient();
 
 std::vector<uint8_t> libraryFetchCover(const std::string& coverArtId, int size, abort_callback& abort);
+
+std::string libraryStreamURL(const std::string& songId, const std::string& coverArtId,
+                             double timeOffsetSeconds);
+
+bool libraryCanSeekByTimeOffset();
 }

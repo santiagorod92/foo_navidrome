@@ -335,4 +335,54 @@ Lyrics lyricsForTrackURI(IBrowserClient& client, const std::string& uri, std::st
     lyricsCache().put(t.id, l);
     return l;
 }
+
+PlayQueueRestorePlan planPlayQueueRestore(const PlayQueue& queue) {
+    PlayQueueRestorePlan plan;
+    bool foundCurrent = false;
+    for (const Song& s : queue.entries) {
+        if (s.id.empty()) continue;
+        if (!foundCurrent && !queue.currentId.empty() && s.id == queue.currentId) {
+            plan.startIndex = plan.nodes.size();
+            foundCurrent = true;
+        }
+        plan.nodes.push_back(makeSongNode(s));
+    }
+    if (foundCurrent && queue.positionMs > 0) plan.positionSeconds = queue.positionMs / 1000.0;
+    return plan;
+}
+
+PlayQueueSavePlan planPlayQueueSave(const std::vector<std::string>& paths,
+                                    std::size_t currentIndex, double positionSeconds,
+                                    std::size_t maxIds) {
+    PlayQueueSavePlan plan;
+    std::vector<std::string> ids;
+    std::size_t current = kNoCurrentTrack;
+    for (std::size_t i = 0; i < paths.size(); ++i) {
+        std::string id = trackIdFromURI(paths[i]);
+        if (id.empty()) { ++plan.skippedForeign; continue; }
+        if (i == currentIndex) current = ids.size();
+        ids.push_back(std::move(id));
+    }
+    const PlayQueueWindow w = playQueueWindow(ids.size(), current == kNoCurrentTrack ? 0 : current, maxIds);
+    plan.truncated = ids.size() - (w.end - w.begin);
+    plan.songIds.assign(ids.begin() + static_cast<std::ptrdiff_t>(w.begin),
+                        ids.begin() + static_cast<std::ptrdiff_t>(w.end));
+    if (current != kNoCurrentTrack) {
+        plan.currentId = ids[current];
+        if (positionSeconds > 0) plan.positionMs = positionSeconds * 1000.0;
+    }
+    return plan;
+}
+
+std::string playQueueSaveSummary(const PlayQueueSavePlan& plan) {
+    std::string out = "Saved " + std::to_string(plan.songIds.size()) + " track" +
+                      (plan.songIds.size() == 1 ? "" : "s") + " to the Navidrome play queue";
+    if (plan.truncated > 0)
+        out += " (" + std::to_string(plan.truncated) + " left out: the queue holds at most " +
+               std::to_string(kPlayQueueMaxIds) + ")";
+    if (plan.skippedForeign > 0)
+        out += "; " + std::to_string(plan.skippedForeign) + " non-Navidrome item" +
+               (plan.skippedForeign == 1 ? "" : "s") + " skipped";
+    return out;
+}
 }

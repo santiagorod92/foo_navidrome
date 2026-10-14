@@ -1,3 +1,20 @@
+## [1.26.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.25.1...v1.26.0) (2026-10-14)
+
+
+### Features
+
+* **metadata:** tracks now carry the server's full tags: **album artist**, **disc number**, every **genre** (as a multi-value field), **composer**, **BPM** and the **MusicBrainz** recording id (`MUSICBRAINZ_TRACKID`), so compilations and multi-disc albums group and sort properly. Tracks already in your playlists keep their old tags; add them again from the browser to pick up the new ones.
+* **replaygain:** the server's track/album gain and peak values reach foobar2000, so *Playback › ReplayGain* evens out the volume of streamed tracks like it does for local files (needs an OpenSubsonic server that reports `replayGain`, such as current Navidrome, and files with ReplayGain tags). Placeholder zeros the server sends for untagged files are ignored.
+* **streaming:** seeking now works in transcoded streams. A live transcode can't be seeked by foobar2000, so the track is reopened at the new position (needs the OpenSubsonic `transcodeOffset` extension, which current Navidrome has); a stream that can seek keeps seeking normally.
+* **play queue sync:** **File › Save Play Queue to Navidrome** stores the playing (or active) playlist, the current track and its position on the server; **File › Restore Play Queue from Navidrome** loads the queue saved there by any Subsonic client (Symfonium, Feishin, Tempo, …) into a *Navidrome Play Queue* playlist and resumes where it left off. Up to 100 tracks are saved, starting at the current one.
+
+
+### Bug Fixes
+
+* **bookmarks:** resuming a bookmark no longer risks crashing foobar2000 2.26 (*Bug check*): the "seek when ready" wait called playback functions from a background thread. Found while testing play-queue restore, which uses the same code.
+* **windows:** in Dark Mode, the column headers of the *Radio Stations* and *Libraries* preference pages were dark grey on a dark background; they are readable now.
+
+
 ## [1.25.1](https://github.com/santiagorod92/foo_navidrome/compare/v1.25.0...v1.25.1) (2026-10-10)
 
 

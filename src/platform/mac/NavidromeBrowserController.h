@@ -53,6 +53,7 @@ typedef NS_ENUM(NSInteger, NavidromeCategoryKind) {
 @property (nonatomic, assign) NSInteger rating;
 @property (nonatomic, assign) NSTimeInterval bookmarkPositionMs;
 @property (nonatomic, copy)   NSString *infoText;
+@property (nonatomic, assign) navidrome::TrackTags tags;
 
 @property (nonatomic, assign) BOOL childrenLoaded;
 @property (nonatomic, assign) BOOL isLoading;

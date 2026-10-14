@@ -47,6 +47,52 @@ inline std::string jId(const json::Value& o, const char* key) {
 
 inline bool jFlag(const json::Value& o, const char* key) { return o.has(key); }
 
+inline std::string jNames(const json::Value& arr, const char* sep) {
+    std::string out;
+    for (auto* e : arr.items()) {
+        const std::string n = jStr(*e, "name");
+        if (n.empty()) continue;
+        if (!out.empty()) out += sep;
+        out += n;
+    }
+    return out;
+}
+
+inline ReplayGain parseReplayGain(const json::Value& o) {
+    ReplayGain rg;
+    auto read = [&o](const char* key, double& v, bool& has) {
+        const json::Value& n = o[key];
+        if (n.type() != json::Value::Number) return;
+        v = n.asNumber();
+        has = true;
+    };
+    read("trackGain", rg.trackGain, rg.hasTrackGain);
+    read("albumGain", rg.albumGain, rg.hasAlbumGain);
+    read("trackPeak", rg.trackPeak, rg.hasTrackPeak);
+    read("albumPeak", rg.albumPeak, rg.hasAlbumPeak);
+    return sanitizeReplayGain(rg);
+}
+
+inline TrackTags parseTrackTags(const json::Value& s) {
+    TrackTags t;
+    t.albumArtist = jStr(s, "displayAlbumArtist");
+    if (t.albumArtist.empty()) t.albumArtist = jNames(s["albumArtists"], ", ");
+    t.composer = jStr(s, "displayComposer");
+    for (auto* g : s["genres"].items()) {
+        const std::string n = jStr(*g, "name");
+        if (!n.empty()) t.genres.push_back(n);
+    }
+    if (t.genres.empty()) {
+        const std::string g = jStr(s, "genre");
+        if (!g.empty()) t.genres.push_back(g);
+    }
+    t.musicBrainzId = jStr(s, "musicBrainzId");
+    t.discNumber    = jInt(s, "discNumber");
+    t.bpm           = jInt(s, "bpm");
+    t.replayGain    = parseReplayGain(s["replayGain"]);
+    return t;
+}
+
 inline Song parseSong(const json::Value& s) {
     Song so;
     so.id         = jId(s, "id");
@@ -62,6 +108,7 @@ inline Song parseSong(const json::Value& s) {
     so.duration   = jDouble(s, "duration");
     so.starred    = jFlag(s, "starred");
     so.rating     = jInt(s, "userRating");
+    so.tags       = parseTrackTags(s);
     return so;
 }
 
@@ -129,6 +176,15 @@ inline bool parseBookmark(const json::Value& b, Bookmark& out) {
     out.positionMs = jDouble(b, "position");
     out.comment    = jStr(b, "comment");
     return true;
+}
+
+inline PlayQueue parsePlayQueue(const json::Value& q) {
+    PlayQueue pq;
+    for (auto* e : q["entry"].items()) pq.entries.push_back(parseSong(*e));
+    pq.currentId  = jId(q, "current");
+    pq.positionMs = jDouble(q, "position");
+    pq.changedBy  = jStr(q, "changedBy");
+    return pq;
 }
 
 inline PodcastEpisode parsePodcastEpisode(const json::Value& e) {

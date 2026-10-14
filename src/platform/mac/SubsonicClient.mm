@@ -162,6 +162,7 @@ static SubsonicSong *SongFromCore(const navidrome::Song &s) {
     song.suffix     = nsstr(s.suffix);
     song.starred    = s.starred;
     song.rating     = s.rating;
+    song.tags       = s.tags;
     return song;
 }
 
@@ -424,6 +425,10 @@ struct MacSettingsProvider : navidrome::ISettingsProvider {
 
 - (BOOL)isConfigured {
     return _core->isConfigured();
+}
+
+- (navidrome::SubsonicCore &)core {
+    return *_core;
 }
 
 - (navidrome::Error)lastError {
