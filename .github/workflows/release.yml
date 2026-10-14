@@ -12,7 +12,6 @@ on:
       - 'tools/**'
       - 'scripts/mac-vm/**'
       - 'scripts/win-vm/**'
-      - 'scripts/win11/**'
       - 'scripts/audiomuse-dev.sh'
       - 'scripts/install-macos.sh'
       - 'scripts/install-windows.sh'

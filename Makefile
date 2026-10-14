@@ -1,5 +1,5 @@
 .PHONY: help test test-clean mac-test mac-test-clean \
-	win-build win-build-x86 win-build-release-log win-build-patch win-build-minor win-build-major win-build-launch win-install win-test win-logs win-ui-smoke win-ui \
+	win-build win-build-x86 win-build-release-log win-build-patch win-build-minor win-build-major win-build-launch win-install win-test win-logs win-ui-smoke win-ui ui-compare \
 	mac-build mac-build-patch mac-build-minor mac-build-major mac-build-no-install mac-install mac-release mac-ci-build mac-logs \
 	win-vm-setup win-vm-fetch win-vm-install win-vm-test \
 	mac-vm mac-vm-vnc mac-vm-open mac-vm-smoke mac-vm-ui mac-vm-test mac-vm-release mac-vm-build mac-vm-build-test \
@@ -27,8 +27,9 @@ help:
 	@echo "  win-build-release-log build+relaunch with release logging (log in the profile, WARN+; verbose via Advanced prefs)"
 	@echo "  win-install           install built DLL into local Wine foobar2000 + package"
 	@echo "  win-logs              follow the local Wine debug log, colourised (run beside win-build-launch)"
+	@echo "  ui-compare            same UI scenario on several platforms + a step matrix: ARGS='playqueue' (default wine win11) / 'smoke wine win11 mac'"
 	@echo "  win-ui-smoke          UI smoke test in the local Wine foobar2000: open browser, expand, play, assert log (needs win-build-launch'd DLL)"
-	@echo "  win-ui                drive the Wine browser: ARGS='key 0x28' / 'click X Y' / 'shot' / 'wait REGEX' / 'prefs main' (scripts/ui-test.sh)"
+	@echo "  win-ui                ui-test.sh wine ARGS='playqueue' / 'search' / 'prefs main' / 'key down' / 'click X Y' / 'shot'"
 	@echo "  win-test              dispatch build-windows.yml on GH runner, install, [ARGS=--launch]"
 	@echo "                        (win-logs / mac-logs share scripts/navidrome-logs.sh — pass ARGS=-a for the whole file)"
 	@echo ""
@@ -50,8 +51,8 @@ help:
 	@echo "  mac-vm                boot the macOS VM (../macos-devbox), open its screen (VNC) in the browser, deploy the latest release, launch [VNC=0: no browser]"
 	@echo "  mac-vm-vnc            boot the macOS VM and open its screen (noVNC) in the browser — nothing deployed"
 	@echo "  mac-vm-open           open the VM screen (noVNC) in the browser once macOS has booted"
-	@echo "  mac-vm-smoke          build in the guest with the debug log, deploy, run the UI smoke test (scripts/mac-vm/mac-ui-test.sh)"
-	@echo "  mac-vm-ui             mac-ui-test.sh ARGS='smoke [COMPONENT]' / 'browser' / 'log 50' — no build"
+	@echo "  mac-vm-smoke          build in the guest with the debug log, deploy, run the UI smoke test (scripts/ui-test.sh mac smoke)"
+	@echo "  mac-vm-ui             ui-test.sh mac ARGS='smoke [COMPONENT]' / 'playqueue' / 'browser' / 'log 50' — no build"
 	@echo "  mac-vm-test           deploy COMPONENT=x.fb2k-component (default: newest in repo root), relaunch"
 	@echo "  mac-vm-release        deploy a GitHub release [TAG=v1.12.0, default latest], relaunch"
 	@echo "  mac-vm-build          build the macOS component INSIDE the guest (xcodebuild), pull the .fb2k-component here [ARGS=--clean]"
@@ -63,8 +64,8 @@ help:
 	@echo "  win11-test            cross-build the x64 DLL (debug log), deploy into the VM, relaunch"
 	@echo "  win11-release         deploy a GitHub release [TAG=v1.12.0, default latest], relaunch"
 	@echo "  win11-seed            copy foo_navidrome settings (server/account) from the Wine profile into the VM"
-	@echo "  win11-smoke           build, deploy, run the UI smoke test on real Windows (scripts/win11/win11-ui-test.sh)"
-	@echo "  win11-ui              win11-ui-test.sh ARGS='prefs radio' / 'browser' / 'cui' / 'search' / 'log 50' — no build"
+	@echo "  win11-smoke           build, deploy, run the UI smoke test on real Windows (scripts/ui-test.sh win11 smoke)"
+	@echo "  win11-ui              ui-test.sh win11 ARGS='playqueue' / 'search' / 'cui' / 'prefs radio' / 'log 50' — no build"
 	@echo "  win11-logs            follow the guest's debug log (lands in the VM's shared folder)"
 	@echo "  win11-<cmd>           any wvm command: win11-up, -down, -ssh, -shot, -dpi ARGS=144, -theme ARGS=dark, ..."
 	@echo "                        (see ../macos-devbox/README.md; one-time: mvm setup, up, provision, snapshot base)"
@@ -119,10 +120,13 @@ win-logs:
 	./scripts/navidrome-logs.sh $(ARGS)
 
 win-ui-smoke:
-	./scripts/ui-test.sh smoke
+	./scripts/ui-test.sh wine smoke
+
+ui-compare:
+	./scripts/ui-test.sh compare $(ARGS)
 
 win-ui:
-	./scripts/ui-test.sh $(ARGS)
+	./scripts/ui-test.sh wine $(ARGS)
 
 win-test:
 	./scripts/win-test.sh $(ARGS)
@@ -204,10 +208,10 @@ mac-vm-release:
 
 mac-vm-smoke:
 	./scripts/mac-vm/mac-vm-build.sh --debug-log --no-unit-tests
-	./scripts/mac-vm/mac-ui-test.sh smoke
+	./scripts/ui-test.sh mac smoke
 
 mac-vm-ui:
-	./scripts/mac-vm/mac-ui-test.sh $(ARGS)
+	./scripts/ui-test.sh mac $(ARGS)
 
 mac-vm-build:
 	./scripts/mac-vm/mac-vm-build.sh $(ARGS)
@@ -248,14 +252,14 @@ win11-release:
 	$(WVM) deploy --gh santiagorod92/foo_navidrome$(if $(TAG),@$(TAG)) --launch
 
 win11-seed:
-	./scripts/win11/win11-ui-test.sh seed
+	./scripts/ui-test.sh win11 seed
 
 win11-smoke:
 	./scripts/win-build-local.sh --no-test
-	./scripts/win11/win11-ui-test.sh smoke
+	./scripts/ui-test.sh win11 smoke
 
 win11-ui:
-	./scripts/win11/win11-ui-test.sh $(ARGS)
+	./scripts/ui-test.sh win11 $(ARGS)
 
 win11-logs:
 	tail -f "$$($(WVM) shared)/tmp/foo_navidrome_debug.log"
