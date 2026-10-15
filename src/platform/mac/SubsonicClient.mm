@@ -3,33 +3,16 @@
 #import "../../core/SubsonicCore.h"
 #import "../../core/NavidromeDebugLog.h"
 #import "../../core/NavidromeAudioMuse.h"
+#include "../../core/NavidromeSettings.h"
+#include "../../core/NavidromeDiagnostics.h"
 
 #import <memory>
-
-namespace navidrome {
-
-    extern cfg_string cfg_server_url;
-    extern cfg_string cfg_username;
-    extern cfg_string cfg_password;
-    extern cfg_string cfg_salt;
-    extern cfg_string cfg_custom_headers;
-    extern cfg_string cfg_stream_format;
-    extern cfg_var_modern::cfg_int cfg_max_bitrate;
-    extern cfg_var_modern::cfg_bool cfg_library_filter;
-    extern cfg_string cfg_library_ids;
-}
 
 static void NavidromeApplyCustomHeaders(NSMutableURLRequest *req) {
     for (const std::string &line :
          navidrome::parseHeaderLines(navidrome::cfg_custom_headers.get().c_str())) {
-        size_t colon = line.find(':');
-        if (colon == std::string::npos) continue;
-        std::string name = line.substr(0, colon);
-        size_t ne = name.find_last_not_of(" \t");
-        name = (ne == std::string::npos) ? "" : name.substr(0, ne + 1);
-        size_t vs = line.find_first_not_of(" \t", colon + 1);
-        std::string value = (vs == std::string::npos) ? "" : line.substr(vs);
-        if (name.empty()) continue;
+        std::string name, value;
+        if (!navidrome::splitHeaderLine(line, name, value)) continue;
         [req setValue:[NSString stringWithUTF8String:value.c_str()]
             forHTTPHeaderField:[NSString stringWithUTF8String:name.c_str()]];
     }
@@ -61,51 +44,34 @@ static navidrome::ErrorKind NavidromeClassifyURLError(NSInteger code) {
     }
 }
 
-static void NavidromeWarnAuthOnce() {
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        console::print("Navidrome: the server rejected the configured credentials — "
-                       "check Preferences › Tools › Navidrome");
-    });
+
+struct NavidromeSyncResponse {
+    NSData *data = nil;
+    NSHTTPURLResponse *response = nil;
+    NSError *error = nil;
+};
+
+static NavidromeSyncResponse NavidromeSendSync(NSURLSession *session, NSURLRequest *request) {
+    __block NavidromeSyncResponse out;
+    dispatch_semaphore_t sema = dispatch_semaphore_create(0);
+    [[session dataTaskWithRequest:request
+                completionHandler:^(NSData *d, NSURLResponse *response, NSError *error) {
+        out.data = d;
+        out.error = error;
+        out.response = (NSHTTPURLResponse *)response;
+        dispatch_semaphore_signal(sema);
+    }] resume];
+    dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+    return out;
 }
 
 static NSString *nsstr(const std::string &s) {
     return [NSString stringWithUTF8String:s.c_str()] ?: @"";
 }
 
-@implementation SubsonicArtist
-- (NSString *)description {
-    return [NSString stringWithFormat:@"<SubsonicArtist %@ %@>", _artistId, _name];
-}
-@end
-
-@implementation SubsonicAlbum
-- (NSString *)description {
-    return [NSString stringWithFormat:@"<SubsonicAlbum %@ %@>", _albumId, _name];
-}
-@end
-
-@implementation SubsonicSong
-- (NSString *)description {
-    return [NSString stringWithFormat:@"<SubsonicSong %@ %@>", _songId, _title];
-}
-@end
-
 @implementation SubsonicPlaylist
 - (NSString *)description {
     return [NSString stringWithFormat:@"<SubsonicPlaylist %@ %@>", _playlistId, _name];
-}
-@end
-
-@implementation SubsonicGenre
-- (NSString *)description {
-    return [NSString stringWithFormat:@"<SubsonicGenre %@>", _name];
-}
-@end
-
-@implementation SubsonicBookmark
-- (NSString *)description {
-    return [NSString stringWithFormat:@"<SubsonicBookmark %@ %.0fms>", _song.songId, _positionMs];
 }
 @end
 
@@ -121,74 +87,6 @@ static NSString *nsstr(const std::string &s) {
 }
 @end
 
-@implementation SubsonicPodcastEpisode
-- (NSString *)description {
-    return [NSString stringWithFormat:@"<SubsonicPodcastEpisode %@ %@ (%@)>",
-            _episodeId, _title, _status];
-}
-@end
-
-@implementation SubsonicPodcastChannel
-- (NSString *)description {
-    return [NSString stringWithFormat:@"<SubsonicPodcastChannel %@ %@>", _channelId, _title];
-}
-@end
-
-@implementation SubsonicNowPlayingEntry
-- (NSString *)description {
-    return [NSString stringWithFormat:@"<SubsonicNowPlayingEntry %@ %@>", _username, _song.title];
-}
-@end
-
-@implementation SubsonicArtistInfo
-- (NSString *)description {
-    return [NSString stringWithFormat:@"<SubsonicArtistInfo %@ similar=%lu>",
-            _lastFmUrl, (unsigned long)_similarArtists.count];
-}
-@end
-
-static SubsonicSong *SongFromCore(const navidrome::Song &s) {
-    SubsonicSong *song = [[SubsonicSong alloc] init];
-    song.songId     = nsstr(s.id);
-    song.title      = nsstr(s.title);
-    song.artist     = nsstr(s.artist);
-    song.artistId   = nsstr(s.artistId);
-    song.album      = nsstr(s.album);
-    song.albumId    = nsstr(s.albumId);
-    song.track      = s.track;
-    song.year       = s.year;
-    song.duration   = s.duration;
-    song.coverArtId = nsstr(s.coverArtId);
-    song.suffix     = nsstr(s.suffix);
-    song.starred    = s.starred;
-    song.rating     = s.rating;
-    song.tags       = s.tags;
-    return song;
-}
-
-static SubsonicAlbum *AlbumFromCore(const navidrome::Album &a) {
-    SubsonicAlbum *album = [[SubsonicAlbum alloc] init];
-    album.albumId    = nsstr(a.id);
-    album.name       = nsstr(a.name);
-    album.artist     = nsstr(a.artist);
-    album.artistId   = nsstr(a.artistId);
-    album.songCount  = a.songCount;
-    album.year       = a.year;
-    album.coverArtId = nsstr(a.coverArtId);
-    album.starred    = a.starred;
-    return album;
-}
-
-static SubsonicArtist *ArtistFromCore(const navidrome::Artist &a) {
-    SubsonicArtist *artist = [[SubsonicArtist alloc] init];
-    artist.artistId   = nsstr(a.id);
-    artist.name       = nsstr(a.name);
-    artist.albumCount = a.albumCount;
-    artist.coverArtId = nsstr(a.coverArtId);
-    artist.starred    = a.starred;
-    return artist;
-}
-
 static SubsonicPlaylist *PlaylistFromCore(const navidrome::Playlist &p) {
     SubsonicPlaylist *pl = [[SubsonicPlaylist alloc] init];
     pl.playlistId = nsstr(p.id);
@@ -197,14 +95,6 @@ static SubsonicPlaylist *PlaylistFromCore(const navidrome::Playlist &p) {
     pl.songCount  = p.songCount;
     pl.duration   = p.duration;
     return pl;
-}
-
-static SubsonicGenre *GenreFromCore(const navidrome::Genre &g) {
-    SubsonicGenre *genre = [[SubsonicGenre alloc] init];
-    genre.name       = nsstr(g.name);
-    genre.songCount  = g.songCount;
-    genre.albumCount = g.albumCount;
-    return genre;
 }
 
 static SubsonicMusicFolder *MusicFolderFromCore(const navidrome::MusicFolder &f) {
@@ -223,75 +113,6 @@ static SubsonicRadioStation *RadioStationFromCore(const navidrome::RadioStation 
     return st;
 }
 
-static SubsonicBookmark *BookmarkFromCore(const navidrome::Bookmark &b) {
-    SubsonicBookmark *bm = [[SubsonicBookmark alloc] init];
-    bm.song       = SongFromCore(b.song);
-    bm.positionMs = b.positionMs;
-    bm.comment    = nsstr(b.comment);
-    return bm;
-}
-
-static SubsonicPodcastEpisode *PodcastEpisodeFromCore(const navidrome::PodcastEpisode &e) {
-    SubsonicPodcastEpisode *ep = [[SubsonicPodcastEpisode alloc] init];
-    ep.episodeId          = nsstr(e.id);
-    ep.streamId           = nsstr(e.streamId);
-    ep.channelId          = nsstr(e.channelId);
-    ep.title              = nsstr(e.title);
-    ep.episodeDescription = nsstr(e.description);
-    ep.status             = nsstr(e.status);
-    ep.duration           = e.duration;
-    return ep;
-}
-
-static SubsonicPodcastChannel *PodcastChannelFromCore(const navidrome::PodcastChannel &c) {
-    SubsonicPodcastChannel *ch = [[SubsonicPodcastChannel alloc] init];
-    ch.channelId         = nsstr(c.id);
-    ch.url               = nsstr(c.url);
-    ch.title              = nsstr(c.title);
-    ch.channelDescription = nsstr(c.description);
-    ch.status             = nsstr(c.status);
-    ch.errorMessage       = nsstr(c.errorMessage);
-    return ch;
-}
-
-static SubsonicNowPlayingEntry *NowPlayingEntryFromCore(const navidrome::NowPlayingEntry &e) {
-    SubsonicNowPlayingEntry *np = [[SubsonicNowPlayingEntry alloc] init];
-    np.song       = SongFromCore(e.song);
-    np.username   = nsstr(e.username);
-    np.minutesAgo = e.minutesAgo;
-    return np;
-}
-
-static SubsonicArtistInfo *ArtistInfoFromCore(const navidrome::ArtistInfo &info) {
-    SubsonicArtistInfo *ai = [[SubsonicArtistInfo alloc] init];
-    ai.biography      = nsstr(info.biography);
-    ai.musicBrainzId   = nsstr(info.musicBrainzId);
-    ai.lastFmUrl       = nsstr(info.lastFmUrl);
-    ai.smallImageUrl   = nsstr(info.smallImageUrl);
-    ai.mediumImageUrl  = nsstr(info.mediumImageUrl);
-    ai.largeImageUrl   = nsstr(info.largeImageUrl);
-    NSMutableArray<SubsonicArtist *> *similar =
-        [NSMutableArray arrayWithCapacity:info.similarArtists.size()];
-    for (const auto &a : info.similarArtists) [similar addObject:ArtistFromCore(a)];
-    ai.similarArtists = similar;
-    return ai;
-}
-
-static NSArray<SubsonicSong *> *SongsFromCore(const std::vector<navidrome::Song> &v) {
-    NSMutableArray<SubsonicSong *> *a = [NSMutableArray arrayWithCapacity:v.size()];
-    for (const auto &s : v) [a addObject:SongFromCore(s)];
-    return a;
-}
-static NSArray<SubsonicAlbum *> *AlbumsFromCore(const std::vector<navidrome::Album> &v) {
-    NSMutableArray<SubsonicAlbum *> *a = [NSMutableArray arrayWithCapacity:v.size()];
-    for (const auto &x : v) [a addObject:AlbumFromCore(x)];
-    return a;
-}
-static NSArray<SubsonicArtist *> *ArtistsFromCore(const std::vector<navidrome::Artist> &v) {
-    NSMutableArray<SubsonicArtist *> *a = [NSMutableArray arrayWithCapacity:v.size()];
-    for (const auto &x : v) [a addObject:ArtistFromCore(x)];
-    return a;
-}
 static NSArray<SubsonicMusicFolder *> *MusicFoldersFromCore(const std::vector<navidrome::MusicFolder> &v) {
     NSMutableArray<SubsonicMusicFolder *> *a = [NSMutableArray arrayWithCapacity:v.size()];
     for (const auto &x : v) {
@@ -300,12 +121,6 @@ static NSArray<SubsonicMusicFolder *> *MusicFoldersFromCore(const std::vector<na
     }
     return a;
 }
-static NSArray<NSString *> *StringsToNSArray(const std::vector<std::string> &v) {
-    NSMutableArray<NSString *> *a = [NSMutableArray arrayWithCapacity:v.size()];
-    for (const auto &s : v) [a addObject:nsstr(s)];
-    return a;
-}
-
 static NSError *NavidromeMakeError(const std::string &msg, NSInteger code) {
     return [NSError errorWithDomain:@"SubsonicClient" code:code userInfo:@{
         NSLocalizedDescriptionKey: (msg.empty() ? @"request failed" : nsstr(msg)) }];
@@ -324,6 +139,12 @@ struct MacHttpTransport : navidrome::IHttpTransport {
     NSURLSession *session = nil;
 
     navidrome::HttpResult getOnce(const std::string &url) override {
+        @autoreleasepool {
+            return fetch(url);
+        }
+    }
+
+    navidrome::HttpResult fetch(const std::string &url) {
         navidrome::HttpResult out;
         NSURL *nsurl = [NSURL URLWithString:nsstr(url)];
         if (!nsurl) {
@@ -333,18 +154,10 @@ struct MacHttpTransport : navidrome::IHttpTransport {
         NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:nsurl];
         NavidromeApplyCustomHeaders(request);
 
-        __block NSData *data = nil;
-        __block NSError *taskError = nil;
-        __block NSHTTPURLResponse *httpResponse = nil;
-        dispatch_semaphore_t sema = dispatch_semaphore_create(0);
-        [[session dataTaskWithRequest:request
-                    completionHandler:^(NSData *d, NSURLResponse *response, NSError *error) {
-            data = d;
-            taskError = error;
-            httpResponse = (NSHTTPURLResponse *)response;
-            dispatch_semaphore_signal(sema);
-        }] resume];
-        dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+        const NavidromeSyncResponse r = NavidromeSendSync(session, request);
+        NSData *data = r.data;
+        NSError *taskError = r.error;
+        NSHTTPURLResponse *httpResponse = r.response;
 
         if (taskError) {
             navidrome::ErrorKind kind = NavidromeClassifyURLError(taskError.code);
@@ -367,7 +180,7 @@ struct MacHttpTransport : navidrome::IHttpTransport {
         return out;
     }
 
-    void onAuthRejected() override { NavidromeWarnAuthOnce(); }
+    void onAuthRejected() override { navidrome::warnAuthRejectedOnce(); }
 };
 
 struct MacSettingsProvider : navidrome::ISettingsProvider {
@@ -377,7 +190,7 @@ struct MacSettingsProvider : navidrome::ISettingsProvider {
         s.username      = navidrome::cfg_username.get().c_str();
         s.password      = navidrome::cfg_password.get().c_str();
         pfc::string8 salt = navidrome::cfg_salt.get();
-        s.salt          = salt.length() > 0 ? salt.c_str() : "fb2k_navidrome";
+        s.salt          = navidrome::effectiveSalt(salt.c_str());
         s.streamFormat  = navidrome::cfg_stream_format.get().c_str();
         s.maxBitrate    = static_cast<int>(navidrome::cfg_max_bitrate.get());
         s.libraryFilter = navidrome::cfg_library_filter.get();
@@ -431,19 +244,11 @@ struct MacSettingsProvider : navidrome::ISettingsProvider {
     return *_core;
 }
 
-- (navidrome::Error)lastError {
-    return _core->lastError();
-}
-
 - (BOOL)pingWithError:(NSError **)error {
     std::string err;
     BOOL ok = _core->ping(err);
     if (!ok && error) *error = NavidromeMakeError(err, -2);
     return ok;
-}
-
-- (BOOL)serverInfo:(navidrome::ServerInfo &)info error:(std::string &)error {
-    return _core->serverInfo(info, error);
 }
 
 - (NSArray<SubsonicMusicFolder *> *)getMusicFoldersWithError:(NSError **)error {
@@ -457,191 +262,6 @@ struct MacSettingsProvider : navidrome::ISettingsProvider {
     _core->refreshMusicFolders();
 }
 
-- (NSArray<SubsonicMusicFolder *> *)cachedMusicFolders {
-    return MusicFoldersFromCore(_core->cachedMusicFolders());
-}
-
-- (NSArray<NSString *> *)libraryGroupingIds {
-    return StringsToNSArray(_core->libraryGroupingIds());
-}
-
-- (NSArray<SubsonicArtist *> *)getArtistsWithError:(NSError **)error {
-    std::string err;
-    auto v = _core->getArtists(err);
-    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
-    return ArtistsFromCore(v);
-}
-
-- (NSArray<SubsonicArtist *> *)getArtistsForLibrary:(NSString *)libraryId
-                                              error:(NSError **)error {
-    std::string err;
-    auto v = _core->getArtistsForLibrary(libraryId.UTF8String ?: "", err);
-    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return @[]; }
-    return ArtistsFromCore(v);
-}
-
-- (NSArray<SubsonicAlbum *> *)getAlbumsForArtist:(NSString *)artistId error:(NSError **)error {
-    return [self getAlbumsForArtist:artistId error:error scopeLibrary:nil];
-}
-
-- (NSArray<SubsonicAlbum *> *)getAlbumsForArtist:(NSString *)artistId
-                                            error:(NSError **)error
-                                   scopeLibrary:(NSString *)scopeLibraryId {
-    std::string err;
-    auto v = _core->getAlbumsForArtist(artistId.UTF8String ?: "", err,
-                                       scopeLibraryId.UTF8String ?: "");
-    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
-    return AlbumsFromCore(v);
-}
-
-- (NSArray<SubsonicSong *> *)getSongsForAlbum:(NSString *)albumId error:(NSError **)error {
-    std::string err;
-    auto v = _core->getSongsForAlbum(albumId.UTF8String ?: "", err);
-    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
-    return SongsFromCore(v);
-}
-
-- (NSDictionary *)search:(NSString *)query error:(NSError **)error {
-    std::string err;
-    navidrome::SearchResults r = _core->search(query.UTF8String ?: "", err);
-    if (!err.empty() && r.artists.empty() && r.albums.empty() && r.songs.empty()) {
-        if (error) *error = NavidromeMakeError(err, -2);
-        return nil;
-    }
-    return @{ @"artists": ArtistsFromCore(r.artists),
-              @"albums":  AlbumsFromCore(r.albums),
-              @"songs":   SongsFromCore(r.songs) };
-}
-
-- (NSArray<SubsonicAlbum *> *)getAlbumListOfType:(NSString *)type
-                                            size:(NSInteger)size
-                                           error:(NSError **)error {
-    navidrome::AlbumListType t = navidrome::AlbumListType::Newest;
-    NSString *lc = type.lowercaseString;
-    if ([lc isEqualToString:@"frequent"]) t = navidrome::AlbumListType::Frequent;
-    else if ([lc isEqualToString:@"recent"])  t = navidrome::AlbumListType::Recent;
-    else if ([lc isEqualToString:@"random"])  t = navidrome::AlbumListType::Random;
-    else if ([lc isEqualToString:@"starred"]) t = navidrome::AlbumListType::Starred;
-
-    std::string err;
-    auto v = _core->getAlbumList(t, (int)size, err);
-    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
-    return AlbumsFromCore(v);
-}
-
-- (NSArray<SubsonicSong *> *)getStarredSongsWithError:(NSError **)error {
-    std::string err;
-    auto v = _core->getStarredSongs(err);
-    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
-    return SongsFromCore(v);
-}
-
-- (NSArray<SubsonicGenre *> *)getGenresWithError:(NSError **)error {
-    std::string err;
-    auto v = _core->getGenres(err);
-    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
-    NSMutableArray<SubsonicGenre *> *result = [NSMutableArray arrayWithCapacity:v.size()];
-    for (const auto &g : v) [result addObject:GenreFromCore(g)];
-    return result;
-}
-
-- (NSArray<SubsonicSong *> *)getSongsForGenre:(NSString *)genre
-                                        count:(NSInteger)count
-                                        error:(NSError **)error {
-    if (genre.length == 0) return @[];
-    std::string err;
-    auto v = _core->getSongsForGenre(genre.UTF8String ?: "", (int)count, err);
-    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
-    return SongsFromCore(v);
-}
-
-- (NSArray<SubsonicSong *> *)getSimilarSongsForId:(NSString *)itemId
-                                             count:(NSInteger)count
-                                             error:(NSError **)error {
-    if (itemId.length == 0) return @[];
-    std::string err;
-    auto v = _core->getSimilarSongs(itemId.UTF8String ?: "", (int)count, err);
-    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
-    return SongsFromCore(v);
-}
-
-- (NSArray<SubsonicSong *> *)getRandomSongsWithCount:(NSInteger)count
-                                                error:(NSError **)error {
-    std::string err;
-    auto v = _core->getRandomSongs((int)count, err);
-    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
-    return SongsFromCore(v);
-}
-
-- (NSArray<SubsonicSong *> *)getAllSongsWithError:(NSError **)error {
-    std::string err;
-    auto v = _core->getAllSongs(err);
-    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
-    return SongsFromCore(v);
-}
-
-- (SubsonicArtistInfo *)getArtistInfoForId:(NSString *)artistId
-                                      error:(NSError **)error {
-    if (artistId.length == 0) return nil;
-    std::string err;
-    auto info = _core->getArtistInfo(artistId.UTF8String ?: "", err);
-    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
-    return ArtistInfoFromCore(info);
-}
-
-- (NSArray<SubsonicSong *> *)getTopSongsForArtist:(NSString *)artistName
-                                             count:(NSInteger)count
-                                             error:(NSError **)error {
-    if (artistName.length == 0) return @[];
-    std::string err;
-    auto v = _core->getTopSongs(artistName.UTF8String ?: "", (int)count, err);
-    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
-    return SongsFromCore(v);
-}
-
-- (navidrome::Lyrics)getLyricsForSongId:(NSString *)songId
-                                 artist:(NSString *)artist
-                                  title:(NSString *)title
-                                  error:(NSError **)error {
-    std::string err;
-    auto l = _core->getLyrics(songId.UTF8String ?: "", artist.UTF8String ?: "",
-                              title.UTF8String ?: "", err);
-    if (!err.empty() && error) *error = NavidromeMakeError(err, -2);
-    return l;
-}
-
-- (BOOL)setStarred:(BOOL)starred
-             forId:(NSString *)itemId
-              kind:(SubsonicStarKind)kind
-             error:(NSError **)error {
-    navidrome::StarKind k = navidrome::StarKind::Song;
-    if (kind == SubsonicStarKindAlbum)  k = navidrome::StarKind::Album;
-    if (kind == SubsonicStarKindArtist) k = navidrome::StarKind::Artist;
-
-    std::string err;
-    BOOL ok = _core->setStarred(starred, itemId.UTF8String ?: "", k, err);
-    if (!ok && error) *error = NavidromeMakeError(err, -2);
-    return ok;
-}
-
-- (SubsonicSong *)getSongWithId:(NSString *)songId error:(NSError **)error {
-    if (songId.length == 0) return nil;
-    std::string err;
-    navidrome::Song s;
-    if (!_core->getSong(songId.UTF8String ?: "", s, err)) {
-        if (error) *error = NavidromeMakeError(err, -2);
-        return nil;
-    }
-    return SongFromCore(s);
-}
-
-- (BOOL)setRating:(NSInteger)rating forSongId:(NSString *)songId error:(NSError **)error {
-    std::string err;
-    BOOL ok = _core->setRating((int)rating, songId.UTF8String ?: "", err);
-    if (!ok && error) *error = NavidromeMakeError(err, -2);
-    return ok;
-}
-
 - (NSArray<SubsonicPlaylist *> *)getPlaylistsWithError:(NSError **)error {
     std::string err;
     auto v = _core->getPlaylists(err);
@@ -649,13 +269,6 @@ struct MacSettingsProvider : navidrome::ISettingsProvider {
     NSMutableArray<SubsonicPlaylist *> *result = [NSMutableArray arrayWithCapacity:v.size()];
     for (const auto &p : v) [result addObject:PlaylistFromCore(p)];
     return result;
-}
-
-- (NSArray<SubsonicSong *> *)getPlaylistSongs:(NSString *)playlistId error:(NSError **)error {
-    std::string err;
-    auto v = _core->getPlaylistSongs(playlistId.UTF8String ?: "", err);
-    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
-    return SongsFromCore(v);
 }
 
 - (NSString *)createPlaylistNamed:(NSString *)name
@@ -745,25 +358,6 @@ struct MacSettingsProvider : navidrome::ISettingsProvider {
     return ok;
 }
 
-- (NSArray<SubsonicPodcastChannel *> *)getPodcastChannelsWithError:(NSError **)error {
-    std::string err;
-    auto v = _core->getPodcastChannels(err);
-    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
-    NSMutableArray<SubsonicPodcastChannel *> *result = [NSMutableArray arrayWithCapacity:v.size()];
-    for (const auto &c : v) [result addObject:PodcastChannelFromCore(c)];
-    return result;
-}
-
-- (NSArray<SubsonicPodcastEpisode *> *)getPodcastEpisodesForChannel:(NSString *)channelId
-                                                                error:(NSError **)error {
-    std::string err;
-    auto v = _core->getPodcastEpisodes(channelId.UTF8String ?: "", err);
-    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
-    NSMutableArray<SubsonicPodcastEpisode *> *result = [NSMutableArray arrayWithCapacity:v.size()];
-    for (const auto &e : v) [result addObject:PodcastEpisodeFromCore(e)];
-    return result;
-}
-
 - (NSString *)createPodcastChannelWithURL:(NSString *)url error:(NSError **)error {
     if (url.length == 0) return nil;
     std::string err;
@@ -779,75 +373,11 @@ struct MacSettingsProvider : navidrome::ISettingsProvider {
     return ok;
 }
 
-- (NSArray<SubsonicNowPlayingEntry *> *)getNowPlayingWithError:(NSError **)error {
-    std::string err;
-    auto v = _core->getNowPlaying(err);
-    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
-    NSMutableArray<SubsonicNowPlayingEntry *> *result = [NSMutableArray arrayWithCapacity:v.size()];
-    for (const auto &e : v) [result addObject:NowPlayingEntryFromCore(e)];
-    return result;
-}
-
-- (NSArray<SubsonicBookmark *> *)getBookmarksWithError:(NSError **)error {
-    std::string err;
-    auto v = _core->getBookmarks(err);
-    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return nil; }
-    NSMutableArray<SubsonicBookmark *> *result = [NSMutableArray arrayWithCapacity:v.size()];
-    for (const auto &b : v) [result addObject:BookmarkFromCore(b)];
-    return result;
-}
-
-- (BOOL)createBookmarkForSongId:(NSString *)songId
-                      positionMs:(NSTimeInterval)positionMs
-                         comment:(NSString *)comment
-                           error:(NSError **)error {
-    std::string err;
-    BOOL ok = _core->createBookmark(songId.UTF8String ?: "", positionMs,
-                                    comment.UTF8String ?: "", err);
-    if (!ok && error) *error = NavidromeMakeError(err, -2);
-    return ok;
-}
-
 - (BOOL)deleteBookmarkForSongId:(NSString *)songId error:(NSError **)error {
     std::string err;
     BOOL ok = _core->deleteBookmark(songId.UTF8String ?: "", err);
     if (!ok && error) *error = NavidromeMakeError(err, -2);
     return ok;
-}
-
-- (BOOL)startScanWithScanning:(BOOL *)scanning count:(NSInteger *)count error:(NSError **)error {
-    if (scanning) *scanning = NO;
-    if (count)    *count    = 0;
-    std::string err;
-    navidrome::ScanStatus st = _core->startScan(err);
-    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return NO; }
-    if (scanning) *scanning = st.scanning;
-    if (count)    *count    = static_cast<NSInteger>(st.count);
-    return YES;
-}
-
-- (BOOL)getScanStatusWithScanning:(BOOL *)scanning count:(NSInteger *)count error:(NSError **)error {
-    if (scanning) *scanning = NO;
-    if (count)    *count    = 0;
-    std::string err;
-    navidrome::ScanStatus st = _core->getScanStatus(err);
-    if (!err.empty()) { if (error) *error = NavidromeMakeError(err, -2); return NO; }
-    if (scanning) *scanning = st.scanning;
-    if (count)    *count    = static_cast<NSInteger>(st.count);
-    return YES;
-}
-
-- (BOOL)scrobbleSongId:(NSString *)songId
-            submission:(BOOL)submission
-                 error:(NSError **)error {
-    std::string err;
-    BOOL ok = _core->scrobble(songId.UTF8String ?: "", submission, err);
-    if (!ok && error) *error = NavidromeMakeError(err, -2);
-    return ok;
-}
-
-- (NSString *)streamURLForSongId:(NSString *)songId coverArtId:(NSString *)coverArtId {
-    return nsstr(_core->streamURL(songId.UTF8String ?: "", coverArtId.UTF8String ?: ""));
 }
 
 - (NSURL *)downloadURLForSongId:(NSString *)songId {
@@ -867,17 +397,10 @@ struct MacSettingsProvider : navidrome::ISettingsProvider {
     NavidromeApplyCustomHeaders(request);
 
     for (int attempt = 1; attempt <= navidrome::retry::kMaxAttempts; ++attempt) {
-        __block NSData *responseData = nil;
-        __block NSError *taskError = nil;
-        __block NSHTTPURLResponse *httpResponse = nil;
-        dispatch_semaphore_t sema = dispatch_semaphore_create(0);
-        [[_session dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-            responseData = data;
-            taskError = error;
-            httpResponse = (NSHTTPURLResponse *)response;
-            dispatch_semaphore_signal(sema);
-        }] resume];
-        dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+        const NavidromeSyncResponse r = NavidromeSendSync(_session, request);
+        NSData *responseData = r.data;
+        NSError *taskError = r.error;
+        NSHTTPURLResponse *httpResponse = r.response;
 
         navidrome::Error err;
         if (taskError) {
@@ -976,18 +499,10 @@ struct MacJsonPoster : navidrome::audiomuse::IJsonPoster {
                 [request setValue:[@"Bearer " stringByAppendingString:@(bearerToken.c_str())]
                     forHTTPHeaderField:@"Authorization"];
 
-            __block NSData *data = nil;
-            __block NSError *taskError = nil;
-            __block NSHTTPURLResponse *httpResponse = nil;
-            dispatch_semaphore_t sema = dispatch_semaphore_create(0);
-            [[session dataTaskWithRequest:request
-                        completionHandler:^(NSData *d, NSURLResponse *response, NSError *error) {
-                data = d;
-                taskError = error;
-                httpResponse = (NSHTTPURLResponse *)response;
-                dispatch_semaphore_signal(sema);
-            }] resume];
-            dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+            const NavidromeSyncResponse r = NavidromeSendSync(session, request);
+            NSData *data = r.data;
+            NSError *taskError = r.error;
+            NSHTTPURLResponse *httpResponse = r.response;
 
             if (taskError) {
                 navidrome::ErrorKind kind = NavidromeClassifyURLError(taskError.code);

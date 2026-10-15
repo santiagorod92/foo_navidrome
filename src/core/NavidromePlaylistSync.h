@@ -24,6 +24,15 @@ struct PlaylistAlbumScan {
 
 PlaylistAlbumScan scanPlaylistAlbums();
 
+struct ActivePlaylistIds {
+    bool                     hasPlaylist = false;
+    std::string              name;
+    std::vector<std::string> songIds;
+    std::size_t              skipped = 0;
+};
+
+ActivePlaylistIds collectActivePlaylistIds();
+
 bool refreshRatingsOnStartEnabled();
 
 bool setRatingOnServer(const std::string& songId, int rating);

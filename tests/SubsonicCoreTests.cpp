@@ -200,4 +200,57 @@ TEST_CASE(testSubsonicCore) {
         check(!err.empty() && songs.empty(), "getAllSongs surfaces a server error");
     }
 }
+
+struct ScanTransport : navidrome::IHttpTransport {
+    std::vector<std::string> statusBodies;
+    std::size_t next = 0;
+    int sleeps = 0;
+    bool failStart = false;
+
+    navidrome::HttpResult getOnce(const std::string& url) override {
+        navidrome::HttpResult r;
+        if (url.find("startScan.view") != std::string::npos) {
+            r.body = failStart
+                ? R"({"subsonic-response":{"status":"failed","error":{"code":50,"message":"not admin"}}})"
+                : R"({"subsonic-response":{"status":"ok","scanStatus":{"scanning":true,"count":0}}})";
+            return r;
+        }
+        r.body = next < statusBodies.size() ? statusBodies[next++]
+               : R"({"subsonic-response":{"status":"ok","scanStatus":{"scanning":false,"count":0}}})";
+        return r;
+    }
+    void sleepMs(int) override { ++sleeps; }
+    int  jitterMs() override { return 0; }
+};
+
+TEST_CASE(testRunLibraryScan) {
+    {
+        ScanTransport tx;
+        tx.statusBodies = {
+            R"({"subsonic-response":{"status":"ok","scanStatus":{"scanning":true,"count":10}}})",
+            R"({"subsonic-response":{"status":"ok","scanStatus":{"scanning":false,"count":25}}})",
+        };
+        FakeSettings cfg; cfg.s = basicSettings();
+        navidrome::SubsonicCore core(tx, cfg);
+        std::vector<long long> progress;
+        std::string err;
+        auto done = core.runLibraryScan([&](const navidrome::ScanStatus& st) { progress.push_back(st.count); }, err);
+        check(err.empty() && !done.scanning && done.count == 25,
+              "runLibraryScan polls until the server stops scanning and returns the final count");
+        check(progress.size() == 2 && progress[0] == 10 && progress[1] == 25 && tx.sleeps == 2,
+              "every poll waits once and reports its progress");
+    }
+    {
+        ScanTransport tx; tx.failStart = true;
+        FakeSettings cfg; cfg.s = basicSettings();
+        navidrome::SubsonicCore core(tx, cfg);
+        std::string err;
+        int calls = 0;
+        core.runLibraryScan([&](const navidrome::ScanStatus&) { ++calls; }, err);
+        check(!err.empty() && calls == 0 && tx.sleeps == 0, "a refused startScan reports the error without polling");
+    }
+    check(navidrome::scanProgressText(7) == "Scanning… 7 processed", "scan progress text");
+    check(navidrome::scanCompleteText(9) == "Scan complete — 9 items", "scan complete text");
+    check(navidrome::scanFailedText("") == "Scan failed: unknown error", "scan failure without a message");
+}
 }

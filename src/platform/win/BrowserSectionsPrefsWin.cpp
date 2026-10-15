@@ -3,16 +3,13 @@
 #include "WinUi.h"
 #include "../../core/NavidromeBrowserModel.h"
 #include "../../core/NavidromeDebugLog.h"
+#include "../../core/NavidromeGuids.h"
+#include "../../core/NavidromeSettings.h"
 #include <SDK/cfg_var.h>
 #include <string>
 #include <vector>
 
 using navidrome::win::u8ToWide;
-
-namespace navidrome {
-
-    extern cfg_string cfg_browser_hidden_categories;
-}
 
 namespace {
 
@@ -142,10 +139,10 @@ public:
     }
     const char* get_name() override { return "Browser Sections"; }
     GUID        get_guid() override {
-        return { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x17} };
+        return navidrome::guids::sectionsPrefsPage;
     }
     GUID        get_parent_guid() override {
-        return { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x05} };
+        return navidrome::guids::prefsPage;
     }
 };
 FB2K_SERVICE_FACTORY(NavidromeSectionsPrefsFactory);

@@ -15,8 +15,8 @@
 		FE0BADB10000000000000001 /* NavidromeLyricsController.mm in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADB00000000000000001 /* NavidromeLyricsController.mm */; };
 		FE0BAD240000000000000001 /* NavidromePreferencesController.mm in Sources */ = {isa = PBXBuildFile; fileRef = FE0BAD0A0000000000000001 /* NavidromePreferencesController.mm */; };
 		FE0BAD250000000000000001 /* NSView+embed.m in Sources */ = {isa = PBXBuildFile; fileRef = FE0BAD0C0000000000000001 /* NSView+embed.m */; };
-		FE0BAD260000000000000001 /* NavidromeArtExtractor.mm in Sources */ = {isa = PBXBuildFile; fileRef = FE0BAD0E0000000000000001 /* NavidromeArtExtractor.mm */; };
-		FE0BAD270000000000000001 /* NavidromeInput.mm in Sources */ = {isa = PBXBuildFile; fileRef = FE0BAD160000000000000001 /* NavidromeInput.mm */; };
+		FE0BAD260000000000000001 /* NavidromeArtExtractor.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BAD0E0000000000000001 /* NavidromeArtExtractor.cpp */; };
+		FE0BAD270000000000000001 /* NavidromeInput.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BAD160000000000000001 /* NavidromeInput.cpp */; };
 		FE0BAD910000000000000001 /* NavidromeBrowserModel.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BAD900000000000000001 /* NavidromeBrowserModel.cpp */; };
 		FE0BADA10000000000000001 /* SubsonicCore.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADA00000000000000001 /* SubsonicCore.cpp */; };
 		FE0BAD930000000000000001 /* MacSubsonicBrowserClient.mm in Sources */ = {isa = PBXBuildFile; fileRef = FE0BAD920000000000000001 /* MacSubsonicBrowserClient.mm */; };
@@ -26,6 +26,19 @@
 		FE0BAD330000000000000001 /* libfoobar2000_SDK.a in Frameworks */ = {isa = PBXBuildFile; fileRef = FE0BAD100000000000000001 /* libfoobar2000_SDK.a */; };
 		FE0BAD340000000000000001 /* libfoobar2000_SDK_helpers.a in Frameworks */ = {isa = PBXBuildFile; fileRef = FE0BAD110000000000000001 /* libfoobar2000_SDK_helpers.a */; };
 		FE0BAD350000000000000001 /* libpfc.a in Frameworks */ = {isa = PBXBuildFile; fileRef = FE0BAD120000000000000001 /* libpfc.a */; };
+		FE0BADC00000000000000002 /* NavidromeSettings.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADC00000000000000001 /* NavidromeSettings.cpp */; };
+		FE0BADC10000000000000002 /* NavidromeScrobbler.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADC10000000000000001 /* NavidromeScrobbler.cpp */; };
+		FE0BADC20000000000000002 /* NavidromeRadioPrefsController.mm in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADC20000000000000001 /* NavidromeRadioPrefsController.mm */; };
+		FE0BADC30000000000000002 /* NavidromeLibrariesPrefsController.mm in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADC30000000000000001 /* NavidromeLibrariesPrefsController.mm */; };
+		FE0BADC40000000000000002 /* NavidromeBrowserSectionsPrefsController.mm in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADC40000000000000001 /* NavidromeBrowserSectionsPrefsController.mm */; };
+		FE0BADC50000000000000002 /* NavidromeAudioMusePrefsController.mm in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADC50000000000000001 /* NavidromeAudioMusePrefsController.mm */; };
+		FE0BADC60000000000000002 /* NavidromePlaylistSync.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADC60000000000000001 /* NavidromePlaylistSync.cpp */; };
+		FE0BADC70000000000000002 /* NavidromeTrackInput.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADC70000000000000001 /* NavidromeTrackInput.cpp */; };
+		FE0BADC80000000000000002 /* NavidromeBrowserEnqueue.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADC80000000000000001 /* NavidromeBrowserEnqueue.cpp */; };
+		FE0BADC90000000000000002 /* NavidromeMenus.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADC90000000000000001 /* NavidromeMenus.cpp */; };
+		FE0BADCA0000000000000002 /* NavidromeAudioMuse.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADCA0000000000000001 /* NavidromeAudioMuse.cpp */; };
+		FE0BADCB0000000000000002 /* NavidromePlayQueue.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADCB0000000000000001 /* NavidromePlayQueue.cpp */; };
+		FE0BADCC0000000000000002 /* NavidromeServices.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADCC0000000000000001 /* NavidromeServices.cpp */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -46,8 +59,8 @@
 		FE0BAD0B0000000000000001 /* NSView+embed.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSView+embed.h"; sourceTree = "<group>"; };
 		FE0BAD0C0000000000000001 /* NSView+embed.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "NSView+embed.m"; sourceTree = "<group>"; };
 		FE0BAD0D0000000000000001 /* foobar2000-mac-class-suffix.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "foobar2000-mac-class-suffix.h"; sourceTree = "<group>"; };
-		FE0BAD0E0000000000000001 /* NavidromeArtExtractor.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = NavidromeArtExtractor.mm; sourceTree = "<group>"; };
-		FE0BAD160000000000000001 /* NavidromeInput.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = NavidromeInput.mm; sourceTree = "<group>"; };
+		FE0BAD0E0000000000000001 /* NavidromeArtExtractor.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = NavidromeArtExtractor.cpp; sourceTree = "<group>"; };
+		FE0BAD160000000000000001 /* NavidromeInput.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = NavidromeInput.cpp; sourceTree = "<group>"; };
 		FE0BAD900000000000000001 /* NavidromeBrowserModel.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = NavidromeBrowserModel.cpp; sourceTree = "<group>"; };
 		FE0BAD950000000000000001 /* NavidromeBrowserModel.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = NavidromeBrowserModel.h; sourceTree = "<group>"; };
 		FE0BAD960000000000000001 /* NavidromeBrowserEnqueue.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = NavidromeBrowserEnqueue.h; sourceTree = "<group>"; };
@@ -61,6 +74,19 @@
 		FE0BAD130000000000000001 /* libshared.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; path = libshared.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		FE0BAD140000000000000001 /* libfoobar2000_component_client.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; path = libfoobar2000_component_client.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		FE0BAD150000000000000001 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = System/Library/Frameworks/Cocoa.framework; sourceTree = SDKROOT; };
+		FE0BADC00000000000000001 /* NavidromeSettings.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = NavidromeSettings.cpp; sourceTree = "<group>"; };
+		FE0BADC10000000000000001 /* NavidromeScrobbler.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = NavidromeScrobbler.cpp; sourceTree = "<group>"; };
+		FE0BADC20000000000000001 /* NavidromeRadioPrefsController.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = NavidromeRadioPrefsController.mm; sourceTree = "<group>"; };
+		FE0BADC30000000000000001 /* NavidromeLibrariesPrefsController.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = NavidromeLibrariesPrefsController.mm; sourceTree = "<group>"; };
+		FE0BADC40000000000000001 /* NavidromeBrowserSectionsPrefsController.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = NavidromeBrowserSectionsPrefsController.mm; sourceTree = "<group>"; };
+		FE0BADC50000000000000001 /* NavidromeAudioMusePrefsController.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = NavidromeAudioMusePrefsController.mm; sourceTree = "<group>"; };
+		FE0BADC60000000000000001 /* NavidromePlaylistSync.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = NavidromePlaylistSync.cpp; sourceTree = "<group>"; };
+		FE0BADC70000000000000001 /* NavidromeTrackInput.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = NavidromeTrackInput.cpp; sourceTree = "<group>"; };
+		FE0BADC80000000000000001 /* NavidromeBrowserEnqueue.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = NavidromeBrowserEnqueue.cpp; sourceTree = "<group>"; };
+		FE0BADC90000000000000001 /* NavidromeMenus.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = NavidromeMenus.cpp; sourceTree = "<group>"; };
+		FE0BADCA0000000000000001 /* NavidromeAudioMuse.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = NavidromeAudioMuse.cpp; sourceTree = "<group>"; };
+		FE0BADCB0000000000000001 /* NavidromePlayQueue.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = NavidromePlayQueue.cpp; sourceTree = "<group>"; };
+		FE0BADCC0000000000000001 /* NavidromeServices.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = NavidromeServices.cpp; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXShellScriptBuildPhase section */
@@ -140,8 +166,19 @@
 		FE0BAD450000000000000001 /* core */ = {
 			isa = PBXGroup;
 			children = (
+				FE0BADCC0000000000000001 /* NavidromeServices.cpp */,
+				FE0BADCB0000000000000001 /* NavidromePlayQueue.cpp */,
+				FE0BADCA0000000000000001 /* NavidromeAudioMuse.cpp */,
+				FE0BADC90000000000000001 /* NavidromeMenus.cpp */,
+				FE0BADC80000000000000001 /* NavidromeBrowserEnqueue.cpp */,
+				FE0BADC70000000000000001 /* NavidromeTrackInput.cpp */,
+				FE0BADC60000000000000001 /* NavidromePlaylistSync.cpp */,
+				FE0BADC10000000000000001 /* NavidromeScrobbler.cpp */,
+				FE0BADC00000000000000001 /* NavidromeSettings.cpp */,
+				FE0BAD0E0000000000000001 /* NavidromeArtExtractor.cpp */,
 				FE0BAD030000000000000001 /* stdafx.h */,
 				FE0BAD020000000000000001 /* main.cpp */,
+				FE0BAD160000000000000001 /* NavidromeInput.cpp */,
 				FE0BAD950000000000000001 /* NavidromeBrowserModel.h */,
 				FE0BAD900000000000000001 /* NavidromeBrowserModel.cpp */,
 				FE0BAD960000000000000001 /* NavidromeBrowserEnqueue.h */,
@@ -155,12 +192,14 @@
 		FE0BAD430000000000000001 /* platform/mac */ = {
 			isa = PBXGroup;
 			children = (
+				FE0BADC50000000000000001 /* NavidromeAudioMusePrefsController.mm */,
+				FE0BADC40000000000000001 /* NavidromeBrowserSectionsPrefsController.mm */,
+				FE0BADC30000000000000001 /* NavidromeLibrariesPrefsController.mm */,
+				FE0BADC20000000000000001 /* NavidromeRadioPrefsController.mm */,
 				FE0BAD0D0000000000000001 /* foobar2000-mac-class-suffix.h */,
 				FE0BAD040000000000000001 /* SubsonicClient.h */,
 				FE0BAD050000000000000001 /* SubsonicClient.mm */,
 				FE0BAD060000000000000001 /* NavidromePlugin.mm */,
-				FE0BAD0E0000000000000001 /* NavidromeArtExtractor.mm */,
-				FE0BAD160000000000000001 /* NavidromeInput.mm */,
 				FE0BAD070000000000000001 /* NavidromeBrowserController.h */,
 				FE0BAD080000000000000001 /* NavidromeBrowserController.mm */,
 				FE0BAD070000000000000099 /* NavidromeBrowserController+Private.h */,
@@ -254,6 +293,19 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FE0BADCC0000000000000002 /* NavidromeServices.cpp in Sources */,
+				FE0BADCB0000000000000002 /* NavidromePlayQueue.cpp in Sources */,
+				FE0BADCA0000000000000002 /* NavidromeAudioMuse.cpp in Sources */,
+				FE0BADC90000000000000002 /* NavidromeMenus.cpp in Sources */,
+				FE0BADC80000000000000002 /* NavidromeBrowserEnqueue.cpp in Sources */,
+				FE0BADC70000000000000002 /* NavidromeTrackInput.cpp in Sources */,
+				FE0BADC60000000000000002 /* NavidromePlaylistSync.cpp in Sources */,
+				FE0BADC50000000000000002 /* NavidromeAudioMusePrefsController.mm in Sources */,
+				FE0BADC40000000000000002 /* NavidromeBrowserSectionsPrefsController.mm in Sources */,
+				FE0BADC30000000000000002 /* NavidromeLibrariesPrefsController.mm in Sources */,
+				FE0BADC20000000000000002 /* NavidromeRadioPrefsController.mm in Sources */,
+				FE0BADC10000000000000002 /* NavidromeScrobbler.cpp in Sources */,
+				FE0BADC00000000000000002 /* NavidromeSettings.cpp in Sources */,
 				FE0BAD200000000000000001 /* main.cpp in Sources */,
 				FE0BAD210000000000000001 /* SubsonicClient.mm in Sources */,
 				FE0BAD220000000000000001 /* NavidromePlugin.mm in Sources */,
@@ -262,8 +314,8 @@
 				FE0BADB10000000000000001 /* NavidromeLyricsController.mm in Sources */,
 				FE0BAD240000000000000001 /* NavidromePreferencesController.mm in Sources */,
 				FE0BAD250000000000000001 /* NSView+embed.m in Sources */,
-				FE0BAD260000000000000001 /* NavidromeArtExtractor.mm in Sources */,
-				FE0BAD270000000000000001 /* NavidromeInput.mm in Sources */,
+				FE0BAD260000000000000001 /* NavidromeArtExtractor.cpp in Sources */,
+				FE0BAD270000000000000001 /* NavidromeInput.cpp in Sources */,
 				FE0BAD910000000000000001 /* NavidromeBrowserModel.cpp in Sources */,
 				FE0BADA10000000000000001 /* SubsonicCore.cpp in Sources */,
 				FE0BAD930000000000000001 /* MacSubsonicBrowserClient.mm in Sources */,

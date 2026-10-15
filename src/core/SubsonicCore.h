@@ -1,5 +1,6 @@
 #pragma once
 #include "SubsonicTypes.h"
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -116,6 +117,8 @@ public:
 
     ScanStatus startScan(std::string& outError);
     ScanStatus getScanStatus(std::string& outError);
+    ScanStatus runLibraryScan(const std::function<void(const ScanStatus&)>& onProgress,
+                              std::string& outError);
 
     bool scrobble(const std::string& songId, bool submission, std::string& outError);
 

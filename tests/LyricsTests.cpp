@@ -1,6 +1,7 @@
 #include "TestHarness.h"
 #include "../src/core/SubsonicCore.h"
 #include "../src/core/NavidromeBrowserModel.h"
+#include "../src/core/LyricsPanel.h"
 #include "FakeBrowserClient.h"
 
 #include <string>
@@ -244,5 +245,33 @@ TEST_CASE(testLyricsForTrackURI) {
     navidrome::lyricsForTrackURI(failing, uri2, err);
     check(failing.calls.size() == 2, "failures aren't cached — retried");
     navidrome::lyricsCache().clear();
+}
+
+TEST_CASE(testLyricsPanelStatus) {
+    using navidrome::LyricsPanelStatus;
+    using navidrome::lyricsPanelStatusForTrack;
+    check(lyricsPanelStatusForTrack("", true) == LyricsPanelStatus::NothingPlaying, "no track = nothing playing");
+    check(lyricsPanelStatusForTrack("C:\\music\\a.flac", true) == LyricsPanelStatus::NotNavidrome,
+          "a local file is not ours");
+    check(lyricsPanelStatusForTrack("navidrome://track/abc?title=x", false) == LyricsPanelStatus::NotConfigured,
+          "our track without a server configured");
+    check(lyricsPanelStatusForTrack("navidrome://track/abc?title=x", true) == LyricsPanelStatus::Loading,
+          "our track with a server starts loading");
+
+    navidrome::Lyrics none, some;
+    some.lines.push_back({ -1, "hello" });
+    check(navidrome::lyricsPanelStatusForResult(some, "boom") == LyricsPanelStatus::Failed, "an error wins");
+    check(navidrome::lyricsPanelStatusForResult(none, "") == LyricsPanelStatus::NoLyrics, "empty answer = no lyrics");
+    check(navidrome::lyricsPanelStatusForResult(some, "") == LyricsPanelStatus::Showing, "lines = showing");
+    check(std::string(navidrome::lyricsPanelMessage(LyricsPanelStatus::NoLyrics)) ==
+          "No lyrics on the server for this track", "panel message text");
+    check(std::string(navidrome::lyricsPanelMessage(LyricsPanelStatus::Showing)).empty(), "showing has no message");
+}
+
+TEST_CASE(testLyricsScrollToCenter) {
+    check(navidrome::lyricsScrollToCenter(500, 20, 200, 2000) == 410, "the active line lands mid-view");
+    check(navidrome::lyricsScrollToCenter(10, 20, 200, 2000) == 0, "never scrolls above the top");
+    check(navidrome::lyricsScrollToCenter(1990, 20, 200, 2000) == 1800, "never scrolls past the bottom");
+    check(navidrome::lyricsScrollToCenter(50, 20, 200, 150) == 0, "content shorter than the view stays at 0");
 }
 }

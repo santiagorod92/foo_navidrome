@@ -1,13 +1,14 @@
 #include "stdafx.h"
 #include "BrowserWindow.h"
 #include "../../core/NavidromeDebugLog.h"
+#include "../../core/NavidromeGuids.h"
 #include <SDK/ui_element.h>
 #include <helpers/atl-misc.h>
 
 namespace {
 
 static constexpr GUID guid_ui_element_win =
-    { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x14} };
+    navidrome::guids::winUiElementBrowser;
 
 class NavidromeBrowserElement : public ui_element_instance,
                                 public CWindowImpl<NavidromeBrowserElement> {

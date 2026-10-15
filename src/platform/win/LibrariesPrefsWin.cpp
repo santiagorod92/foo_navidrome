@@ -3,6 +3,8 @@
 #include "SubsonicClientWin.h"
 #include "WinUi.h"
 #include "../../core/NavidromeDebugLog.h"
+#include "../../core/NavidromeGuids.h"
+#include "../../core/NavidromeSettings.h"
 #include <SDK/cfg_var.h>
 #include <commctrl.h>
 #include <uxtheme.h>
@@ -12,12 +14,6 @@
 
 using navidrome::win::u8ToWide;
 using navidrome::win::wToU8;
-
-namespace navidrome {
-
-    extern cfg_var_modern::cfg_bool cfg_library_filter;
-    extern cfg_string cfg_library_ids;
-}
 
 namespace {
 
@@ -216,10 +212,10 @@ public:
     }
     const char* get_name() override { return "Libraries"; }
     GUID        get_guid() override {
-        return { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x12} };
+        return navidrome::guids::librariesPrefsPage;
     }
     GUID        get_parent_guid() override {
-        return { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x05} };
+        return navidrome::guids::prefsPage;
     }
 };
 FB2K_SERVICE_FACTORY(NavidromeLibSelPrefsFactory);

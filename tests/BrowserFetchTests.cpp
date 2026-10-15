@@ -326,4 +326,54 @@ TEST_CASE(testBrowserFetchDispatch) {
               "syncBrowserNodesToPlaylists forwards only id-bearing Song nodes");
     }
 }
+
+TEST_CASE(testSearchSongNodes) {
+    {
+        FakeBrowserClient fc;
+        navidrome::Song s; s.id = "s1"; s.title = "Thunderstruck"; s.artist = "AC/DC";
+        fc.searchSongs = { s };
+        std::string err;
+        check(navidrome::searchSongNodes(fc, "t", err).empty() && fc.calls.empty(),
+              "a one-character query sends no search");
+        auto nodes = navidrome::searchSongNodes(fc, "th", err);
+        check(err.empty() && nodes.size() == 1 && nodes[0]->id == "s1" &&
+              nodes[0]->displayName == "Thunderstruck",
+              "search results become song nodes titled by the song title alone");
+    }
+    {
+        FakeBrowserClient fc;
+        fc.searchError = "boom";
+        std::string err;
+        check(navidrome::searchSongNodes(fc, "abc", err).empty() && err == "boom",
+              "an empty search with a server error reports the error");
+        navidrome::Song s; s.id = "s2";
+        fc.searchSongs = { s };
+        check(navidrome::searchSongNodes(fc, "abc", err).size() == 1 && err.empty(),
+              "a partial answer with an error keeps the rows and drops the error");
+    }
+}
+
+TEST_CASE(testRootLoadSummary) {
+    using navidrome::BrowserNode;
+    auto mk = [](BrowserNode::Type t) { auto n = std::make_shared<BrowserNode>(); n->type = t; return n; };
+    std::vector<navidrome::BrowserNodePtr> flat = { mk(BrowserNode::Category), mk(BrowserNode::Artist), mk(BrowserNode::Artist) };
+    check(navidrome::rootLoadSummary(flat) == "2 artists", "flat roots count artists, not categories");
+    std::vector<navidrome::BrowserNodePtr> grouped = { mk(BrowserNode::Category), mk(BrowserNode::Library), mk(BrowserNode::Library), mk(BrowserNode::Library) };
+    check(navidrome::rootLoadSummary(grouped) == "3 libraries", "grouped roots count libraries");
+    check(navidrome::rootLoadSummary({}) == "0 artists", "an empty server reads 0 artists");
+}
+
+TEST_CASE(testBrowserActionTexts) {
+    navidrome::BrowserNode n;
+    n.track = 3; n.subtitle = "AC/DC"; n.displayName = "T.N.T."; n.suffix = "flac";
+    check(navidrome::downloadFileName(n) == navidrome::sanitizeFileName("03. AC/DC - T.N.T.") + ".flac",
+          "download name = NN. artist - title, sanitized, plus the stored suffix");
+    navidrome::BrowserNode bare;
+    check(navidrome::downloadFileName(bare) == "untitled", "a node without title or suffix downloads as untitled");
+    check(navidrome::downloadSummary(4, 0) == "Downloaded 4 track(s)", "all downloads ok");
+    check(navidrome::downloadSummary(3, 1) == "Downloaded 3, 1 failed", "some downloads failed");
+    check(navidrome::sentPlaylistSummary("Mix", 10, 0) == "Sent \"Mix\" (10 tracks)", "upload summary");
+    check(navidrome::sentPlaylistSummary("Mix", 10, 2) == "Sent \"Mix\" (10 tracks, 2 non-Navidrome skipped)",
+          "upload summary counts skipped foreign tracks");
+}
 }

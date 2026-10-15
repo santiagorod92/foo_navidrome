@@ -5,6 +5,7 @@
 #include "../../core/NavidromeBrowserEnqueue.h"
 #include "../../core/NavidromeAudioMuse.h"
 #include "../../core/NavidromeDebugLog.h"
+#include "../../core/NavidromeLibraryPlatform.h"
 #include <SDK/playlist.h>
 #include <SDK/metadb.h>
 #include <SDK/playable_location.h>
@@ -16,27 +17,6 @@ navidrome::IBrowserClient& NBCBrowserClient() {
 }
 
 @implementation NavidromeNode
-
-+ (instancetype)songNode:(SubsonicSong *)s {
-    NavidromeNode *n = [NavidromeNode new];
-    n.type         = NavidromeNodeTypeSong;
-    n.nodeId       = s.songId;
-    n.displayName  = s.title;
-    n.subtitle     = s.artist;
-    n.albumName    = s.album;
-    n.albumId      = s.albumId;
-    n.trackNumber  = s.track;
-    n.year         = s.year;
-    n.duration     = s.duration;
-    n.coverArtId   = s.coverArtId;
-    n.suffix       = s.suffix;
-    n.starred      = s.starred;
-    n.rating       = s.rating;
-    n.tags         = s.tags;
-    n.children     = [NSMutableArray array];
-    n.childrenLoaded = YES;
-    return n;
-}
 
 + (instancetype)loadingNode {
     NavidromeNode *n = [NavidromeNode new];
@@ -432,8 +412,9 @@ NSNotificationName const NavidromeBrowserSectionsDidChangeNotification =
 
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         std::string err;
-        NSMutableArray<NavidromeNode *> *roots =
-            NBCWrapList(navidrome::buildRootNodes(NBCBrowserClient(), err));
+        auto coreRoots = navidrome::buildRootNodes(NBCBrowserClient(), err);
+        NSMutableArray<NavidromeNode *> *roots = NBCWrapList(coreRoots);
+        NSString *summary = @(navidrome::rootLoadSummary(coreRoots).c_str());
         std::string errCopy = err;
         dispatch_async(dispatch_get_main_queue(), ^{
             [self->_spinner stopAnimation:nil];
@@ -443,17 +424,10 @@ NSNotificationName const NavidromeBrowserSectionsDidChangeNotification =
                 return;
             }
             self->_treeLoadedAtMs = navidrome::browserNowMs();
-            NSUInteger artists = 0, libraries = 0;
-            for (NavidromeNode *n in roots) {
-                if (n.type == NavidromeNodeTypeArtist)  ++artists;
-                if (n.type == NavidromeNodeTypeLibrary) ++libraries;
-            }
             [self->_rootNodes addObjectsFromArray:roots];
             NSString *notice = self->_reloadNotice;
             self->_reloadNotice = nil;
-            self->_statusLabel.stringValue = notice ? notice : libraries
-                ? [NSString stringWithFormat:@"%lu libraries", (unsigned long)libraries]
-                : [NSString stringWithFormat:@"%lu artists", (unsigned long)artists];
+            self->_statusLabel.stringValue = notice ? notice : summary;
             [self->_outlineView reloadData];
         });
     });
@@ -472,14 +446,6 @@ NSNotificationName const NavidromeBrowserSectionsDidChangeNotification =
         return [NSMutableArray array];
     }
     return NBCWrapList(kids);
-}
-
-static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
-    std::vector<navidrome::BrowserNodePtr> core;
-    core.reserve(nodes.count);
-    for (NavidromeNode *n in nodes)
-        core.push_back(std::make_shared<navidrome::BrowserNode>([n coreNode]));
-    navidrome::syncBrowserNodesToPlaylists(core);
 }
 
 - (void)loadChildrenOfNode:(NavidromeNode *)node inOutlineView:(NSOutlineView *)ov {
@@ -530,7 +496,8 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
     NSString *query = [_searchField stringValue];
     NSUInteger generation = ++_searchGeneration;
 
-    if (query.length < 2) {
+    const std::string queryUtf8 = query.UTF8String ?: "";
+    if (!navidrome::isSearchQuery(queryUtf8)) {
         _isSearching = NO;
         [_filteredNodes removeAllObjects];
         [_outlineView reloadData];
@@ -543,26 +510,25 @@ static void syncSongNodesToPlaylists(NSArray<NavidromeNode *> *nodes) {
     _statusLabel.stringValue = @"Searching…";
 
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        NSError *err = nil;
-        NSDictionary *results = [SubsonicClient.sharedClient search:query error:&err];
+        std::string err;
+        auto nodes = navidrome::searchSongNodes(NBCBrowserClient(), queryUtf8, err);
+        navidrome::syncBrowserNodesToPlaylists(nodes);
         dispatch_async(dispatch_get_main_queue(), ^{
             if (generation != self->_searchGeneration) return;
 
             [self->_spinner stopAnimation:nil];
             [self->_filteredNodes removeAllObjects];
 
-            if (err || !results) {
-                self->_statusLabel.stringValue = [NSString stringWithFormat:@"Search error: %@", err.localizedDescription];
+            if (!err.empty()) {
+                self->_statusLabel.stringValue = [NSString stringWithFormat:@"Search error: %@", @(err.c_str())];
                 [self->_outlineView reloadData];
                 return;
             }
 
-            NSArray<SubsonicSong *> *songs = results[@"songs"];
-            for (SubsonicSong *s in songs)
-                [self->_filteredNodes addObject:[NavidromeNode songNode:s]];
-            syncSongNodesToPlaylists(self->_filteredNodes);
+            for (const auto &n : nodes)
+                [self->_filteredNodes addObject:[NavidromeNode wrapCoreNode:*n]];
 
-            self->_statusLabel.stringValue = [NSString stringWithFormat:@"%lu songs found", (unsigned long)songs.count];
+            self->_statusLabel.stringValue = [NSString stringWithFormat:@"%lu songs found", (unsigned long)nodes.size()];
 
             [self->_outlineView reloadData];
         });
@@ -936,6 +902,8 @@ static NSMutableSet<NavidromeBrowserWindowOwner *> *gStandaloneOwners = nil;
     [gStandaloneOwners removeObject:self];
 }
 @end
+
+void navidrome::showBrowserWindow() { NavidromeShowStandaloneBrowser(); }
 
 void NavidromeShowStandaloneBrowser(void) {
     dispatch_async(dispatch_get_main_queue(), ^{

@@ -62,7 +62,6 @@ typedef NS_ENUM(NSInteger, NavidromeCategoryKind) {
 + (instancetype)wrapCoreNode:(const navidrome::BrowserNode &)core;
 - (navidrome::BrowserNode)coreNode;
 
-+ (instancetype)songNode:(SubsonicSong *)song;
 + (instancetype)loadingNode;
 + (instancetype)errorNodeWithMessage:(NSString *)msg;
 

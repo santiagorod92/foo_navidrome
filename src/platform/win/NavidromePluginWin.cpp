@@ -6,6 +6,9 @@
 #include "../../core/NavidromeDebugLog.h"
 #include "../../core/NavidromeAudioMuse.h"
 #include "../../core/NavidromeDiagnostics.h"
+#include "../../core/NavidromeGuids.h"
+#include "../../core/NavidromeSettings.h"
+#include "../../core/NavidromeLibraryPlatform.h"
 #include "EsLyricBridge.h"
 #include "WinUi.h"
 #include <SDK/cfg_var.h>
@@ -36,39 +39,6 @@ namespace {
 
 using navidrome::win::u8ToWide;
 using navidrome::win::wToU8;
-
-static constexpr GUID guid_cfg_server_url = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x01} };
-static constexpr GUID guid_cfg_username   = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x02} };
-static constexpr GUID guid_cfg_password   = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x03} };
-static constexpr GUID guid_cfg_salt       = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x04} };
-static constexpr GUID guid_prefs_page     = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x05} };
-static constexpr GUID guid_mainmenu_cmd   = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x07} };
-static constexpr GUID guid_mainmenu_bookmark_cmd =
-    { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x0e} };
-static constexpr GUID guid_cfg_custom_headers = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x0a} };
-static constexpr GUID guid_cfg_scrobble   = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x0b} };
-static constexpr GUID guid_cfg_stream_format = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x0c} };
-static constexpr GUID guid_cfg_max_bitrate   = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x0d} };
-static constexpr GUID guid_cfg_library_filter = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x10} };
-static constexpr GUID guid_cfg_library_ids   = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x11} };
-static constexpr GUID guid_cfg_browser_hidden_categories = { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x16} };
-
-namespace navidrome {
-
-    cfg_string cfg_server_url(guid_cfg_server_url, "http://localhost:4533/");
-    cfg_string cfg_username  (guid_cfg_username,   "");
-    cfg_string cfg_password  (guid_cfg_password,   "");
-    cfg_string cfg_salt      (guid_cfg_salt,        "fb2k_navidrome");
-    cfg_string cfg_custom_headers(guid_cfg_custom_headers, "");
-    cfg_var_modern::cfg_bool cfg_scrobble(guid_cfg_scrobble, true);
-
-    cfg_string cfg_stream_format(guid_cfg_stream_format, "");
-    cfg_var_modern::cfg_int cfg_max_bitrate(guid_cfg_max_bitrate, 0);
-
-    cfg_var_modern::cfg_bool cfg_library_filter(guid_cfg_library_filter, false);
-    cfg_string cfg_library_ids(guid_cfg_library_ids, "");
-    cfg_string cfg_browser_hidden_categories(guid_cfg_browser_hidden_categories, "");
-}
 
 class NavidromeHeadersWindow : public CWindowImpl<NavidromeHeadersWindow> {
 public:
@@ -544,41 +514,22 @@ private:
         std::thread([this]() {
           navidrome::dbg::runGuarded("UI", "library rescan poll", [&]{
             std::string err;
-            auto status = navidrome::SubsonicClientWin::get().startScan(err);
-            if (!err.empty()) {
+            auto status = navidrome::libraryCore().runLibraryScan([this](const navidrome::ScanStatus& st) {
                 PostMessage(WM_SCAN_STATUS,
-                    reinterpret_cast<WPARAM>(new ScanProgress{false, true, 0, err}), 0);
-                return;
-            }
-
-            while (status.scanning) {
-                std::this_thread::sleep_for(
-                    std::chrono::milliseconds(navidrome::kScanPollIntervalMs));
-                std::string pollErr;
-                auto polled = navidrome::SubsonicClientWin::get().getScanStatus(pollErr);
-                if (!pollErr.empty()) break;
-                status = polled;
-                PostMessage(WM_SCAN_STATUS,
-                    reinterpret_cast<WPARAM>(new ScanProgress{true, false, status.count, ""}), 0);
-            }
+                    reinterpret_cast<WPARAM>(new ScanProgress{true, false, st.count, ""}), 0);
+            }, err);
             PostMessage(WM_SCAN_STATUS,
-                reinterpret_cast<WPARAM>(new ScanProgress{true, true, status.count, ""}), 0);
+                reinterpret_cast<WPARAM>(new ScanProgress{err.empty(), true, status.count, err}), 0);
           });
         }).detach();
     }
 
     LRESULT OnScanStatus(UINT, WPARAM wParam, LPARAM) {
         auto* p = reinterpret_cast<ScanProgress*>(wParam);
-        if (!p->ok) {
-            SetDlgItemText(IDC_SCAN_STATUS,
-                pfc::stringcvt::string_wide_from_utf8(("Scan failed: " + p->error).c_str()));
-        } else if (p->done) {
-            SetDlgItemText(IDC_SCAN_STATUS,
-                (L"Scan complete — " + std::to_wstring(p->count) + L" items").c_str());
-        } else {
-            SetDlgItemText(IDC_SCAN_STATUS,
-                (L"Scanning… " + std::to_wstring(p->count) + L" processed").c_str());
-        }
+        const std::string text = !p->ok   ? navidrome::scanFailedText(p->error)
+                               : p->done ? navidrome::scanCompleteText(p->count)
+                                         : navidrome::scanProgressText(p->count);
+        SetDlgItemText(IDC_SCAN_STATUS, u8ToWide(text).c_str());
         if (p->done) ::EnableWindow(GetDlgItem(IDC_RESCAN), TRUE);
         delete p;
         return 0;
@@ -602,146 +553,10 @@ public:
         return inst;
     }
     const char* get_name() override { return "Navidrome"; }
-    GUID        get_guid() override { return guid_prefs_page; }
+    GUID        get_guid() override { return navidrome::guids::prefsPage; }
     GUID        get_parent_guid() override { return preferences_page::guid_tools; }
 };
 FB2K_SERVICE_FACTORY(NavidromePrefsPageFactory);
-
-class AudioMusePrefsInstance : public CWindowImpl<AudioMusePrefsInstance>,
-                               public preferences_page_instance {
-public:
-    DECLARE_WND_CLASS(L"foo_navidrome_AudioMusePrefsWnd")
-
-    explicit AudioMusePrefsInstance(preferences_page_callback::ptr cb) : m_cb(cb) {}
-
-    HWND     get_wnd() override { return m_hWnd; }
-    t_uint32 get_state() override {
-        return preferences_state::dark_mode_supported |
-               (m_changed ? preferences_state::changed | preferences_state::resettable : 0);
-    }
-    void apply() override {
-        auto getText = [&](int id) -> std::string {
-            wchar_t buf[2048] = {};
-            GetDlgItemText(id, buf, 2048);
-            return pfc::stringcvt::string_utf8_from_wide(buf).get_ptr();
-        };
-        navidrome::cfg_audiomuse_url.set(getText(IDC_AM_URL).c_str());
-        navidrome::cfg_audiomuse_token.set(getText(IDC_AM_TOKEN).c_str());
-        navidrome::cfg_audiomuse_server.set(getText(IDC_AM_SERVER).c_str());
-        navidrome::cfg_audiomuse_count.set(
-            navidrome::audiomuse::clampCount(atoi(getText(IDC_AM_COUNT).c_str())));
-        NAVIDROME_LOG("UI", "AudioMuse-AI settings saved, url=" +
-                      navidrome::dbg::scrubAuth(navidrome::cfg_audiomuse_url.get().c_str()));
-        load();
-        m_changed = false;
-        notifyCb();
-    }
-    void reset() override {
-        SetDlgItemText(IDC_AM_URL, L"");
-        SetDlgItemText(IDC_AM_TOKEN, L"");
-        SetDlgItemText(IDC_AM_SERVER, L"");
-        SetDlgItemText(IDC_AM_COUNT, std::to_wstring(navidrome::audiomuse::kDefaultCount).c_str());
-        m_changed = true; notifyCb();
-    }
-
-    BEGIN_MSG_MAP(AudioMusePrefsInstance)
-        MSG_WM_ERASEBKGND(OnEraseBkgnd)
-        MSG_WM_CREATE(OnCreate)
-        COMMAND_HANDLER_EX(IDC_AM_URL,    EN_CHANGE, OnChanged)
-        COMMAND_HANDLER_EX(IDC_AM_TOKEN,  EN_CHANGE, OnChanged)
-        COMMAND_HANDLER_EX(IDC_AM_SERVER, EN_CHANGE, OnChanged)
-        COMMAND_HANDLER_EX(IDC_AM_COUNT,  EN_CHANGE, OnChanged)
-    END_MSG_MAP()
-
-    BOOL OnEraseBkgnd(CDCHandle dc) { navidrome::win::eraseLikeDialog(*this, dc); return TRUE; }
-
-private:
-    enum { IDC_AM_URL = 1101, IDC_AM_TOKEN = 1102, IDC_AM_SERVER = 1103, IDC_AM_COUNT = 1104 };
-
-    LRESULT OnCreate(LPCREATESTRUCT) {
-        using namespace navidrome::win;
-        const UiScale s(*this);
-        const HFONT f = uiFont(*this);
-        auto make = [&](const wchar_t* cls, const wchar_t* text, DWORD style, int id = 0) {
-            HWND h = CreateWindowW(cls, text, WS_CHILD|WS_VISIBLE|style, 0,0,0,0, *this,
-                reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), nullptr, nullptr);
-            setFont(h, f);
-            return h;
-        };
-        HWND intro = make(L"STATIC",
-            L"AudioMuse-AI analyses your Navidrome library for Text Search, Instant "
-            L"Playlist and Song Alchemy (File › AudioMuse-AI, track context menu).", SS_LEFT);
-        const DWORD editSty = WS_BORDER|WS_TABSTOP|ES_AUTOHSCROLL;
-        const std::pair<HWND, HWND> rows[] = {
-            { make(L"STATIC", L"Server URL:",  0), make(L"EDIT", L"", editSty, IDC_AM_URL) },
-            { make(L"STATIC", L"API token:",   0), make(L"EDIT", L"", editSty|ES_PASSWORD, IDC_AM_TOKEN) },
-            { make(L"STATIC", L"Server name:", 0), make(L"EDIT", L"", editSty, IDC_AM_SERVER) },
-            { make(L"STATIC", L"Tracks:",      0), make(L"EDIT", L"", editSty|ES_NUMBER, IDC_AM_COUNT) },
-        };
-        HWND help = make(L"STATIC",
-            L"e.g. http://audiomuse:8000. Token only if AudioMuse-AI has auth on; "
-            L"server name only if it serves several media servers. \"Tracks\" also "
-            L"sizes Instant Mix, which works without AudioMuse-AI settings.", SS_LEFT);
-
-        const int lineH = lineHeight(*this, f);
-        const int rowH  = (std::max)(s(22), lineH + s(8));
-        const int pad = s(8), gap = s(8), textW = s(440);
-        int labelW = 0;
-        for (const auto& r : rows) labelW = (std::max)(labelW, textWidth(r.first));
-        const int x = pad + labelW + gap;
-
-        int y = pad;
-        ::SetWindowPos(intro, nullptr, pad, y, textW, 3 * lineH, SWP_NOZORDER);
-        y += 3 * lineH + s(8);
-        for (const auto& r : rows) {
-            int w = r.second == rows[3].second ? s(60) : s(300);
-            ::SetWindowPos(r.first, nullptr, pad, y + (rowH - lineH) / 2, labelW, lineH, SWP_NOZORDER);
-            ::SetWindowPos(r.second, nullptr, x, y, w, rowH, SWP_NOZORDER);
-            y += rowH + s(8);
-        }
-        ::SetWindowPos(help, nullptr, pad, y + s(4), textW, 4 * lineH, SWP_NOZORDER);
-
-        load();
-        m_darkMode.AddDialogWithControls(*this);
-        return 0;
-    }
-
-    void load() {
-        SetDlgItemText(IDC_AM_URL,    pfc::stringcvt::string_wide_from_utf8(navidrome::cfg_audiomuse_url.get().c_str()));
-        SetDlgItemText(IDC_AM_TOKEN,  pfc::stringcvt::string_wide_from_utf8(navidrome::cfg_audiomuse_token.get().c_str()));
-        SetDlgItemText(IDC_AM_SERVER, pfc::stringcvt::string_wide_from_utf8(navidrome::cfg_audiomuse_server.get().c_str()));
-        SetDlgItemText(IDC_AM_COUNT,  std::to_wstring(navidrome::audiomuse::clampCount(
-                           static_cast<int>(navidrome::cfg_audiomuse_count.get()))).c_str());
-    }
-
-    void OnChanged(UINT, int, HWND) { m_changed = true; notifyCb(); }
-    void notifyCb() { if (m_cb.is_valid()) m_cb->on_state_changed(); }
-
-public:
-    void clearChanged() { m_changed = false; notifyCb(); }
-
-private:
-    fb2k::CCoreDarkModeHooks m_darkMode;
-    preferences_page_callback::ptr m_cb;
-    bool m_changed = false;
-};
-
-class AudioMusePrefsPageFactory : public preferences_page_v3 {
-public:
-    preferences_page_instance::ptr instantiate(HWND parent,
-        preferences_page_callback::ptr cb) override {
-        auto inst = fb2k::service_new<AudioMusePrefsInstance>(cb);
-        inst->Create(parent);
-        inst->clearChanged();
-        return inst;
-    }
-    const char* get_name() override { return "AudioMuse-AI"; }
-    GUID        get_guid() override {
-        return { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x04,0x05} };
-    }
-    GUID        get_parent_guid() override { return guid_prefs_page; }
-};
-FB2K_SERVICE_FACTORY(AudioMusePrefsPageFactory);
 
 class NavidromeLibraryPrefsInstance : public CWindowImpl<NavidromeLibraryPrefsInstance>,
                                       public preferences_page_instance {
@@ -785,325 +600,12 @@ public:
     }
     const char* get_name() override { return "Navidrome"; }
     GUID        get_guid() override {
-        return { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x09} };
+        return navidrome::guids::libraryPrefsPage;
     }
     GUID        get_parent_guid() override { return preferences_page::guid_media_library; }
 };
 FB2K_SERVICE_FACTORY(NavidromeLibraryPrefsFactory);
 
-class NavidromeMenuCmd : public mainmenu_commands {
-public:
-    t_uint32 get_command_count() override { return 2; }
-    GUID     get_command(t_uint32 i) override {
-        if (i == 0) return guid_mainmenu_cmd;
-        if (i == 1) return guid_mainmenu_bookmark_cmd;
-        throw pfc::exception_invalid_params();
-    }
-    void get_name(t_uint32 i, pfc::string_base& out) override {
-        if (i == 0) { out = "Open Navidrome Browser"; return; }
-        if (i == 1) { out = "Bookmark Current Position"; return; }
-        throw pfc::exception_invalid_params();
-    }
-    bool get_description(t_uint32 i, pfc::string_base& out) override {
-        if (i == 0) { out = "Browse and stream from Navidrome"; return true; }
-        if (i == 1) { out = "Save the current playback position to resume later"; return true; }
-        return false;
-    }
-    GUID     get_parent() override { return mainmenu_groups::file; }
-    t_uint32 get_sort_priority() override { return 0xFF; }
-    bool     get_display(t_uint32 i, pfc::string_base& out, t_uint32& flags) override {
-        get_name(i, out); flags = 0; return true;
-    }
-    void execute(t_uint32 i, service_ptr_t<service_base>) override {
-        if (i == 0) { fb2k::inMainThread([] { BrowserWindow::get().show(); }); return; }
-        if (i == 1) { bookmarkCurrentPosition(); return; }
-        throw pfc::exception_invalid_params();
-    }
-
-private:
-    static void bookmarkCurrentPosition() {
-        metadb_handle_ptr track;
-        auto pc = playback_control::get();
-        if (!pc->get_now_playing(track) || track.is_empty()) {
-            console::print("Navidrome: no track is currently playing");
-            return;
-        }
-        std::string songId = navidrome::trackIdFromURI(track->get_path());
-        if (songId.empty()) {
-            console::print("Navidrome: current track isn't from Navidrome");
-            return;
-        }
-        double positionMs = pc->playback_get_position() * 1000.0;
-        std::thread([songId, positionMs]() {
-          navidrome::dbg::runGuarded("Bookmark", "bookmarkCurrentPosition", [&]{
-            std::string err;
-            navidrome::SubsonicClientWin::get().createBookmark(songId, positionMs, "", err);
-            if (!err.empty())
-                console::printf("Navidrome: failed to save bookmark: %s", err.c_str());
-            NAVIDROME_LOG("Bookmark", "save id=" + songId + " pos=" +
-                std::to_string((long long)positionMs) + "ms" +
-                (err.empty() ? " ok" : " FAILED: " + err));
-          });
-        }).detach();
-    }
-};
-FB2K_SERVICE_FACTORY(NavidromeMenuCmd);
-
-namespace {
-
-    std::mutex g_coverDiagMutex;
-    std::set<std::pair<navidrome::FetchClass, std::string>> g_coverDiagSeen;
-
-    void logCoverError(navidrome::FetchClass cls, const std::string& id) {
-        using namespace navidrome;
-        if (cls == FetchClass::NotFound) return;
-
-        {
-            std::lock_guard<std::mutex> lock(g_coverDiagMutex);
-            if (!g_coverDiagSeen.insert({cls, id}).second) return;
-        }
-
-        const char* msg = "";
-        switch (cls) {
-            case FetchClass::Auth:           msg = "Cover art fetch: authentication failed"; break;
-            case FetchClass::ServerError:    msg = "Cover art fetch: server error"; break;
-            case FetchClass::Transport:      msg = "Cover art fetch: network transport error"; break;
-            case FetchClass::InvalidContent: msg = "Cover art fetch: invalid content"; break;
-            default: break;
-        }
-        if (*msg) {
-            console::print(msg);
-        }
-    }
-}
-
-class NavidromeArtInstance : public album_art_extractor_instance_v2 {
-public:
-    NavidromeArtInstance(const std::string& coverId,
-                         const navidrome::SubsonicRequestContext& ctx)
-        : m_id(coverId), m_context(ctx) {}
-
-    album_art_data_ptr query(const GUID& what, abort_callback& abort) override {
-        if (what != album_art_ids::cover_front) throw exception_album_art_not_found();
-
-        auto cached = navidrome::CoverCache::instance().get(
-            m_context.serverUrl, m_context.username, m_id);
-        if (!cached.empty()) {
-            return album_art_data_impl::g_create(cached.data(), cached.size());
-        }
-
-        std::string url = navidrome::SubsonicClientWin::get().coverArtURL(
-            m_context, m_id, 0);
-        static constexpr std::size_t kMaxCoverBytes = 20 * 1024 * 1024;
-
-        auto result = navidrome::SubsonicClientWin::get().httpGetBinary(
-            m_context, url, kMaxCoverBytes, abort);
-
-        if (result.cls == navidrome::FetchClass::Aborted) {
-            throw exception_aborted();
-        }
-
-        if (result.cls != navidrome::FetchClass::Ok) {
-            logCoverError(result.cls, m_id);
-            throw exception_album_art_not_found();
-        }
-
-        navidrome::CoverCache::instance().put(
-            m_context.serverUrl, m_context.username, m_id, result.body);
-
-        return album_art_data_impl::g_create(result.body.data(), result.body.size());
-    }
-
-    album_art_path_list::ptr query_paths(const GUID&, abort_callback&) override {
-        throw exception_album_art_not_found();
-    }
-
-private:
-    std::string m_id;
-    navidrome::SubsonicRequestContext m_context;
-};
-
-class NavidromeArtExtractor : public album_art_extractor {
-public:
-    bool is_our_path(const char* p, const char*) override {
-        return navidrome::isNavidromeArtPath(p);
-    }
-
-    album_art_extractor_instance_ptr open(file_ptr, const char* path,
-                                          abort_callback&) override {
-        std::string id = navidrome::resolveArtId(path);
-        if (id.empty()) throw exception_album_art_not_found();
-
-        auto ctx = navidrome::SubsonicClientWin::get().snapshot();
-        return fb2k::service_new<NavidromeArtInstance>(id, ctx);
-    }
-};
-FB2K_SERVICE_FACTORY(NavidromeArtExtractor);
-
-class NavidromeScrobbler : public play_callback_static {
-public:
-    unsigned get_flags() override {
-        return flag_on_playback_new_track | flag_on_playback_time |
-               flag_on_playback_stop;
-    }
-
-    void on_playback_new_track(metadb_handle_ptr track) override {
-        auto a = m_tracker.onNewTrack(
-            track.is_empty() ? std::string() : std::string(track->get_path()),
-            track.is_empty() ? 0.0 : track->get_length(),
-            navidrome::cfg_scrobble.get());
-        if (!a.refreshRatingId.empty()) refreshRatingAsync(a.refreshRatingId);
-        if (!a.scrobbleNowId.empty())   scrobbleAsync(a.scrobbleNowId, false);
-    }
-
-    void on_playback_time(double time) override {
-        std::string id = m_tracker.onPlaybackTime(time);
-        if (!id.empty()) scrobbleAsync(id, true);
-    }
-
-    void on_playback_stop(play_control::t_stop_reason) override {
-        m_tracker.onStop();
-    }
-
-    void on_playback_starting(play_control::t_track_command, bool) override {}
-    void on_playback_seek(double) override {}
-    void on_playback_pause(bool) override {}
-    void on_playback_edited(metadb_handle_ptr) override {}
-    void on_playback_dynamic_info(const file_info&) override {}
-    void on_playback_dynamic_info_track(const file_info&) override {}
-    void on_volume_change(float) override {}
-
-private:
-    static void scrobbleAsync(std::string songId, bool submission) {
-        std::thread([songId, submission]() {
-            navidrome::dbg::runGuarded("Scrobble", "scrobbleAsync", [&]{
-                std::string err;
-                navidrome::SubsonicClientWin::get().scrobble(songId, submission, err);
-                navidrome::Error e = navidrome::SubsonicClientWin::get().lastError();
-                NAVIDROME_LOG("Scrobble", std::string(submission ? "submit" : "now-playing") +
-                              " id=" + songId + (e.ok() ? " ok"
-                              : std::string(" FAILED ") + e.kindName() + ": " + e.message));
-            });
-        }).detach();
-    }
-
-    static void refreshRatingAsync(std::string songId) {
-        std::thread([songId]() {
-            navidrome::dbg::runGuarded("Rating", "refreshRatingAsync", [&]{
-                std::string err;
-                navidrome::Song song;
-                if (!navidrome::SubsonicClientWin::get().getSong(songId, song, err)) {
-                    NAVIDROME_WARN("Rating", "getSong id=" + songId + " failed: " +
-                        navidrome::SubsonicClientWin::get().lastError().kindName());
-                    return;
-                }
-                navidrome::RatingUpdate u;
-                u.songId  = songId;
-                u.rating  = song.rating;
-                u.starred = song.starred;
-                std::vector<navidrome::RatingUpdate> updates;
-                updates.push_back(std::move(u));
-                navidrome::syncRatingsToPlaylists(std::move(updates));
-                NAVIDROME_LOG("Rating", "id=" + songId + " -> rating=" +
-                    std::to_string(u.rating) + " starred=" + (u.starred ? "1" : "0"));
-            });
-        }).detach();
-    }
-
-    navidrome::ScrobbleTracker m_tracker;
-};
-static play_callback_static_factory_t<NavidromeScrobbler> g_navidrome_scrobbler_factory;
-
-bool navidrome::setRatingOnServer(const std::string& songId, int rating) {
-    std::string err;
-    return navidrome::SubsonicClientWin::get().setRating(rating, songId, err);
-}
-
-bool navidrome::setStarredOnServer(const std::string& songId, bool starred) {
-    std::string err;
-    return navidrome::SubsonicClientWin::get().setStarred(
-        starred, songId, navidrome::StarKind::Song, err);
-}
-
-static void navidromeLogSessionEnv() {
-#ifdef NAVIDROME_DEBUG_LOG
-    navidrome::SessionEnv e;
-    e.platform        = "Windows";
-    e.configured      = navidrome::SubsonicClientWin::get().isConfigured();
-    e.serverUrl       = navidrome::cfg_server_url.get().c_str();
-    e.transcodeFormat = navidrome::cfg_stream_format.get().c_str();
-    e.maxBitrate      = (int)navidrome::cfg_max_bitrate.get();
-    e.scrobble        = navidrome::cfg_scrobble.get();
-    e.startupRefresh  = navidrome::refreshRatingsOnStartEnabled();
-    e.customHeaders   = navidrome::cfg_custom_headers.get().length() > 0;
-    NAVIDROME_LOG("Env", navidrome::describeSessionEnv(e));
-#endif
-}
-
-static void navidromeRefreshRatingsOnStart() {
-    navidromeLogSessionEnv();
-
-    navidrome::PlaylistAlbumScan scan = navidrome::scanPlaylistAlbums();
-
-    if (scan.entries == 0) return;
-
-    if (!navidrome::refreshRatingsOnStartEnabled()) {
-        NAVIDROME_LOG("Rating", "startup refresh: disabled by advconfig switch");
-        return;
-    }
-    if (!navidrome::SubsonicClientWin::get().isConfigured()) {
-        NAVIDROME_LOG("Rating", "startup refresh: no server configured");
-        return;
-    }
-    NAVIDROME_LOG("Rating", "startup refresh: " + std::to_string(scan.entries) +
-                  " entries, " + std::to_string(scan.albumIds.size()) + " distinct albums, " +
-                  std::to_string(scan.ungrouped) + " ungrouped");
-
-    if (scan.albumIds.empty()) {
-        std::string msg = "Navidrome: " + std::to_string(scan.entries) +
-            " playlist entry/entries carry no album id (added by an older version)"
-            " — open their album in the browser to refresh them";
-        console::print(msg.c_str());
-        return;
-    }
-
-    const std::size_t ungrouped = scan.ungrouped;
-    std::thread([albumIds = std::move(scan.albumIds), ungrouped]() {
-      navidrome::dbg::runGuarded("Rating", "startup refresh worker", [&]{
-        std::vector<navidrome::RatingUpdate> updates;
-        std::size_t failed = 0;
-        for (const auto& albumId : albumIds) {
-            std::string err;
-            auto songs = navidrome::SubsonicClientWin::get().getSongsForAlbum(albumId, err);
-            if (!err.empty()) { ++failed; continue; }
-            for (const auto& song : songs) {
-                if (song.id.empty()) continue;
-                navidrome::RatingUpdate u;
-                u.songId  = song.id;
-                u.rating  = song.rating;
-                u.starred = song.starred;
-                updates.push_back(std::move(u));
-            }
-        }
-        const std::size_t ok = albumIds.size() - failed;
-        navidrome::syncRatingsToPlaylists(std::move(updates));
-
-        std::string msg = "Navidrome: refreshed ratings from " + std::to_string(ok) + " album(s)";
-        if (failed > 0)    msg += ", " + std::to_string(failed) + " album(s) failed";
-        if (ungrouped > 0) msg += ", " + std::to_string(ungrouped) +
-            " entry/entries skipped (no album id, added by an older version)";
-        console::print(msg.c_str());
-        NAVIDROME_LOG("Rating", "startup refresh done: " + msg);
-      });
-    }).detach();
-}
-
-class NavidromeStartupRefresh : public initquit {
-public:
-    void on_init() override { navidromeRefreshRatingsOnStart(); }
-};
-
-static initquit_factory_t<NavidromeStartupRefresh> g_navidrome_startup_refresh_factory;
 
 class NavidromeInitQuit : public initquit {
 public:

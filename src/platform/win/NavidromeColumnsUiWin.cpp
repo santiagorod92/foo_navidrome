@@ -1,12 +1,13 @@
 #include "stdafx.h"
 #include "BrowserWindow.h"
 #include "../../core/NavidromeDebugLog.h"
+#include "../../core/NavidromeGuids.h"
 #include "../../../third_party/columns_ui-sdk/ui_extension.h"
 
 namespace {
 
 static constexpr GUID guid_cui_panel_win =
-    { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x15} };
+    navidrome::guids::winColumnsUiPanel;
 
 class NavidromeBrowserCuiHost : public CWindowImpl<NavidromeBrowserCuiHost> {
 public:

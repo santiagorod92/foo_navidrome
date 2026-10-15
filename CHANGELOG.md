@@ -1,3 +1,24 @@
+## [1.27.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.26.0...v1.27.0) (2026-10-15)
+
+
+### Features
+
+* **windows:** a native **Navidrome Lyrics** panel, like the one macOS already had, for the Default UI and Columns UI. Add it from *View › Layout › Enable layout editing mode* › right-click › *Replace UI Element…* (Default UI) or *Live layout editing* › right-click › *Add after* › *Panels* (Columns UI). It follows the playing Navidrome track. With synced lyrics, the current line is shown in bold and kept centred; if you scroll by hand, it waits a few seconds before following the song again. Unsynced lyrics show as plain text. Right-click › **Copy lyrics** copies them to the clipboard. The panel uses foobar2000's colours and font and follows Dark Mode. ESLyric keeps working for anyone who prefers it.
+* **macOS:** **File › Bookmark Current Position** saves the playing track's position to the server, as it already did on Windows. Bookmarks show up under the browser's **Bookmarks** list on every platform.
+
+
+### Bug Fixes
+
+* **macOS:** on a fresh install, the server URL field was pre-filled with a developer's own server address; it now starts at `http://localhost:4533/`. Existing settings are not touched.
+* **windows:** **Download Original Files…** no longer starts when the selection's tracks can't be loaded from the server; the error is shown in the browser's status line instead.
+* **preferences:** the *Navidrome: refresh ratings on startup* switch (*Preferences › Advanced › Tools*) shared an internal identifier with another command. It now has its own; if you had turned it off, turn it off once more.
+
+
+### Code Refactoring
+
+* nearly all the logic now lives in one implementation shared by macOS and Windows: the browser's server access, the `navidrome://` input, album art, scrobbling, the File menu, the settings and every status text. The platform folders only hold the windows and widgets, so fixes and features now land on both platforms at once. No behaviour change beyond the items above.
+
+
 ## [1.26.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.25.1...v1.26.0) (2026-10-14)
 
 
