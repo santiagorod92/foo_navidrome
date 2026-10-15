@@ -51,8 +51,8 @@ installed.
   `navidrome::lyricsForTrackURI()` + `libraryClient()`) — a navidrome:// track's lyrics, streamed
   line by line through a caller-implemented `lyrics_sink` (`on_begin(synced, count)` then
   `on_line(startMs, text)`, `startMs` = -1 when unsynced). `get_lyrics` blocks on a cache miss, so call it from a
-  worker thread only. Shares the session `lyricsCache()` with the macOS lyrics panel. Intended consumer:
-  foo_ui_panels (not wired there yet; it would vendor `foo_ui_panels/src/core/navidrome_lyrics_api.h`).
+  worker thread only. Shares the session `lyricsCache()` with the macOS lyrics panel. Consumer:
+  foo_ui_panels' `lyrics_panel` (vendored copy: `foo_ui_panels/src/core/navidrome_lyrics_api.h`).
 
 Adding a new cross-component interface: follow the same shape, and add a bullet here naming the
 interface, what it's for, and every known consumer — keeps both repos' CLAUDE.md honest about
@@ -79,8 +79,8 @@ holds only what's true for both; anything repo-specific stays in the repo's own 
   interface, its consumers and its vendored copies.
 - **Current links:** `navidrome_rating_api` drives Panels UI's star ratings on `navidrome://`
   tracks, which also read the `NAVIDROME_RATING` field. `navidrome_library_api` feeds the
-  Panels UI album grid (`album_list`) and `library_tree`. `navidrome_lyrics_api` is published
-  but not wired into Panels UI's `lyrics_panel` yet.
+  Panels UI album grid (`album_list`) and `library_tree`. `navidrome_lyrics_api` feeds Panels
+  UI's `lyrics_panel`.
 - **Changing a contract:** a change to a contract header (GUID, vtable order, sink signatures)
   lands in both repos in the same round, and the vendored copy stays byte-identical to the
   original. A new interface also gets a bullet in foo_navidrome's cross-compatibility list.

@@ -74,7 +74,7 @@ ESLyric doesn't exist on macOS, so foo_navidrome ships its own lyrics panel:
 
 Lyrics come from Navidrome's `getLyricsBySongId.view` (embedded or sidecar `.lrc` lyrics on the server). When the server has timings, the current line is highlighted and kept centred as the song plays; otherwise the lyrics show as plain text. On servers without that endpoint it falls back to the classic artist/title `getLyrics.view` lookup. Lyrics are cached for the session, so replaying a track doesn't refetch.
 
-Other components can read the same lyrics through the `navidrome_lyrics_api` service (both platforms). foo_ui_panels is the intended first consumer.
+Other components can read the same lyrics through the `navidrome_lyrics_api` service (both platforms). [foo_ui_panels](https://github.com/santiagorod92/foo_ui_panels)' lyrics panel uses it, so Panels UI skins show your server's lyrics on Windows and macOS.
 
 ## Instant Mix and AudioMuse-AI
 
