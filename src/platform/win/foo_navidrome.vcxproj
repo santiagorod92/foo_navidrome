@@ -159,6 +159,8 @@
     <ClCompile Include="NavidromeLibraryServiceWin.cpp" />
     <ClCompile Include="WinHttp.cpp" />
     <ClCompile Include="AudioMusePrefsWin.cpp" />
+    <ClCompile Include="LyricsWindow.cpp" />
+    <ClCompile Include="LyricsElementsWin.cpp" />
     <ClCompile Include="BrowserWindow.cpp" />
     <ClCompile Include="BrowserWindowActions.cpp" />
     <ClCompile Include="BrowserPrompts.cpp" />

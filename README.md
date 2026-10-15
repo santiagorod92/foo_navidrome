@@ -43,13 +43,22 @@ A [foobar2000](https://www.foobar2000.org/) component that lets you browse and s
 - **Native `navidrome://` URI scheme**: tracks added to playlists store a stable URI, not a transient HTTP URL — playlists survive credential rotation or server URL changes
 - **Auto-skips tracks deleted from the server**: once a track 404s during playback (e.g. a stale playlist entry after a library reorg), it's skipped automatically for the rest of the session on any later shuffle/repeat/Random Mix — no more retrying the same dead stream over and over
 - Appears under **Preferences › Media Library › Library viewers** alongside Album List / Artist View, and can also be docked as a panel in the main window layout: **Navidrome Browser** in the Default UI element picker on Windows (*View › Layout › Enable layout editing mode*, right-click › *Replace UI Element…*) or as a [Columns UI](https://github.com/reupen/columns_ui) panel (*Panels › Navidrome Browser*), `navidrome` in **View › Layout › Edit Layout…** on macOS
-- **Lyrics on Windows** via [ESLyric](https://github.com/ESLyric/release) — see [Lyrics (ESLyric)](#lyrics-eslyric-windows)
+- **Lyrics on Windows** in a native **Navidrome Lyrics** panel (Default UI and Columns UI), or through [ESLyric](https://github.com/ESLyric/release) — see [Lyrics (Windows)](#lyrics-windows)
 - **Lyrics on macOS** in a native **Navidrome Lyrics** layout panel — see [Lyrics (macOS)](#lyrics-macos)
 - **Instant Mix** from any playlist track (right-click › Navidrome › Instant Mix) or any song, album or artist in the browser — plays similar songs in a dedicated *Instant Mix* playlist — plus **AudioMuse-AI** Text Search, Instant Playlist and Song Alchemy — see [Instant Mix and AudioMuse-AI](#instant-mix-and-audiomuse-ai)
 
-## Lyrics (ESLyric, Windows)
+## Lyrics (Windows)
 
-On Windows, foo_navidrome can feed lyrics into [ESLyric](https://github.com/ESLyric/release), a separate foobar2000 component that displays synced/plain lyrics panels. foo_navidrome doesn't render lyrics itself — it generates the config + lookup script ESLyric needs to talk to your Navidrome server.
+foo_navidrome has its own **Navidrome Lyrics** panel on Windows:
+
+1. Add it to your layout: Default UI — *View › Layout › Enable layout editing mode*, right-click › *Replace UI Element…* › **Navidrome Lyrics**; Columns UI — *Live layout editing*, right-click › *Add after* › *Panels* › **Navidrome Lyrics**.
+2. Play a track that foo_navidrome added (a `navidrome://track/<id>` URI). The panel follows the now-playing track: with synced lyrics the current line is bold and kept centred (scroll by hand and it waits a few seconds before following again), otherwise the lyrics show as plain text. Right-click › **Copy lyrics** puts them on the clipboard. It uses foobar2000's colours and font and follows Dark Mode.
+
+The lyrics come from the same lookup as the macOS panel below. If you'd rather use [ESLyric](https://github.com/ESLyric/release), that keeps working too:
+
+### ESLyric (optional)
+
+foo_navidrome can also feed lyrics into [ESLyric](https://github.com/ESLyric/release), a separate foobar2000 component that displays synced/plain lyrics panels. For ESLyric, foo_navidrome generates the config + lookup script ESLyric needs to talk to your Navidrome server.
 
 1. Download the latest ESLyric release from **https://github.com/ESLyric/release** and install it the same way as foo_navidrome (drag the `.fb2k-component` onto foobar2000). Match the architecture to your foo_navidrome install (x64 / ARM64EC).
 2. Open **Preferences › Tools › Navidrome** once and click **OK**/**Apply** — even with no changes, this is what makes foo_navidrome (re)generate the ESLyric config/script for your current server + credentials. It also runs automatically on every foobar2000 startup once ESLyric is detected, and again whenever you save Custom Headers.
@@ -72,7 +81,7 @@ ESLyric doesn't exist on macOS, so foo_navidrome ships its own lyrics panel:
 1. **View › Layout › Edit Layout…** → add a `navidrome-lyrics` line wherever you want the panel.
 2. Play a track that foo_navidrome added (a `navidrome://track/<id>` URI). The panel follows the now-playing track.
 
-Lyrics come from Navidrome's `getLyricsBySongId.view` (embedded or sidecar `.lrc` lyrics on the server). When the server has timings, the current line is highlighted and kept centred as the song plays; otherwise the lyrics show as plain text. On servers without that endpoint it falls back to the classic artist/title `getLyrics.view` lookup. Lyrics are cached for the session, so replaying a track doesn't refetch.
+Lyrics come from Navidrome's `getLyricsBySongId.view` (embedded or sidecar `.lrc` lyrics on the server). When the server has timings, the current line is highlighted and kept centred as the song plays; otherwise the lyrics show as plain text. On servers without that endpoint it falls back to the classic artist/title `getLyrics.view` lookup. Lyrics are cached for the session, so replaying a track doesn't refetch. Windows' panel works the same way.
 
 Other components can read the same lyrics through the `navidrome_lyrics_api` service (both platforms). [foo_ui_panels](https://github.com/santiagorod92/foo_ui_panels)' lyrics panel uses it, so Panels UI skins show your server's lyrics on Windows and macOS.
 

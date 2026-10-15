@@ -2,6 +2,7 @@
 #include "../../core/stdafx.h"
 #include "../../core/SubsonicTypes.h"
 #include "../../core/NavidromeBrowserModel.h"
+#include "../../core/LyricsPanel.h"
 #include "../../core/NavidromeLibraryPlatform.h"
 #include "../../core/NavidromeDebugLog.h"
 #include <SDK/play_callback.h>
@@ -81,7 +82,7 @@ private:
         [_scroll.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
     ]];
     _activeLine = -1;
-    [self showMessage:@"Nothing playing"];
+    [self showStatus:navidrome::LyricsPanelStatus::NothingPlaying];
 }
 
 - (void)viewDidAppear {
@@ -115,15 +116,9 @@ private:
     const NSUInteger gen = ++_generation;
     _lyrics = {};
 
-    if (navidrome::trackIdFromURI(uri).empty()) {
-        [self showMessage:@"Lyrics are shown for Navidrome tracks"];
-        return;
-    }
-    if (!navidrome::libraryCore().isConfigured()) {
-        [self showMessage:@"Navidrome server not configured"];
-        return;
-    }
-    [self showMessage:@"Loading lyrics…"];
+    const auto status = navidrome::lyricsPanelStatusForTrack(uri, navidrome::libraryCore().isConfigured());
+    [self showStatus:status];
+    if (status != navidrome::LyricsPanelStatus::Loading) return;
 
     __weak NavidromeLyricsController *weakSelf = self;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
@@ -145,7 +140,7 @@ private:
     _uri.clear();
     ++_generation;
     _lyrics = {};
-    [self showMessage:@"Nothing playing"];
+    [self showStatus:navidrome::LyricsPanelStatus::NothingPlaying];
 }
 
 - (void)tick {
@@ -166,6 +161,10 @@ private:
     };
 }
 
+- (void)showStatus:(navidrome::LyricsPanelStatus)status {
+    [self showMessage:@(navidrome::lyricsPanelMessage(status))];
+}
+
 - (void)showMessage:(NSString *)message {
     _lineRanges.clear();
     _activeLine = -1;
@@ -178,8 +177,8 @@ private:
 
 - (void)showLyrics:(const navidrome::Lyrics &)lyrics error:(const std::string &)err {
     _lyrics = lyrics;
-    if (!err.empty()) { [self showMessage:@"Couldn't load lyrics (see console log)"]; return; }
-    if (lyrics.empty()) { [self showMessage:@"No lyrics on the server for this track"]; return; }
+    const auto status = navidrome::lyricsPanelStatusForResult(lyrics, err);
+    if (status != navidrome::LyricsPanelStatus::Showing) { [self showStatus:status]; return; }
 
     NSMutableDictionary *base = [[self attributesActive:NO] mutableCopy];
     if (!lyrics.synced) base[NSForegroundColorAttributeName] = [NSColor labelColor];

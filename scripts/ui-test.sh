@@ -502,6 +502,10 @@ scenario_cui() {
   expect 'Columns UI panel instantiated' 20 "Columns UI created the Navidrome Browser panel"
   expect 'getArtists\.view' 15 "artist list requested"
   expect '200 OK' 20 "artist list loaded"
+  expect 'Columns UI lyrics panel instantiated' 10 "Columns UI created the Navidrome Lyrics panel"
+  d cmd "Play"
+  expect 'panel shows [0-9]+ line' 30 "lyrics panel showed the playing track's lyrics"
+  d shot "$SHOTS/$PLATFORM-cui-lyrics.png"
   post_checks cui
 }
 
