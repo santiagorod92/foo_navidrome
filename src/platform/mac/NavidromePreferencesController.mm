@@ -4,18 +4,8 @@
 #include "../../core/NavidromeAudioMuse.h"
 #include "../../core/NavidromeDiagnostics.h"
 #include "../../core/NavidromeDebugLog.h"
-
-namespace navidrome {
-
-    extern cfg_string cfg_server_url;
-    extern cfg_string cfg_username;
-    extern cfg_string cfg_password;
-    extern cfg_string cfg_salt;
-    extern cfg_string cfg_custom_headers;
-    extern cfg_var_modern::cfg_bool cfg_scrobble;
-    extern cfg_string cfg_stream_format;
-    extern cfg_var_modern::cfg_int cfg_max_bitrate;
-}
+#include "../../core/NavidromeSettings.h"
+#include "../../core/NavidromeLibraryPlatform.h"
 
 static NSArray<NSArray *> *NavidromeStreamFormats(void) {
     NSMutableArray<NSArray *> *out = [NSMutableArray array];
@@ -201,7 +191,7 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
     NSTextField *lUser     = makeLabel(@"Username:");
     NSTextField *lPassword = makeLabel(@"Password:");
 
-    _serverField   = makeField(@"http://navidrome.santirod.local:4533/");
+    _serverField   = makeField(@"http://localhost:4533/");
     _usernameField = makeField(@"admin");
     _passwordField = makeSecure(@"••••••");
 
@@ -532,40 +522,21 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
     _scanStatusLabel.stringValue = @"Starting scan…";
 
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        NSError *err = nil;
-        BOOL scanning = NO;
-        NSInteger count = 0;
-        BOOL ok = [SubsonicClient.sharedClient startScanWithScanning:&scanning
-                                                                 count:&count
-                                                                 error:&err];
-        if (!ok) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                self->_rescanButton.enabled = YES;
-                self->_scanStatusLabel.textColor = [NSColor systemRedColor];
-                self->_scanStatusLabel.stringValue = [NSString stringWithFormat:@"Scan failed: %@",
-                    err.localizedDescription ?: @"unknown error"];
-            });
-            return;
-        }
-
-        while (scanning) {
-            [NSThread sleepForTimeInterval:navidrome::kScanPollIntervalMs / 1000.0];
-            NSError *pollErr = nil;
-            BOOL polled = [SubsonicClient.sharedClient getScanStatusWithScanning:&scanning
-                                                                             count:&count
-                                                                             error:&pollErr];
-            if (!polled) break;
-            dispatch_async(dispatch_get_main_queue(), ^{
-                self->_scanStatusLabel.stringValue = [NSString stringWithFormat:@"Scanning… %ld processed",
-                    (long)count];
-            });
-        }
-
+        std::string err;
+        navidrome::ScanStatus status = navidrome::libraryCore().runLibraryScan(
+            [self](const navidrome::ScanStatus &st) {
+                NSString *text = @(navidrome::scanProgressText(st.count).c_str());
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    self->_scanStatusLabel.stringValue = text;
+                });
+            }, err);
+        const bool ok = err.empty();
+        NSString *text = @((ok ? navidrome::scanCompleteText(status.count)
+                               : navidrome::scanFailedText(err)).c_str());
         dispatch_async(dispatch_get_main_queue(), ^{
             self->_rescanButton.enabled = YES;
-            self->_scanStatusLabel.textColor = [NSColor systemGreenColor];
-            self->_scanStatusLabel.stringValue = [NSString stringWithFormat:@"Scan complete — %ld items",
-                (long)count];
+            self->_scanStatusLabel.textColor = ok ? [NSColor systemGreenColor] : [NSColor systemRedColor];
+            self->_scanStatusLabel.stringValue = text;
         });
     });
 }
@@ -601,104 +572,6 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
 
 - (IBAction)openCustomHeaders:(id)sender {
     [NavidromeHeadersEditor show];
-}
-
-- (void)dealloc {
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
-}
-
-@end
-
-@implementation NavidromeAudioMusePrefsController {
-    NSTextField       *_urlField;
-    NSSecureTextField *_tokenField;
-    NSTextField       *_serverField;
-    NSTextField       *_countField;
-}
-
-- (instancetype)init {
-    self = [super initWithNibName:nil bundle:nil];
-    return self;
-}
-
-- (void)loadView {
-    NSView *root = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 420, 240)];
-
-    NSTextField *intro = [NSTextField wrappingLabelWithString:
-        @"AudioMuse-AI analyses your Navidrome library for Text Search, Instant Playlist and "
-         "Song Alchemy (File › AudioMuse-AI, and the Navidrome submenu on tracks)."];
-    intro.translatesAutoresizingMaskIntoConstraints = NO;
-    [root addSubview:intro];
-
-    _urlField    = [NSTextField textFieldWithString:@""];
-    _urlField.placeholderString = @"http://audiomuse:8000";
-    _tokenField  = [[NSSecureTextField alloc] init];
-    _tokenField.placeholderString = @"only if AudioMuse-AI has auth enabled";
-    _serverField = [NSTextField textFieldWithString:@""];
-    _serverField.placeholderString = @"only if it serves several media servers";
-    _countField  = [NSTextField textFieldWithString:@""];
-    NSNumberFormatter *nf = [NSNumberFormatter new];
-    nf.minimum = @1; nf.maximum = @(navidrome::audiomuse::kMaxCount); nf.allowsFloats = NO;
-    _countField.formatter = nf;
-
-    NSGridView *grid = [NSGridView gridViewWithViews:@[
-        @[[NSTextField labelWithString:@"Server URL:"],  _urlField],
-        @[[NSTextField labelWithString:@"API token:"],   _tokenField],
-        @[[NSTextField labelWithString:@"Server name:"], _serverField],
-        @[[NSTextField labelWithString:@"Tracks:"],      _countField],
-    ]];
-    grid.translatesAutoresizingMaskIntoConstraints = NO;
-    [grid columnAtIndex:0].xPlacement = NSGridCellPlacementTrailing;
-    grid.rowAlignment = NSGridRowAlignmentFirstBaseline;
-    grid.columnSpacing = 8;
-    grid.rowSpacing = 8;
-    [root addSubview:grid];
-
-    NSTextField *help = [NSTextField wrappingLabelWithString:
-        @"“Tracks” also sizes Instant Mix, which needs no AudioMuse-AI settings: Navidrome "
-         "answers it itself (from the AudioMuse-AI plugin when installed)."];
-    help.translatesAutoresizingMaskIntoConstraints = NO;
-    help.textColor = [NSColor secondaryLabelColor];
-    help.font = [NSFont systemFontOfSize:11];
-    [root addSubview:help];
-
-    [NSLayoutConstraint activateConstraints:@[
-        [intro.topAnchor constraintEqualToAnchor:root.topAnchor constant:12],
-        [intro.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:16],
-        [intro.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-16],
-        [grid.topAnchor constraintEqualToAnchor:intro.bottomAnchor constant:12],
-        [grid.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:16],
-        [grid.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-16],
-        [_urlField.widthAnchor constraintGreaterThanOrEqualToConstant:260],
-        [_countField.widthAnchor constraintEqualToConstant:60],
-        [help.topAnchor constraintEqualToAnchor:grid.bottomAnchor constant:12],
-        [help.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:16],
-        [help.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-16],
-    ]];
-
-    for (NSTextField *f in @[_urlField, _tokenField, _serverField, _countField])
-        [[NSNotificationCenter defaultCenter] addObserver:self
-                                                 selector:@selector(fieldChanged:)
-                                                     name:NSControlTextDidChangeNotification
-                                                   object:f];
-    self.view = root;
-}
-
-- (void)viewDidLoad {
-    [super viewDidLoad];
-    _urlField.stringValue    = @(navidrome::cfg_audiomuse_url.get().c_str());
-    _tokenField.stringValue  = @(navidrome::cfg_audiomuse_token.get().c_str());
-    _serverField.stringValue = @(navidrome::cfg_audiomuse_server.get().c_str());
-    _countField.stringValue  = [NSString stringWithFormat:@"%d",
-        navidrome::audiomuse::clampCount((int)navidrome::cfg_audiomuse_count.get())];
-}
-
-- (void)fieldChanged:(NSNotification *)note {
-    navidrome::cfg_audiomuse_url.set(_urlField.stringValue.UTF8String ?: "");
-    navidrome::cfg_audiomuse_token.set(_tokenField.stringValue.UTF8String ?: "");
-    navidrome::cfg_audiomuse_server.set(_serverField.stringValue.UTF8String ?: "");
-    const int n = _countField.stringValue.intValue;
-    if (n > 0) navidrome::cfg_audiomuse_count.set(navidrome::audiomuse::clampCount(n));
 }
 
 - (void)dealloc {

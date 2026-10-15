@@ -14,10 +14,6 @@
     <ProjectConfiguration Include="Release|x64">
       <Configuration>Release</Configuration><Platform>x64</Platform>
     </ProjectConfiguration>
-    <!-- ARM64EC: native Windows-on-ARM target. foobar2000 prefers an arm64ec/
-         binary over the x64 one on ARM (which otherwise runs x64 via emulation).
-         ARM64EC is ABI-compatible with x64; the referenced SDK projects already
-         ship Release|ARM64EC (v143). -->
     <ProjectConfiguration Include="Debug|ARM64EC">
       <Configuration>Debug</Configuration><Platform>ARM64EC</Platform>
     </ProjectConfiguration>
@@ -90,9 +86,6 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <!-- Sources are UTF-8 without BOM; without this MSVC reads them as the
-           ANSI code page and every non-ASCII wide literal turns to mojibake
-           (the ellipsis in "Custom Headers...", issue #18). clang-cl assumes UTF-8 already. -->
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <AdditionalIncludeDirectories>
         .;
@@ -121,7 +114,6 @@
     </Link>
   </ItemDefinitionGroup>
 
-  <!-- Debug-specific -->
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
     <ClCompile>
       <Optimization>Disabled</Optimization>
@@ -131,7 +123,6 @@
     <Link><GenerateDebugInformation>true</GenerateDebugInformation></Link>
   </ItemDefinitionGroup>
 
-  <!-- Release-specific -->
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
     <ClCompile>
       <Optimization>MaxSpeed</Optimization>
@@ -154,8 +145,20 @@
     <ClCompile Include="..\..\core\main.cpp" />
     <ClCompile Include="SubsonicClientWin.cpp" />
     <ClCompile Include="NavidromePluginWin.cpp" />
-    <ClCompile Include="NavidromeInputWin.cpp" />
+    <ClCompile Include="..\..\core\NavidromeInput.cpp" />
+    <ClCompile Include="..\..\core\NavidromeSettings.cpp" />
+    <ClCompile Include="..\..\core\NavidromeArtExtractor.cpp" />
+    <ClCompile Include="..\..\core\NavidromeScrobbler.cpp" />
+    <ClCompile Include="..\..\core\NavidromePlaylistSync.cpp" />
+    <ClCompile Include="..\..\core\NavidromeTrackInput.cpp" />
+    <ClCompile Include="..\..\core\NavidromeBrowserEnqueue.cpp" />
+    <ClCompile Include="..\..\core\NavidromeMenus.cpp" />
+    <ClCompile Include="..\..\core\NavidromeAudioMuse.cpp" />
+    <ClCompile Include="..\..\core\NavidromePlayQueue.cpp" />
+    <ClCompile Include="..\..\core\NavidromeServices.cpp" />
     <ClCompile Include="NavidromeLibraryServiceWin.cpp" />
+    <ClCompile Include="WinHttp.cpp" />
+    <ClCompile Include="AudioMusePrefsWin.cpp" />
     <ClCompile Include="BrowserWindow.cpp" />
     <ClCompile Include="BrowserWindowActions.cpp" />
     <ClCompile Include="BrowserPrompts.cpp" />
@@ -194,6 +197,10 @@
     <ClInclude Include="..\..\core\NavidromeBrowserEnqueue.h" />
     <ClInclude Include="..\..\core\SubsonicCore.h" />
     <ClInclude Include="..\..\core\NavidromeDebugLog.h" />
+    <ClInclude Include="..\..\core\CoreBrowserClient.h" />
+    <ClInclude Include="..\..\core\NavidromeGuids.h" />
+    <ClInclude Include="..\..\core\NavidromeSettings.h" />
+    <ClInclude Include="..\..\core\NavidromeSdkGlue.h" />
     <ClInclude Include="SubsonicClientWin.h" />
     <ClInclude Include="BrowserWindow.h" />
     <ClInclude Include="BrowserPrompts.h" />
@@ -203,7 +210,6 @@
     <ClInclude Include="EsLyricScript.h" />
   </ItemGroup>
 
-  <!-- SDK project references (adjust paths if your SDK layout differs) -->
   <ItemGroup>
     <ProjectReference Include="..\..\..\..\SDK\foobar2000_SDK.vcxproj">
       <Project>{E8091321-D79D-4575-86EF-064EA1A4A20D}</Project>

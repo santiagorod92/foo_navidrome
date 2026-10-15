@@ -1,7 +1,8 @@
 #include "stdafx.h"
-#include "../../core/NavidromeDebugLog.h"
-#include "../../core/NavidromeTrackInput.h"
-#include "../../core/SubsonicTypes.h"
+#include "NavidromeDebugLog.h"
+#include "NavidromeGuids.h"
+#include "NavidromeTrackInput.h"
+#include "SubsonicTypes.h"
 #include <SDK/input_impl.h>
 #include <SDK/skipTrack.h>
 #include <string>
@@ -12,7 +13,7 @@ namespace {
 constexpr const char* kPrefix    = "navidrome://track/";
 constexpr size_t      kPrefixLen = 18;
 
-class navidrome_input_win : public input_stubs {
+class navidrome_input : public input_stubs {
 public:
     void open(service_ptr_t<file> , const char* p_path,
               t_input_open_reason reason, abort_callback&) {
@@ -47,11 +48,7 @@ public:
     static bool g_is_our_path(const char* p_path, const char*) {
         return p_path != nullptr && strncmp(p_path, kPrefix, kPrefixLen) == 0;
     }
-    static GUID g_get_guid() {
-        static constexpr GUID guid = { 0xa1b2c3d4, 0x1111, 0x2222,
-            { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x02, 0x01 } };
-        return guid;
-    }
+    static GUID g_get_guid() { return navidrome::guids::inputHandler; }
     static const char* g_get_name() { return "Navidrome"; }
 
 private:
@@ -59,10 +56,10 @@ private:
     navidrome::TrackDecoder m_decoder;
 };
 
-static input_singletrack_factory_t<navidrome_input_win, input_entry::flag_redirect>
-    g_navidrome_input_win_factory;
+static input_singletrack_factory_t<navidrome_input, input_entry::flag_redirect>
+    g_navidrome_input_factory;
 
-class navidrome_skip_track_win : public fb2k::skipTrack {
+class navidrome_skip_track : public fb2k::skipTrack {
 public:
     bool testTrack(const fb2k::skipTrackParam& p) override {
         if (p.track.is_empty()) return true;
@@ -76,5 +73,5 @@ public:
     }
 };
 
-FB2K_SERVICE_FACTORY(navidrome_skip_track_win);
+FB2K_SERVICE_FACTORY(navidrome_skip_track);
 }

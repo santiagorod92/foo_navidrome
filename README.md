@@ -19,7 +19,7 @@ A [foobar2000](https://www.foobar2000.org/) component that lets you browse and s
 - **Favorites and ratings** from the right-click menu — Star / Unstar and a 0-5 star rating, stored per-user on the server so they show up in the web UI and on your phone, and available in the playlist as `%navidrome_rating%` / `%navidrome_starred%` for a custom column. Also available straight from **the playlist's own right-click menu** (rate/star a track without going back to the browser), and kept in sync in already-added playlist entries — see [Showing ratings in the playlist](#showing-ratings-in-the-playlist)
 - **Manage server playlists** from the right-click menu — add the selection to any existing playlist or a **New Playlist…**, remove tracks, rename, delete. Changes land on the server, so they show up everywhere
 - **Send Active Playlist to Navidrome** from the right-click menu — uploads the active foobar2000 playlist under the same name
-- **Bookmarks (resume playback)** — bookmark the currently playing track's position from the File menu, browse them under the **Bookmarks** smart list (shows a trailing `⏱ m:ss`), remove one from its right-click menu. Backed by Subsonic's `getBookmarks.view` / `createBookmark.view` / `deleteBookmark.view`
+- **Bookmarks (resume playback)** — bookmark the currently playing track's position with **File › Bookmark Current Position** (Windows and macOS), browse them under the **Bookmarks** smart list (shows a trailing `⏱ m:ss`), remove one from its right-click menu. Backed by Subsonic's `getBookmarks.view` / `createBookmark.view` / `deleteBookmark.view`
 - **Internet radio stations** — browse/play stations under the **Radio** smart list, or manage them (New/Edit/Delete) from the tree's right-click menu or the dedicated **Preferences › Media Library › Navidrome › Radio Stations** sub-page
 - **Podcasts** — browse subscribed channels and their episodes under the **Podcasts** smart list; subscribe by RSS feed URL or unsubscribe from the tree's right-click menu. Episodes the server hasn't finished downloading yet show their status instead of a play option
 - **Now Playing** — see what everyone else on the server is listening to right now under the **Now Playing** smart list
@@ -568,33 +568,37 @@ The Windows CI build is driven by `.github/workflows/build-windows.yml` (MSBuild
 foo_navidrome/
 ├── src/
 │   ├── core/                               # Shared by both platforms — all logic lives here
-│   │   ├── main.cpp                        # Component version, playlist sync, browser enqueue, rating + library services (SDK)
+│   │   ├── main.cpp                        # Component version, advconfig switches, log init, Copy Diagnostics (SDK)
+│   │   ├── Navidrome*.cpp                  # SDK glue, one file per topic: Input, TrackInput, ArtExtractor, Scrobbler,
+│   │   │                                   #   BrowserEnqueue, PlaylistSync, Menus, AudioMuse, PlayQueue, Services, Settings
+│   │   ├── NavidromeGuids.h                # Every GUID the component registers
+│   │   ├── NavidromeSettings.h             # Shared cfg_* settings
 │   │   ├── stdafx.h                        # Shared precompiled/prefix header
 │   │   ├── SubsonicTypes.h                 # Data types, URI codec, JSON parser, Subsonic mappers (SDK-free)
 │   │   ├── SubsonicCore.h/.cpp             # Subsonic API core over IHttpTransport/ISettingsProvider (SDK-free)
+│   │   ├── CoreBrowserClient.h             # IBrowserClient over SubsonicCore, used by both platforms (SDK-free)
 │   │   ├── NavidromeBrowserModel.h/.cpp    # Browser tree model behind IBrowserClient (SDK-free)
-│   │   ├── NavidromeBrowserEnqueue.h       # enqueueBrowserNodes() (impl in main.cpp)
-│   │   ├── NavidromePlaylistSync.h         # Rating push-back to playlists (impl in main.cpp)
 │   │   ├── NavidromeDebugLog.h             # NAVIDROME_LOG/WARN/ERR file logger
 │   │   ├── MediaEnrichmentLogic.h/.cpp     # Cover-art/URL/ESLyric-config helpers (SDK-free; MD5 is the only #ifdef)
-│   │   ├── NavidromeLibraryPlatform.h      # Per-platform seams of the library service (impl in main.cpp)
-│   │   └── Navidrome{Rating,Library}Service.h # Cross-component service contracts
+│   │   ├── NavidromeLibraryPlatform.h      # Seams each platform implements (core, client, cover bytes, open browser)
+│   │   └── Navidrome{Rating,Library,Lyrics}Service.h # Cross-component service contracts
 │   └── platform/
 │       ├── mac/                            # macOS: ObjC++ adapters + AppKit UI
 │       │   ├── SubsonicClient.h/.mm        #   NSURLSession transport over SubsonicCore
-│       │   ├── NavidromePlugin.mm          #   registration, cfg vars, prefs, menu, library_viewer, scrobbler
-│       │   ├── NavidromeInput.mm           #   navidrome:// input handler + skipTrack
-│       │   ├── NavidromeArtExtractor.mm    #   album art extractor
-│       │   ├── MacSubsonicBrowserClient.*  #   IBrowserClient adapter + library-service seams
+│       │   ├── NavidromePlugin.mm          #   registration: main prefs page, library_viewer, ui_elements
+│       │   ├── Navidrome*PrefsController.mm #  Radio / Libraries / Browser Sections / AudioMuse-AI prefs pages
+│       │   ├── MacSubsonicBrowserClient.*  #   platform seams (core, client, cover bytes)
 │       │   ├── NavidromeBrowserController.*     # browser NSViewController
-│       │   └── NavidromePreferencesController.* # prefs NSViewController
+│       │   ├── NavidromeLyricsController.*      # Navidrome Lyrics panel
+│       │   └── NavidromePreferencesController.* # main prefs NSViewController
 │       └── win/                            # Windows: Win32/ATL adapters + UI
 │           ├── foo_navidrome.vcxproj       #   Visual Studio project
 │           ├── stdafx.h/.cpp               #   Windows precompiled header
 │           ├── SubsonicClientWin.h/.cpp    #   WinHTTP transport over SubsonicCore
-│           ├── NavidromePluginWin.cpp      #   registration, cfg vars, prefs, menu, art
-│           ├── NavidromeInputWin.cpp       #   navidrome:// input handler + skipTrack
-│           ├── NavidromeLibraryServiceWin.cpp # library-service seams (configured check, cover bytes)
+│           ├── WinHttp.h/.cpp              #   the one WinHTTP request helper
+│           ├── NavidromePluginWin.cpp      #   main prefs page, Custom Headers window, Media Library page
+│           ├── *PrefsWin.cpp               #   Radio / Libraries / Browser Sections / AudioMuse-AI prefs pages
+│           ├── NavidromeLibraryServiceWin.cpp # platform seams (core, cover bytes)
 │           ├── BrowserWindow.h/.cpp        #   ATL browser window
 │           └── EsLyricBridge.* / EsLyricScript.h # ESLyric config + searcher script
 ├── third_party/wtl/                # Vendored WTL headers (Windows builds)
@@ -771,16 +775,16 @@ checked against it too.
 
 The component is a **shared C++ core + per-platform UI/HTTP layers** — see [Project Structure](#project-structure) for the full file map. Quick orientation:
 
-- **`src/core/` — shared by both platforms:** Subsonic API (`SubsonicCore`), data types/URI/JSON (`SubsonicTypes.h`), browser tree model (`NavidromeBrowserModel`), and the SDK glue in `main.cpp`. New behaviour goes here.
-- **`src/platform/mac/` (ObjC++):** `SubsonicClient.mm` (NSURLSession transport), `NavidromePlugin.mm` (service registration), `NavidromeInput.mm` (the `navidrome://` input handler), `NavidromeArtExtractor.mm` (album art), plus the AppKit browser + preferences UI.
-- **`src/platform/win/` (Win32/ATL):** `SubsonicClientWin.cpp` (WinHTTP transport), `NavidromePluginWin.cpp`, `NavidromeInputWin.cpp`, `BrowserWindow.*`.
+- **`src/core/` — shared by both platforms:** Subsonic API (`SubsonicCore`), data types/URI/JSON (`SubsonicTypes.h`), browser tree model (`NavidromeBrowserModel`), and the SDK glue (`main.cpp` plus one `Navidrome*.cpp` per topic: input handler, art extractor, scrobbler, menus, play queue, services). New behaviour goes here.
+- **`src/platform/mac/` (ObjC++):** `SubsonicClient.mm` (NSURLSession transport), `NavidromePlugin.mm` (prefs page and UI element registration), plus the AppKit browser, lyrics panel and preferences UI.
+- **`src/platform/win/` (Win32/ATL):** `SubsonicClientWin.cpp` + `WinHttp.cpp` (WinHTTP transport), `NavidromePluginWin.cpp` and the `*PrefsWin.cpp` pages, `BrowserWindow.*`.
 
 Platform folders only hold transport, widget and wiring code — a data-layer fix belongs in `src/core/` so both platforms get it.
 
 ### Key architectural concepts to know
 
 - **`navidrome://track/<id>?...` URI scheme.** Tracks are queued as these URIs, not raw HTTP URLs, so playlists survive credential/server changes. Metadata is embedded in the query string; the stream URL is resolved at decode time. **Any code that parses these URIs must be updated together when the scheme changes** — `NavidromeInput`, the art extractor's `is_our_path`, etc. The host-vs-path RFC-3986 trap is documented in `CLAUDE.md`.
-- **GUIDs.** Every registered service has a hardcoded `static constexpr GUID`. **If you fork this component you must regenerate all of them** (`src/platform/mac/NavidromePlugin.mm`, `src/platform/mac/NavidromeInput.mm` and their `src/platform/win/` counterparts) — two components sharing a GUID will collide in foobar2000.
+- **GUIDs.** Every registered service has a hardcoded GUID. **If you fork this component you must regenerate all of them** (they're all in `src/core/NavidromeGuids.h`) — two components sharing a GUID will collide in foobar2000.
 - **Logging is the debugger.** There's no practical debugger-attach for foobar2000 components (Mac or Wine); use the `NAVIDROME_LOG`/`WARN`/`ERR` macros (`src/core/NavidromeDebugLog.h`, enabled with `NAVIDROME_DEBUG_LOG`; they write `/tmp/foo_navidrome_debug.log`, line by line so it survives a crash; `make win-logs`/`make mac-logs` tail it). Remove temporary logs before submitting.
 
 ### Coding conventions

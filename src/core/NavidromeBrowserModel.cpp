@@ -288,6 +288,15 @@ std::vector<BrowserNodePtr> fetchRandomMix(IBrowserClient& client, int count,
     return songsToNodes(client.getRandomSongs(count, outError));
 }
 
+std::vector<BrowserNodePtr> searchSongNodes(IBrowserClient& client, const std::string& query,
+                                            std::string& outError) {
+    outError.clear();
+    if (!isSearchQuery(query)) return {};
+    SearchResults r = client.search(query, outError);
+    if (!r.songs.empty() || !r.artists.empty() || !r.albums.empty()) outError.clear();
+    return songsToNodes(r.songs);
+}
+
 bool listLibraryAlbums(IBrowserClient& client, const std::function<bool()>& aborted,
                        const std::function<void(const Album&)>& onAlbum, std::string& outError) {
     std::string err;

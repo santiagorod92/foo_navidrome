@@ -258,4 +258,31 @@ TEST_CASE(testSessionEnv) {
           "scrobble=off  startupRefresh=off  customHeaders=no",
         "defaults render as no/off/0 and an explicit format passes through");
 }
+
+TEST_CASE(testRatingRefreshSummary) {
+    check(navidrome::ratingRefreshSummary(3, 0, 0) == "Navidrome: refreshed ratings from 3 album(s)",
+          "summary with no failures lists only the refreshed count");
+    check(navidrome::ratingRefreshSummary(2, 1, 4) ==
+          "Navidrome: refreshed ratings from 2 album(s), 1 album(s) failed, "
+          "4 entry/entries skipped (no album id, added by an older version)",
+          "summary appends failed albums and skipped ungrouped entries");
+    check(navidrome::ratingRefreshNoAlbumIdsMessage(5).rfind("Navidrome: 5 playlist entry/entries carry no album id", 0) == 0,
+          "no-album-id message starts with the entry count");
 }
+
+TEST_CASE(testHeaderLineHelpers) {
+    const std::string blob = "  CF-Access-Client-Id: abc \n# comment\n\nX-Token:xyz\r\n";
+    check(navidrome::joinHeaderLines(blob) == "CF-Access-Client-Id: abc\r\nX-Token:xyz",
+          "joinHeaderLines trims, drops comments/blank lines and joins with CRLF");
+    check(navidrome::joinHeaderLines("") .empty(), "no headers join to an empty string");
+    std::string name, value;
+    check(navidrome::splitHeaderLine("CF-Access-Client-Id :  abc", name, value) &&
+          name == "CF-Access-Client-Id" && value == "abc",
+          "splitHeaderLine trims the name and the value's leading blanks");
+    check(!navidrome::splitHeaderLine("no colon here", name, value), "a line without a colon is rejected");
+    check(!navidrome::splitHeaderLine(" : value", name, value), "an empty header name is rejected");
+    check(navidrome::effectiveSalt("") == "fb2k_navidrome" && navidrome::effectiveSalt("s") == "s",
+          "an empty salt falls back to the default");
+}
+}
+

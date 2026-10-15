@@ -151,6 +151,8 @@ struct FakeBrowserClient : navidrome::IBrowserClient {
     }
 
     std::set<std::string> failIds;
+    std::vector<navidrome::Song> searchSongs;
+    std::string searchError;
 
     bool setStarred(bool starred, const std::string& id, navidrome::StarKind kind,
                     std::string& e) override {
@@ -187,6 +189,13 @@ struct FakeBrowserClient : navidrome::IBrowserClient {
         savedCurrent = current;
         savedPositionMs = positionMs;
         return true;
+    }
+    navidrome::SearchResults search(const std::string& query, std::string& e) override {
+        calls.push_back("search:" + query);
+        e = searchError;
+        navidrome::SearchResults r;
+        r.songs = searchSongs;
+        return r;
     }
     bool getSong(const std::string& id, navidrome::Song& out, std::string& e) override {
         calls.push_back("getSong:" + id);

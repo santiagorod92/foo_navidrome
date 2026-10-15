@@ -2,22 +2,41 @@
 #include "SubsonicClientWin.h"
 #include "../../core/MediaEnrichmentLogic.h"
 #include "../../core/NavidromeLibraryPlatform.h"
+#include <mutex>
+#include <set>
+#include <string>
+#include <utility>
 
-bool navidrome::libraryIsConfigured() {
-    return navidrome::SubsonicClientWin::get().isConfigured();
+namespace {
+
+    std::mutex g_coverDiagMutex;
+    std::set<std::pair<navidrome::FetchClass, std::string>> g_coverDiagSeen;
+
+    void logCoverError(navidrome::FetchClass cls, const std::string& id) {
+        using namespace navidrome;
+        if (cls == FetchClass::NotFound) return;
+
+        {
+            std::lock_guard<std::mutex> lock(g_coverDiagMutex);
+            if (!g_coverDiagSeen.insert({cls, id}).second) return;
+        }
+
+        const char* msg = "";
+        switch (cls) {
+            case FetchClass::Auth:           msg = "Cover art fetch: authentication failed"; break;
+            case FetchClass::ServerError:    msg = "Cover art fetch: server error"; break;
+            case FetchClass::Transport:      msg = "Cover art fetch: network transport error"; break;
+            case FetchClass::InvalidContent: msg = "Cover art fetch: invalid content"; break;
+            default: break;
+        }
+        if (*msg) {
+            console::print(msg);
+        }
+    }
 }
 
-bool navidrome::libraryServerInfo(ServerInfo& out, std::string& outError) {
-    return navidrome::SubsonicClientWin::get().serverInfo(out, outError);
-}
-
-std::string navidrome::libraryStreamURL(const std::string& songId, const std::string& coverArtId,
-                                        double timeOffsetSeconds) {
-    return navidrome::SubsonicClientWin::get().streamURL(songId, coverArtId, timeOffsetSeconds);
-}
-
-bool navidrome::libraryCanSeekByTimeOffset() {
-    return navidrome::SubsonicClientWin::get().canSeekByTimeOffset();
+navidrome::SubsonicCore& navidrome::libraryCore() {
+    return navidrome::SubsonicClientWin::get().core();
 }
 
 std::vector<uint8_t> navidrome::libraryFetchCover(const std::string& id, int size, abort_callback& abort) {
@@ -29,7 +48,10 @@ std::vector<uint8_t> navidrome::libraryFetchCover(const std::string& id, int siz
 
     auto result = client.httpGetBinary(ctx, client.coverArtURL(ctx, id, size), 20u * 1024 * 1024, abort);
     if (result.cls == navidrome::FetchClass::Aborted) throw exception_aborted();
-    if (result.cls != navidrome::FetchClass::Ok) return {};
+    if (result.cls != navidrome::FetchClass::Ok) {
+        logCoverError(result.cls, id);
+        return {};
+    }
     navidrome::CoverCache::instance().put(ctx.serverUrl, ctx.username, key, result.body);
     return std::vector<uint8_t>(result.body.begin(), result.body.end());
 }

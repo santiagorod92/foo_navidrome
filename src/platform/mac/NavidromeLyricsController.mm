@@ -119,7 +119,7 @@ private:
         [self showMessage:@"Lyrics are shown for Navidrome tracks"];
         return;
     }
-    if (!navidrome::libraryIsConfigured()) {
+    if (!navidrome::libraryCore().isConfigured()) {
         [self showMessage:@"Navidrome server not configured"];
         return;
     }

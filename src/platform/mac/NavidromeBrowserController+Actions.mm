@@ -5,6 +5,7 @@
 #include "../../core/NavidromeBrowserEnqueue.h"
 #include "../../core/NavidromeAudioMuse.h"
 #include "../../core/NavidromeDebugLog.h"
+#include "../../core/NavidromePlaylistSync.h"
 #include <SDK/playlist.h>
 #include <SDK/metadb.h>
 #include <SDK/playable_location.h>
@@ -136,34 +137,20 @@
 }
 
 - (IBAction)sendActivePlaylist:(id)sender {
-    auto pm = playlist_manager::get();
-    t_size playlist = pm->get_active_playlist();
-    if (playlist == pfc_infinite) {
+    auto active = navidrome::collectActivePlaylistIds();
+    if (!active.hasPlaylist) {
         _statusLabel.stringValue = @"No active playlist";
         return;
     }
-
-    pfc::string8 pfcName;
-    pm->playlist_get_name(playlist, pfcName);
-    metadb_handle_list items;
-    pm->playlist_get_all_items(playlist, items);
-
-    NSMutableArray<NSString *> *songIds = [NSMutableArray array];
-    NSUInteger skipped = 0;
-    for (t_size i = 0; i < items.get_count(); i++) {
-        std::string id = navidrome::trackIdFromURI(items[i]->get_path());
-        if (id.empty()) { skipped++; continue; }
-        [songIds addObject:[NSString stringWithUTF8String:id.c_str()]];
-    }
-
-    if (songIds.count == 0) {
+    if (active.songIds.empty()) {
         _statusLabel.stringValue = @"No Navidrome tracks in the active playlist";
         return;
     }
 
-    NSString *name = [NSString stringWithUTF8String:pfcName.c_str()];
-    if (name.length == 0) name = @"foobar2000";
-    NSUInteger skippedCount = skipped;
+    NSString *name = @(active.name.c_str());
+    NSMutableArray<NSString *> *songIds = [NSMutableArray array];
+    for (const auto &id : active.songIds) [songIds addObject:@(id.c_str())];
+    const std::string summary = navidrome::sentPlaylistSummary(active.name, active.songIds.size(), active.skipped);
 
     [_spinner startAnimation:nil];
     _statusLabel.stringValue = @"Uploading playlist…";
@@ -183,11 +170,7 @@
                      err.localizedDescription ?: @"Unknown error"];
                 return;
             }
-            self->_statusLabel.stringValue = skippedCount > 0
-                ? [NSString stringWithFormat:@"Sent “%@” (%lu tracks, %lu non-Navidrome skipped)",
-                   name, (unsigned long)songIds.count, (unsigned long)skippedCount]
-                : [NSString stringWithFormat:@"Sent “%@” (%lu tracks)",
-                   name, (unsigned long)songIds.count];
+            self->_statusLabel.stringValue = @(summary.c_str());
             [self invalidatePlaylistsCategory];
             [self refreshServerPlaylists];
         });
@@ -238,7 +221,7 @@
             if (!url) { failed++; continue; }
 
             NSString *path = [destDir stringByAppendingPathComponent:
-                              [self downloadFileNameForNode:s]];
+                              @(navidrome::downloadFileName([s coreNode]).c_str())];
             NSError *one = nil;
             if ([SubsonicClient.sharedClient downloadURL:url toPath:path error:&one]) done++;
             else failed++;
@@ -247,24 +230,9 @@
         NSUInteger okCount = done, failCount = failed;
         dispatch_async(dispatch_get_main_queue(), ^{
             [self->_spinner stopAnimation:nil];
-            self->_statusLabel.stringValue = failCount == 0
-                ? [NSString stringWithFormat:@"Downloaded %lu track(s)", (unsigned long)okCount]
-                : [NSString stringWithFormat:@"Downloaded %lu, %lu failed",
-                   (unsigned long)okCount, (unsigned long)failCount];
+            self->_statusLabel.stringValue = @(navidrome::downloadSummary(okCount, failCount).c_str());
         });
     });
-}
-
-- (NSString *)downloadFileNameForNode:(NavidromeNode *)node {
-    NSMutableString *name = [NSMutableString string];
-    if (node.trackNumber > 0) [name appendFormat:@"%02ld. ", (long)node.trackNumber];
-    if (node.subtitle.length) [name appendFormat:@"%@ - ", node.subtitle];
-    [name appendString:node.displayName.length ? node.displayName : @"untitled"];
-
-    std::string clean = navidrome::sanitizeFileName([name UTF8String] ?: "untitled");
-    NSString *result = [NSString stringWithUTF8String:clean.c_str()];
-    if (node.suffix.length) result = [result stringByAppendingFormat:@".%@", node.suffix];
-    return result;
 }
 
 - (void)refreshServerPlaylists {

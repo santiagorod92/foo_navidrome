@@ -394,6 +394,7 @@ struct IBrowserClient {
                                                   std::string& outError) = 0;
     virtual Lyrics                     getLyrics(const std::string& songId, const std::string& artist,
                                                  const std::string& title, std::string& outError) = 0;
+    virtual SearchResults              search(const std::string& query, std::string& outError) = 0;
 
     virtual std::vector<std::string>  groupingLibraryIds() = 0;
     virtual CategoryKindList          hiddenCategories() { return {}; }
@@ -504,6 +505,49 @@ std::vector<BrowserNodePtr> fetchSimilarSongs(IBrowserClient& client,
 
 std::vector<BrowserNodePtr> fetchRandomMix(IBrowserClient& client, int count,
                                            std::string& outError);
+
+inline std::string downloadFileName(const BrowserNode& n) {
+    std::string name;
+    if (n.track > 0) {
+        char buf[16];
+        std::snprintf(buf, sizeof(buf), "%02d. ", n.track);
+        name += buf;
+    }
+    if (!n.subtitle.empty()) name += n.subtitle + " - ";
+    name += n.displayName.empty() ? "untitled" : n.displayName;
+    name = sanitizeFileName(name);
+    if (!n.suffix.empty()) name += "." + n.suffix;
+    return name;
+}
+
+inline std::string sentPlaylistSummary(const std::string& name, std::size_t tracks, std::size_t skipped) {
+    std::string msg = "Sent \"" + name + "\" (" + std::to_string(tracks) + " tracks";
+    if (skipped > 0) msg += ", " + std::to_string(skipped) + " non-Navidrome skipped";
+    return msg + ")";
+}
+
+inline std::string downloadSummary(std::size_t done, std::size_t failed) {
+    return failed == 0
+        ? "Downloaded " + std::to_string(done) + " track(s)"
+        : "Downloaded " + std::to_string(done) + ", " + std::to_string(failed) + " failed";
+}
+
+inline std::string rootLoadSummary(const std::vector<BrowserNodePtr>& roots) {
+    std::size_t artists = 0, libraries = 0;
+    for (const auto& n : roots) {
+        if (!n) continue;
+        if (n->type == BrowserNode::Artist)  ++artists;
+        if (n->type == BrowserNode::Library) ++libraries;
+    }
+    return libraries ? std::to_string(libraries) + " libraries" : std::to_string(artists) + " artists";
+}
+
+constexpr std::size_t kMinSearchQueryLength = 2;
+
+inline bool isSearchQuery(const std::string& query) { return query.size() >= kMinSearchQueryLength; }
+
+std::vector<BrowserNodePtr> searchSongNodes(IBrowserClient& client, const std::string& query,
+                                            std::string& outError);
 
 bool listLibraryAlbums(IBrowserClient& client, const std::function<bool()>& aborted,
                        const std::function<void(const Album&)>& onAlbum, std::string& outError);

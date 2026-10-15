@@ -2,6 +2,7 @@
 #include "BrowserWindow.h"
 #include "../../core/NavidromeLibraryPlatform.h"
 #include "SubsonicClientWin.h"
+#include "../../core/CoreBrowserClient.h"
 #include "../../core/NavidromeBrowserEnqueue.h"
 #include "../../core/NavidromeAudioMuse.h"
 #include "WinUi.h"
@@ -22,14 +23,11 @@
 #pragma comment(lib, "ole32.lib")
 
 #include "../../core/NavidromeDebugLog.h"
+#include "../../core/NavidromeSettings.h"
 static inline void dbgLog(const std::string& msg) { NAVIDROME_LOG("UI", msg); }
 
 using navidrome::win::u8ToWide;
 using navidrome::win::wToU8;
-
-namespace navidrome {
-    extern cfg_string cfg_browser_hidden_categories;
-}
 
 std::vector<BrowserWindow*> BrowserWindow::s_open;
 
@@ -209,89 +207,19 @@ using navidrome::buildCategoryNodes;
 
 namespace {
 
-struct WinBrowserClient final : navidrome::IBrowserClient {
-    navidrome::SubsonicClientWin& c = navidrome::SubsonicClientWin::get();
-
-    std::vector<navidrome::Artist> getArtists(std::string& e) override {
-        return c.getArtists(e); }
-    std::vector<navidrome::Artist> getArtistsForLibrary(const std::string& id,
-                                                        std::string& e) override {
-        return c.getArtistsForLibrary(id, e); }
-    std::vector<navidrome::Album> getAlbumsForArtist(const std::string& id,
-                                                     const std::string& scope,
-                                                     std::string& e) override {
-        return c.getAlbumsForArtist(id, e, scope); }
-    std::vector<navidrome::Song> getSongsForAlbum(const std::string& id,
-                                                  std::string& e) override {
-        return c.getSongsForAlbum(id, e); }
-    std::vector<navidrome::Song> getPlaylistSongs(const std::string& id,
-                                                  std::string& e) override {
-        return c.getPlaylistSongs(id, e); }
-    std::vector<navidrome::Song> getSongsForGenre(const std::string& g, int n,
-                                                  std::string& e) override {
-        return c.getSongsForGenre(g, n, e); }
-    std::vector<navidrome::Song> getStarredSongs(std::string& e) override {
-        return c.getStarredSongs(e); }
-    std::vector<navidrome::Genre> getGenres(std::string& e) override {
-        return c.getGenres(e); }
-    std::vector<navidrome::Playlist> getPlaylists(std::string& e) override {
-        return c.getPlaylists(e); }
-    std::vector<navidrome::Album> getAlbumList(navidrome::AlbumListType t, int n,
-                                               std::string& e) override {
-        return c.getAlbumList(t, n, e); }
-    std::vector<navidrome::RadioStation> getRadioStations(std::string& e) override {
-        return c.getRadioStations(e); }
-    std::vector<navidrome::Bookmark> getBookmarks(std::string& e) override {
-        return c.getBookmarks(e); }
-    std::vector<navidrome::PodcastChannel> getPodcastChannels(std::string& e) override {
-        return c.getPodcastChannels(e); }
-    std::vector<navidrome::PodcastEpisode> getPodcastEpisodes(const std::string& id,
-                                                               std::string& e) override {
-        return c.getPodcastEpisodes(id, e); }
-    std::vector<navidrome::NowPlayingEntry> getNowPlaying(std::string& e) override {
-        return c.getNowPlaying(e); }
-    std::vector<navidrome::Song> getSimilarSongs(const std::string& id, int n,
-                                                 std::string& e) override {
-        return c.getSimilarSongs(id, n, e); }
-    std::vector<navidrome::Song> getRandomSongs(int n, std::string& e) override {
-        return c.getRandomSongs(n, e); }
-    std::vector<navidrome::Song> getAllSongs(std::string& e) override {
-        return c.getAllSongs(e); }
-    navidrome::ArtistInfo getArtistInfo(const std::string& id, std::string& e) override {
-        return c.getArtistInfo(id, e); }
-    std::vector<navidrome::Song> getTopSongs(const std::string& name, int n,
-                                             std::string& e) override {
-        return c.getTopSongs(name, n, e); }
-    navidrome::Lyrics getLyrics(const std::string& id, const std::string& artist,
-                                const std::string& title, std::string& e) override {
-        return c.getLyrics(id, artist, title, e); }
-    std::vector<std::string> groupingLibraryIds() override {
-        return c.libraryGroupingIds(); }
-    navidrome::CategoryKindList hiddenCategories() override {
-        return navidrome::parseHiddenCategories(navidrome::cfg_browser_hidden_categories.get().c_str()); }
-    std::vector<navidrome::MusicFolder> musicFolders() override {
-        return c.cachedMusicFolders(); }
-    bool setStarred(bool starred, const std::string& id, navidrome::StarKind kind,
-                    std::string& e) override {
-        return c.setStarred(starred, id, kind, e); }
-    bool setRating(int stars, const std::string& id, std::string& e) override {
-        return c.setRating(stars, id, e); }
-    bool getSong(const std::string& id, navidrome::Song& out, std::string& e) override {
-        return c.getSong(id, out, e); }
-    bool getPlayQueue(navidrome::PlayQueue& out, std::string& e) override {
-        return c.getPlayQueue(out, e); }
-    bool savePlayQueue(const std::vector<std::string>& ids, const std::string& current,
-                       double positionMs, std::string& e) override {
-        return c.savePlayQueue(ids, current, positionMs, e); }
-};
-
 navidrome::IBrowserClient& browserClient() {
-    static WinBrowserClient inst;
+    static navidrome::CoreBrowserClient inst(navidrome::SubsonicClientWin::get().core(), [] {
+        return navidrome::parseHiddenCategories(navidrome::cfg_browser_hidden_categories.get().c_str());
+    });
     return inst;
 }
 }
 
 navidrome::IBrowserClient& navidrome::libraryClient() { return browserClient(); }
+
+void navidrome::showBrowserWindow() {
+    fb2k::inMainThread([] { BrowserWindow::get().show(); });
+}
 
 bool navidrome::promptForText(const char* title, const char* label, std::string& inOut) {
     std::wstring value;
@@ -410,19 +338,13 @@ void BrowserWindow::populateRoot(LoadedPayload* payload) {
     }
     m_rootNodes = payload->nodes;
     m_treeLoadedAtMs = navidrome::browserNowMs();
-    std::size_t artists = 0, libraries = 0;
     {
         NAVIDROME_TIMER("UI", "populateRoot " + std::to_string(m_rootNodes.size()) + " rows");
         TreeRebuild rebuild(*this);
-        for (auto& n : m_rootNodes) {
-            insertNode(TVI_ROOT, n);
-            if (n->type == NavidromeNode::Artist)  ++artists;
-            if (n->type == NavidromeNode::Library) ++libraries;
-        }
+        for (auto& n : m_rootNodes) insertNode(TVI_ROOT, n);
     }
     if (!m_reloadNotice.empty()) { setStatus(m_reloadNotice); m_reloadNotice.clear(); }
-    else if (libraries) setStatus(std::to_string(libraries) + " libraries");
-    else                setStatus(std::to_string(artists) + " artists");
+    else setStatus(navidrome::rootLoadSummary(m_rootNodes));
 }
 
 void BrowserWindow::populateSearchResults(LoadedPayload* payload) {
@@ -443,7 +365,6 @@ void BrowserWindow::populateSearchResults(LoadedPayload* payload) {
 void BrowserWindow::restoreBrowseTree() {
     m_isSearching = false;
     m_searchResultNodes.clear();
-    std::size_t artists = 0, libraries = 0;
     {
         NAVIDROME_TIMER("UI", "restoreBrowseTree " + std::to_string(m_rootNodes.size()) + " rows");
         TreeRebuild rebuild(*this);
@@ -453,12 +374,9 @@ void BrowserWindow::restoreBrowseTree() {
             n->childrenLoaded = false;
             SetNodeItem(n, nullptr);
             insertNode(TVI_ROOT, n);
-            if (n->type == NavidromeNode::Artist)  ++artists;
-            if (n->type == NavidromeNode::Library) ++libraries;
         }
     }
-    if (libraries) setStatus(std::to_string(libraries) + " libraries");
-    else           setStatus(std::to_string(artists) + " artists");
+    setStatus(navidrome::rootLoadSummary(m_rootNodes));
 }
 
 void BrowserWindow::populateChildren(LoadedPayload* payload) {

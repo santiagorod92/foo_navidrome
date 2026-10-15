@@ -3,6 +3,7 @@
 #include "SubsonicClientWin.h"
 #include "WinUi.h"
 #include "../../core/NavidromeDebugLog.h"
+#include "../../core/NavidromeGuids.h"
 #include <SDK/cfg_var.h>
 #include <commctrl.h>
 #include <uxtheme.h>
@@ -233,10 +234,10 @@ public:
     }
     const char* get_name() override { return "Radio Stations"; }
     GUID        get_guid() override {
-        return { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x0f} };
+        return navidrome::guids::radioPrefsPage;
     }
     GUID        get_parent_guid() override {
-        return { 0xa1b2c3d4,0x1111,0x2222,{0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x01,0x05} };
+        return navidrome::guids::prefsPage;
     }
 };
 FB2K_SERVICE_FACTORY(NavidromeRadioPrefsFactory);

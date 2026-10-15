@@ -964,6 +964,30 @@ ScanStatus SubsonicCore::getScanStatus(std::string& outError) {
     return parseScanStatus(root);
 }
 
+ScanStatus SubsonicCore::runLibraryScan(const std::function<void(const ScanStatus&)>& onProgress,
+                                        std::string& outError) {
+    ScanStatus status = startScan(outError);
+    if (!outError.empty()) {
+        NAVIDROME_WARN("API", "startScan failed: " + outError);
+        return status;
+    }
+    NAVIDROME_LOG("API", "library scan started");
+    while (status.scanning) {
+        m_http.sleepMs(kScanPollIntervalMs);
+        std::string pollErr;
+        ScanStatus polled = getScanStatus(pollErr);
+        if (!pollErr.empty()) {
+            NAVIDROME_WARN("API", "getScanStatus failed, stop polling: " + pollErr);
+            break;
+        }
+        status = polled;
+        if (onProgress) onProgress(status);
+    }
+    status.scanning = false;
+    NAVIDROME_LOG("API", "library scan done, count=" + std::to_string(status.count));
+    return status;
+}
+
 bool SubsonicCore::scrobble(const std::string& songId, bool submission, std::string& outError) {
     if (songId.empty()) return false;
     std::string params = "id=" + enc(songId) + "&submission=" + (submission ? "true" : "false");

@@ -4,6 +4,7 @@
 #include "SubsonicClientWin.h"
 #include "WinUi.h"
 #include "../../core/NavidromeBrowserEnqueue.h"
+#include "../../core/NavidromePlaylistSync.h"
 #include "../../core/NavidromeLibraryPlatform.h"
 #include "../../core/NavidromeDebugLog.h"
 #include <SDK/playlist.h>
@@ -105,28 +106,16 @@ void BrowserWindow::OnRate(UINT, int id, HWND) {
 }
 
 void BrowserWindow::OnSendActivePlaylist(UINT, int, HWND) {
-    auto pm = playlist_manager::get();
-    t_size pl = pm->get_active_playlist();
-    if (pl == pfc_infinite) { setStatus("No active playlist"); return; }
-
-    pfc::string8 pfcName;
-    pm->playlist_get_name(pl, pfcName);
-    metadb_handle_list items;
-    pm->playlist_get_all_items(pl, items);
-
-    std::vector<std::string> songIds;
-    std::size_t skipped = 0;
-    for (t_size i = 0; i < items.get_count(); ++i) {
-        std::string id = navidrome::trackIdFromURI(items[i]->get_path());
-        if (id.empty()) { ++skipped; continue; }
-        songIds.push_back(id);
-    }
-    if (songIds.empty()) {
+    auto active = navidrome::collectActivePlaylistIds();
+    if (!active.hasPlaylist) { setStatus("No active playlist"); return; }
+    if (active.songIds.empty()) {
         setStatus("No Navidrome tracks in the active playlist");
         return;
     }
 
-    std::string name = pfcName.is_empty() ? "foobar2000" : pfcName.c_str();
+    const std::string name = active.name;
+    const std::vector<std::string> songIds = std::move(active.songIds);
+    const std::size_t skipped = active.skipped;
     setStatus("Uploading playlist…");
 
     std::thread([this, name, songIds, skipped]() {
@@ -140,11 +129,7 @@ void BrowserWindow::OnSendActivePlaylist(UINT, int, HWND) {
                 setStatus("Upload failed: " + err);
                 return;
             }
-            std::string msg = "Sent \"" + name + "\" (" +
-                              std::to_string(songIds.size()) + " tracks";
-            if (skipped > 0)
-                msg += ", " + std::to_string(skipped) + " non-Navidrome skipped";
-            setStatus(msg + ")");
+            setStatus(navidrome::sentPlaylistSummary(name, songIds.size(), skipped));
             invalidatePlaylistsCategory();
             refreshServerPlaylists();
         });
@@ -160,7 +145,15 @@ void BrowserWindow::OnDownload(UINT, int, HWND) {
 
     setStatus("Resolving tracks…");
     std::thread([this, destDir, selected]() {
-        auto songs = navidrome::collectSelectionSongs(navidrome::libraryClient(), selected);
+        std::string collectErr;
+        auto songs = navidrome::collectSelectionSongs(navidrome::libraryClient(), selected, &collectErr);
+        if (songs.empty() && !collectErr.empty()) {
+            NAVIDROME_WARN("UI", "download: resolving the selection failed: " + collectErr);
+            fb2k::inMainThread([this, collectErr]() {
+                if (IsWindow()) setStatus("Error: " + collectErr);
+            });
+            return;
+        }
 
         std::size_t done = 0, failed = 0;
         for (std::size_t i = 0; i < songs.size(); ++i) {
@@ -172,16 +165,7 @@ void BrowserWindow::OnDownload(UINT, int, HWND) {
             });
 
             auto& s = songs[i];
-            std::string name;
-            if (s->track > 0) {
-                char buf[8];
-                snprintf(buf, sizeof(buf), "%02d. ", s->track);
-                name += buf;
-            }
-            if (!s->subtitle.empty()) name += s->subtitle + " - ";
-            name += s->displayName.empty() ? "untitled" : s->displayName;
-            name = navidrome::sanitizeFileName(name);
-            if (!s->suffix.empty()) name += "." + s->suffix;
+            const std::string name = navidrome::downloadFileName(*s);
 
             std::string err;
             std::string url = navidrome::SubsonicClientWin::get().downloadURL(s->id);
@@ -194,10 +178,7 @@ void BrowserWindow::OnDownload(UINT, int, HWND) {
 
         fb2k::inMainThread([this, done, failed]() {
             if (!IsWindow()) return;
-            setStatus(failed == 0
-                ? "Downloaded " + std::to_string(done) + " track(s)"
-                : "Downloaded " + std::to_string(done) + ", " +
-                  std::to_string(failed) + " failed");
+            setStatus(navidrome::downloadSummary(done, failed));
         });
     }).detach();
 }
@@ -606,7 +587,7 @@ void BrowserWindow::OnTimer(UINT_PTR id) {
 
     ++m_searchGeneration;
 
-    if (query.size() < 2) {
+    if (!navidrome::isSearchQuery(query)) {
         if (m_isSearching) restoreBrowseTree();
         return;
     }
@@ -614,15 +595,9 @@ void BrowserWindow::OnTimer(UINT_PTR id) {
     setStatus("Searching\u2026");
     std::uint64_t generation = m_searchGeneration;
     std::thread([this, query, generation]() {
-        std::string err;
-        auto results = navidrome::SubsonicClientWin::get().search(query, err);
         auto* payload = new LoadedPayload{};
-        payload->error      = err;
+        payload->nodes      = navidrome::searchSongNodes(navidrome::libraryClient(), query, payload->error);
         payload->generation = generation;
-        for (auto& s : results.songs) {
-            auto n = navidrome::makeSongNode(s);
-            payload->nodes.push_back(n);
-        }
         syncBrowserNodesToPlaylists(payload->nodes);
         if (!PostMessage(WM_NAVIDROME_SEARCH, reinterpret_cast<WPARAM>(payload), 0))
             delete payload;

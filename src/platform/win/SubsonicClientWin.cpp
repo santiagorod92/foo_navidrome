@@ -1,240 +1,80 @@
 #include "stdafx.h"
 #include "SubsonicClientWin.h"
+#include "WinHttp.h"
+#include "WinUi.h"
 #include "../../core/MediaEnrichmentLogic.h"
 #include "../../core/NavidromeDebugLog.h"
 #include "../../core/NavidromeAudioMuse.h"
+#include "../../core/NavidromeSettings.h"
+#include "../../core/NavidromeDiagnostics.h"
 #include <SDK/cfg_var.h>
 
-#pragma comment(lib, "winhttp.lib")
 #pragma comment(lib, "crypt32.lib")
-
-namespace navidrome {
-
-    extern cfg_string cfg_server_url;
-    extern cfg_string cfg_username;
-    extern cfg_string cfg_password;
-    extern cfg_string cfg_salt;
-    extern cfg_string cfg_custom_headers;
-    extern cfg_string cfg_stream_format;
-    extern cfg_var_modern::cfg_int cfg_max_bitrate;
-    extern cfg_var_modern::cfg_bool cfg_library_filter;
-    extern cfg_string cfg_library_ids;
-}
-
-static void applySecureProtocols(HINTERNET hSession) {
-    DWORD protocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2;
-#ifdef WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3
-    protocols |= WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3;
-#endif
-    WinHttpSetOption(hSession, WINHTTP_OPTION_SECURE_PROTOCOLS,
-                     &protocols, sizeof(protocols));
-}
-
-static navidrome::ErrorKind classifyWinHttpError(DWORD err) {
-    switch (err) {
-        case 12002:
-            return navidrome::ErrorKind::Timeout;
-        case 12007:
-        case 12029:
-        case 12030:
-        case 12152:
-            return navidrome::ErrorKind::Network;
-        case 12157:
-        case 12175:
-            return navidrome::ErrorKind::Tls;
-        default:
-            return navidrome::ErrorKind::Network;
-    }
-}
-
-static void warnAuthOnce() {
-    static bool warned = false;
-    if (warned) return;
-    warned = true;
-    console::print("Navidrome: the server rejected the configured credentials — "
-                   "check Preferences \xE2\x80\xBA Tools \xE2\x80\xBA Navidrome");
-}
-
-namespace {
-
-struct WinHttpHandle {
-    HINTERNET h = nullptr;
-    WinHttpHandle() = default;
-    explicit WinHttpHandle(HINTERNET handle) : h(handle) {}
-    ~WinHttpHandle() { if (h) WinHttpCloseHandle(h); }
-    WinHttpHandle(const WinHttpHandle&) = delete;
-    WinHttpHandle& operator=(const WinHttpHandle&) = delete;
-    WinHttpHandle(WinHttpHandle&& o) noexcept : h(o.h) { o.h = nullptr; }
-    WinHttpHandle& operator=(WinHttpHandle&& o) noexcept {
-        if (this != &o) { if (h) WinHttpCloseHandle(h); h = o.h; o.h = nullptr; }
-        return *this;
-    }
-    operator HINTERNET() const { return h; }
-    explicit operator bool() const { return h != nullptr; }
-};
-}
-
-static std::wstring toWide(const std::string& s) {
-    if (s.empty()) return {};
-    int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
-    std::wstring w(n, 0);
-    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, &w[0], n);
-    if (!w.empty() && w.back() == 0) w.pop_back();
-    return w;
-}
-
-static std::string toUtf8(const std::wstring& w) {
-    if (w.empty()) return {};
-    int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, nullptr, 0, nullptr, nullptr);
-    std::string s(n, 0);
-    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, &s[0], n, nullptr, nullptr);
-    if (!s.empty() && s.back() == 0) s.pop_back();
-    return s;
-}
 
 namespace {
 
 struct WinHttpTransport : navidrome::IHttpTransport {
     navidrome::HttpResult getOnce(const std::string& urlStr) override {
         using navidrome::ErrorKind;
+        namespace w = navidrome::win;
         navidrome::HttpResult out;
 
-        std::wstring wurl = toWide(urlStr);
-        URL_COMPONENTS uc = {};
-        uc.dwStructSize = sizeof(uc);
-        wchar_t host[256] = {}, path[4096] = {};
-        uc.lpszHostName = host; uc.dwHostNameLength = 256;
-        uc.lpszUrlPath  = path; uc.dwUrlPathLength  = 4096;
-        if (!WinHttpCrackUrl(wurl.c_str(), 0, 0, &uc)) {
-            out.error = { ErrorKind::Parse, 0, 0, "Invalid URL" };
+        auto http = w::openWinHttpRequest(urlStr, L"GET", w::WinHttpTimeouts{},
+                                          navidrome::cfg_custom_headers.get().c_str());
+        if (!http.ok()) {
+            out.error = { http.errorKind, 0, 0, http.error };
             return out;
         }
-
-        WinHttpHandle sess(WinHttpOpen(L"foo_navidrome/1.0",
-            WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-            WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
-        if (!sess) {
-            out.error = { ErrorKind::Network, 0, 0, "WinHttpOpen failed" };
-            return out;
-        }
-        WinHttpSetTimeouts(sess, 0, 15000, 15000, 30000);
-        applySecureProtocols(sess);
-
-        WinHttpHandle conn(WinHttpConnect(sess, host, uc.nPort, 0));
-        if (!conn) {
-            out.error = { classifyWinHttpError(GetLastError()), 0, 0, "Connect failed" };
-            return out;
-        }
-        const DWORD flags = (uc.nScheme == INTERNET_SCHEME_HTTPS) ? WINHTTP_FLAG_SECURE : 0;
-        const std::wstring hdrs = navidrome::SubsonicClientWin::customHeadersWide();
-
-        WinHttpHandle req(WinHttpOpenRequest(conn, L"GET", path, nullptr,
-            WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, flags));
-        if (!req) {
-            out.error = { ErrorKind::Network, 0, 0,
-                "WinHttpOpenRequest failed (err=" + std::to_string(GetLastError()) + ")" };
-            return out;
-        }
-        if (!hdrs.empty())
-            WinHttpAddRequestHeaders(req, hdrs.c_str(), (DWORD)-1,
-                WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE);
-        if (!WinHttpSendRequest(req, nullptr, 0, nullptr, 0, 0, 0) ||
-            !WinHttpReceiveResponse(req, nullptr)) {
-            DWORD e = GetLastError();
-            ErrorKind kind = classifyWinHttpError(e);
+        DWORD e = 0;
+        if (!w::sendWinHttpRequest(http.request, nullptr, e)) {
+            ErrorKind kind = w::classifyWinHttpError(e);
             out.error = { kind, 0, 0, std::string(navidrome::errorKindName(kind)) +
                           " (winhttp err=" + std::to_string(e) + ")" };
             return out;
         }
-        DWORD status = 0, sz = sizeof(status);
-        WinHttpQueryHeaders(req,
-            WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-            nullptr, &status, &sz, nullptr);
+        const DWORD status = w::winHttpStatus(http.request);
         ErrorKind kind = navidrome::httpStatusToErrorKind((int)status);
         if (kind != ErrorKind::None) {
             out.error = { kind, (int)status, 0, "HTTP " + std::to_string(status) };
             return out;
         }
-        DWORD avail = 0;
-        while (WinHttpQueryDataAvailable(req, &avail) && avail > 0) {
-            std::string chunk(avail, '\0');
-            DWORD read = 0;
-            WinHttpReadData(req, &chunk[0], avail, &read);
-            out.body.append(chunk, 0, read);
-        }
+        out.body = w::readWinHttpBody(http.request);
         out.error = { ErrorKind::None, (int)status, 0, {} };
         return out;
     }
 
-    void onAuthRejected() override { warnAuthOnce(); }
+    void onAuthRejected() override { navidrome::warnAuthRejectedOnce(); }
 };
 
 struct WinJsonPoster : navidrome::audiomuse::IJsonPoster {
     navidrome::HttpResult postJson(const std::string& urlStr, const std::string& body,
                                    const std::string& bearerToken, int timeoutMs) override {
         using navidrome::ErrorKind;
+        namespace w = navidrome::win;
         navidrome::HttpResult out;
 
-        std::wstring wurl = toWide(urlStr);
-        URL_COMPONENTS uc = {};
-        uc.dwStructSize = sizeof(uc);
-        wchar_t host[256] = {}, path[4096] = {};
-        uc.lpszHostName = host; uc.dwHostNameLength = 256;
-        uc.lpszUrlPath  = path; uc.dwUrlPathLength  = 4096;
-        if (!WinHttpCrackUrl(wurl.c_str(), 0, 0, &uc)) {
-            out.error = { ErrorKind::Parse, 0, 0, "Invalid AudioMuse-AI URL" };
+        std::string headers = "Content-Type: application/json\nAccept: application/json";
+        if (!bearerToken.empty()) headers += "\nAuthorization: Bearer " + bearerToken;
+        auto http = w::openWinHttpRequest(urlStr, L"POST", w::WinHttpTimeouts{15000, 30000, timeoutMs},
+                                          headers);
+        if (!http.ok()) {
+            out.error = { http.errorKind, 0, 0,
+                          http.errorKind == ErrorKind::Parse ? "Invalid AudioMuse-AI URL" : http.error };
             return out;
         }
-
-        WinHttpHandle sess(WinHttpOpen(L"foo_navidrome/1.0",
-            WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-            WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
-        if (!sess) {
-            out.error = { ErrorKind::Network, 0, 0, "WinHttpOpen failed" };
-            return out;
-        }
-        WinHttpSetTimeouts(sess, 0, 15000, 30000, timeoutMs);
-        applySecureProtocols(sess);
-
-        WinHttpHandle conn(WinHttpConnect(sess, host, uc.nPort, 0));
-        if (!conn) {
-            out.error = { classifyWinHttpError(GetLastError()), 0, 0, "Connect failed" };
-            return out;
-        }
-        const DWORD flags = (uc.nScheme == INTERNET_SCHEME_HTTPS) ? WINHTTP_FLAG_SECURE : 0;
-        WinHttpHandle req(WinHttpOpenRequest(conn, L"POST", path, nullptr,
-            WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, flags));
-        if (!req) {
-            out.error = { ErrorKind::Network, 0, 0,
-                "WinHttpOpenRequest failed (err=" + std::to_string(GetLastError()) + ")" };
-            return out;
-        }
-        WinHttpSetTimeouts(req, 0, 15000, 30000, timeoutMs);
+        WinHttpSetTimeouts(http.request, 0, 15000, 30000, timeoutMs);
         DWORD responseTimeout = static_cast<DWORD>(timeoutMs);
-        WinHttpSetOption(req, WINHTTP_OPTION_RECEIVE_RESPONSE_TIMEOUT,
+        WinHttpSetOption(http.request, WINHTTP_OPTION_RECEIVE_RESPONSE_TIMEOUT,
                          &responseTimeout, sizeof(responseTimeout));
-        std::wstring hdrs = L"Content-Type: application/json\r\nAccept: application/json\r\n";
-        if (!bearerToken.empty()) hdrs += L"Authorization: Bearer " + toWide(bearerToken) + L"\r\n";
-        if (!WinHttpSendRequest(req, hdrs.c_str(), (DWORD)-1,
-                                const_cast<char*>(body.data()), (DWORD)body.size(), (DWORD)body.size(), 0) ||
-            !WinHttpReceiveResponse(req, nullptr)) {
-            DWORD e = GetLastError();
-            ErrorKind kind = classifyWinHttpError(e);
+        DWORD e = 0;
+        if (!w::sendWinHttpRequest(http.request, &body, e)) {
+            ErrorKind kind = w::classifyWinHttpError(e);
             out.error = { kind, 0, 0, std::string(navidrome::errorKindName(kind)) +
                           " (winhttp err=" + std::to_string(e) + ")" };
             return out;
         }
-        DWORD status = 0, sz = sizeof(status);
-        WinHttpQueryHeaders(req,
-            WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-            nullptr, &status, &sz, nullptr);
-        DWORD avail = 0;
-        while (WinHttpQueryDataAvailable(req, &avail) && avail > 0) {
-            std::string chunk(avail, '\0');
-            DWORD read = 0;
-            WinHttpReadData(req, &chunk[0], avail, &read);
-            out.body.append(chunk, 0, read);
-        }
+        const DWORD status = w::winHttpStatus(http.request);
+        out.body = w::readWinHttpBody(http.request);
         ErrorKind kind = navidrome::httpStatusToErrorKind((int)status);
         out.error = { kind, (int)status, 0,
                       kind == ErrorKind::None ? std::string() : "HTTP " + std::to_string(status) };
@@ -248,8 +88,7 @@ struct WinSettingsProvider : navidrome::ISettingsProvider {
         s.serverUrl     = navidrome::cfg_server_url.get().c_str();
         s.username      = navidrome::cfg_username.get().c_str();
         s.password      = navidrome::cfg_password.get().c_str();
-        s.salt          = navidrome::cfg_salt.get().length() > 0
-                              ? navidrome::cfg_salt.get().c_str() : "fb2k_navidrome";
+        s.salt          = navidrome::effectiveSalt(navidrome::cfg_salt.get().c_str());
         s.streamFormat  = navidrome::cfg_stream_format.get().c_str();
         s.maxBitrate    = static_cast<int>(navidrome::cfg_max_bitrate.get());
         s.libraryFilter = navidrome::cfg_library_filter.get();
@@ -278,22 +117,9 @@ navidrome::SubsonicRequestContext navidrome::SubsonicClientWin::snapshot() const
     context.serverUrl = cfg_server_url.get().c_str();
     context.username = cfg_username.get().c_str();
     context.password = cfg_password.get().c_str();
-    context.salt = cfg_salt.get().length() > 0 ? cfg_salt.get().c_str() : "fb2k_navidrome";
+    context.salt = effectiveSalt(cfg_salt.get().c_str());
     context.customHeaders = cfg_custom_headers.get().c_str();
     return context;
-}
-
-std::vector<std::string> navidrome::SubsonicClientWin::customHeaderLines() {
-    return navidrome::parseHeaderLines(cfg_custom_headers.get().c_str());
-}
-
-std::wstring navidrome::SubsonicClientWin::customHeadersWide() {
-    std::string joined;
-    for (const auto& line : customHeaderLines()) {
-        if (!joined.empty()) joined += "\r\n";
-        joined += line;
-    }
-    return joined.empty() ? std::wstring() : toWide(joined);
 }
 
 bool navidrome::SubsonicClientWin::ping(std::string& outError) { return m_core->ping(outError); }
@@ -530,92 +356,52 @@ std::string navidrome::SubsonicClientWin::coverArtURL(
 bool navidrome::SubsonicClientWin::httpDownloadToFile(const std::string& urlStr,
                                                        const std::wstring& destPath,
                                                        std::string& outError) const {
+    namespace w = navidrome::win;
     const std::string safeUrl = navidrome::dbg::scrubAuth(urlStr);
     NAVIDROME_TIMER("HTTP", "download " + safeUrl);
-    std::wstring wurl = toWide(urlStr);
 
-    URL_COMPONENTS uc = {};
-    uc.dwStructSize = sizeof(uc);
-    wchar_t host[256] = {}, path[4096] = {};
-    uc.lpszHostName = host; uc.dwHostNameLength = 256;
-    uc.lpszUrlPath  = path; uc.dwUrlPathLength  = 4096;
-
-    if (!WinHttpCrackUrl(wurl.c_str(), 0, 0, &uc)) { outError = "Invalid URL"; return false; }
-
-    WinHttpHandle sess(WinHttpOpen(L"foo_navidrome/1.0",
-        WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-        WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
-    if (!sess) { outError = "WinHttpOpen failed"; return false; }
-    WinHttpSetTimeouts(sess, 0, 15000, 15000, 300000);
-    applySecureProtocols(sess);
-
-    WinHttpHandle conn(WinHttpConnect(sess, host, uc.nPort, 0));
-    if (!conn) {
-        outError = "Connect failed";
-        NAVIDROME_ERR("HTTP", "download connect failed: " + safeUrl);
+    auto http = w::openWinHttpRequest(urlStr, L"GET", w::WinHttpTimeouts{15000, 15000, 300000},
+                                      cfg_custom_headers.get().c_str());
+    if (!http.ok()) {
+        outError = http.error;
+        NAVIDROME_ERR("HTTP", "download open failed (" + outError + "): " + safeUrl);
         return false;
     }
-
-    DWORD flags = (uc.nScheme == INTERNET_SCHEME_HTTPS) ? WINHTTP_FLAG_SECURE : 0;
-    WinHttpHandle req(WinHttpOpenRequest(conn, L"GET", path,
-        nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, flags));
-    if (!req) {
-        outError = "WinHttpOpenRequest failed";
-        return false;
-    }
-    HINTERNET hReq = req;
-
-    std::wstring hdrs = customHeadersWide();
-    if (!hdrs.empty())
-        WinHttpAddRequestHeaders(hReq, hdrs.c_str(), (DWORD)-1,
-            WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE);
 
     bool ok = false;
-    if (WinHttpSendRequest(hReq, nullptr, 0, nullptr, 0, 0, 0) &&
-        WinHttpReceiveResponse(hReq, nullptr)) {
-        DWORD status = 0, sz = sizeof(status);
-        WinHttpQueryHeaders(hReq,
-            WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-            nullptr, &status, &sz, nullptr);
+    DWORD e = 0;
+    if (w::sendWinHttpRequest(http.request, nullptr, e)) {
+        const DWORD status = w::winHttpStatus(http.request);
         if (status != 200) {
             outError = "HTTP " + std::to_string(status);
         } else {
             HANDLE hFile = CreateFileW(destPath.c_str(), GENERIC_WRITE, 0, nullptr,
                                        CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
             if (hFile == INVALID_HANDLE_VALUE) {
-                outError = "Cannot create file (err=" +
-                           std::to_string(GetLastError()) + ")";
+                outError = "Cannot create file (err=" + std::to_string(GetLastError()) + ")";
             } else {
-                ok = true;
-                DWORD avail = 0;
-                while (ok && WinHttpQueryDataAvailable(hReq, &avail) && avail > 0) {
-                    std::vector<char> chunk(avail);
-                    DWORD read = 0;
-                    if (!WinHttpReadData(hReq, chunk.data(), avail, &read)) {
-                        outError = "Read failed (err=" +
-                                   std::to_string(GetLastError()) + ")";
-                        ok = false;
-                        break;
-                    }
+                bool writeFailed = false;
+                ok = w::readWinHttpBody(http.request, [&](const char* p, DWORD n) {
                     DWORD written = 0;
-                    if (!WriteFile(hFile, chunk.data(), read, &written, nullptr) ||
-                        written != read) {
-                        outError = "Write failed (err=" +
-                                   std::to_string(GetLastError()) + ")";
-                        ok = false;
-                        break;
+                    if (!WriteFile(hFile, p, n, &written, nullptr) || written != n) {
+                        outError = "Write failed (err=" + std::to_string(GetLastError()) + ")";
+                        writeFailed = true;
+                        return false;
                     }
-                }
+                    return true;
+                });
+                if (!ok && !writeFailed)
+                    outError = "Read failed (err=" + std::to_string(GetLastError()) + ")";
                 CloseHandle(hFile);
                 if (!ok) DeleteFileW(destPath.c_str());
             }
         }
     } else {
-        outError = "Request failed (err=" + std::to_string(GetLastError()) + ")";
+        outError = "Request failed (err=" + std::to_string(e) + ")";
     }
 
     if (ok)
-        NAVIDROME_LOG("HTTP", "download ok -> " + toUtf8(destPath));
+        NAVIDROME_LOG("HTTP", "download ok -> " + win::wToU8(destPath));
     else
         NAVIDROME_ERR("HTTP", "download failed (" + outError + "): " + safeUrl);
     return ok;
@@ -631,79 +417,32 @@ navidrome::SubsonicClientWin::httpGetBinary(
     result.cls = FetchClass::Transport;
     result.httpStatus = 0;
 
+    namespace w = navidrome::win;
     NAVIDROME_TIMER("HTTP", "cover " + navidrome::dbg::scrubAuth(urlStr));
-    std::wstring wurl = toWide(urlStr);
 
-    URL_COMPONENTS uc = {};
-    uc.dwStructSize = sizeof(uc);
-    wchar_t host[256] = {}, path[4096] = {};
-    uc.lpszHostName = host; uc.dwHostNameLength = 256;
-    uc.lpszUrlPath = path; uc.dwUrlPathLength = 4096;
-
-    if (!WinHttpCrackUrl(wurl.c_str(), 0, 0, &uc)) {
+    if (abort.is_aborting()) {
+        result.cls = FetchClass::Aborted;
         return result;
     }
-
-    WinHttpHandle sess(WinHttpOpen(L"foo_navidrome/1.0",
-        WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-        WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
-    if (!sess) return result;
-
-    WinHttpSetTimeouts(sess, 0, 15000, 15000, 30000);
-    applySecureProtocols(sess);
+    auto http = w::openWinHttpRequest(urlStr, L"GET", w::WinHttpTimeouts{}, context.customHeaders);
+    if (!http.ok()) return result;
+    HINTERNET hReq = http.request;
 
     if (abort.is_aborting()) {
         result.cls = FetchClass::Aborted;
         return result;
     }
 
-    WinHttpHandle conn(WinHttpConnect(sess, host, uc.nPort, 0));
-    if (!conn) return result;
-
-    DWORD flags = (uc.nScheme == INTERNET_SCHEME_HTTPS) ? WINHTTP_FLAG_SECURE : 0;
-    WinHttpHandle req(WinHttpOpenRequest(conn, L"GET", path,
-        nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, flags));
-    if (!req) return result;
-    HINTERNET hReq = req;
-
-    std::string joined;
-    for (const auto& line : navidrome::parseHeaderLines(context.customHeaders)) {
-        if (!joined.empty()) joined += "\r\n";
-        joined += line;
-    }
-    std::wstring hdrs = joined.empty() ? std::wstring() : toWide(joined);
-    if (!hdrs.empty()) {
-        WinHttpAddRequestHeaders(hReq, hdrs.c_str(), (DWORD)-1,
-            WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE);
-    }
-
-    if (abort.is_aborting()) {
-        result.cls = FetchClass::Aborted;
+    DWORD sendErr = 0;
+    if (!w::sendWinHttpRequest(hReq, nullptr, sendErr)) {
+        NAVIDROME_WARN("HTTP", "cover request failed (winhttp err=" + std::to_string(sendErr) + ")");
         return result;
     }
 
-    if (!WinHttpSendRequest(hReq, nullptr, 0, nullptr, 0, 0, 0) ||
-        !WinHttpReceiveResponse(hReq, nullptr)) {
-        NAVIDROME_WARN("HTTP", "cover request failed (winhttp err=" +
-                       std::to_string(GetLastError()) + ")");
-        return result;
-    }
-
-    DWORD status = 0, sz = sizeof(status);
-    if (!WinHttpQueryHeaders(hReq,
-        WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-        nullptr, &status, &sz, nullptr)) {
-        status = 0;
-    }
+    const DWORD status = w::winHttpStatus(hReq);
     result.httpStatus = status;
     result.cls = classifyHttpStatus(status);
-
-    wchar_t ctBuf[256] = {};
-    DWORD ctLen = sizeof(ctBuf);
-    if (WinHttpQueryHeaders(hReq, WINHTTP_QUERY_CONTENT_TYPE,
-        nullptr, ctBuf, &ctLen, nullptr)) {
-        result.contentType = toUtf8(ctBuf);
-    }
+    result.contentType = w::winHttpContentType(hReq);
 
     if (status == 200) {
         std::vector<uint8_t> body;

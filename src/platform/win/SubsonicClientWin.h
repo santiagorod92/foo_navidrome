@@ -22,6 +22,7 @@ public:
     static SubsonicClientWin& get();
 
     bool isConfigured() const;
+    SubsonicCore& core() { return *m_core; }
     SubsonicRequestContext snapshot() const;
     bool ping(std::string& outError);
     bool serverInfo(ServerInfo& out, std::string& outError);
@@ -121,8 +122,6 @@ public:
     std::string coverArtURL(const SubsonicRequestContext& context,
                             const std::string& id, int size = 0) const;
 
-    static std::vector<std::string> customHeaderLines();
-    static std::wstring customHeadersWide();
 
     struct BinaryFetchResult {
         FetchClass cls;

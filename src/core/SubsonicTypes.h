@@ -79,6 +79,18 @@ inline const std::vector<int>& maxBitrateOptions() {
 
 constexpr int kScanPollIntervalMs = 1500;
 
+inline std::string scanProgressText(long long count) {
+    return "Scanning… " + std::to_string(count) + " processed";
+}
+
+inline std::string scanCompleteText(long long count) {
+    return "Scan complete — " + std::to_string(count) + " items";
+}
+
+inline std::string scanFailedText(const std::string& error) {
+    return "Scan failed: " + (error.empty() ? std::string("unknown error") : error);
+}
+
 constexpr const char* kPrefsAuthorLine = "Author: Santiago Rodriguez";
 constexpr const char* kSourceCodeUrl   = "https://github.com/santiagorod92/foo_navidrome";
 
@@ -115,6 +127,35 @@ inline std::vector<std::string> parseHeaderLines(const std::string& blob) {
     flush();
     return out;
 }
+
+inline std::string joinHeaderLines(const std::string& blob, const char* separator = "\r\n") {
+    std::string joined;
+    for (const auto& line : parseHeaderLines(blob)) {
+        if (!joined.empty()) joined += separator;
+        joined += line;
+    }
+    return joined;
+}
+
+inline bool splitHeaderLine(const std::string& line, std::string& name, std::string& value) {
+    const size_t colon = line.find(':');
+    if (colon == std::string::npos) return false;
+    name = line.substr(0, colon);
+    const size_t ne = name.find_last_not_of(" \t");
+    name = ne == std::string::npos ? std::string() : name.substr(0, ne + 1);
+    const size_t vs = line.find_first_not_of(" \t", colon + 1);
+    value = vs == std::string::npos ? std::string() : line.substr(vs);
+    return !name.empty();
+}
+
+constexpr const char* kDefaultSalt = "fb2k_navidrome";
+
+inline std::string effectiveSalt(const std::string& salt) {
+    return salt.empty() ? std::string(kDefaultSalt) : salt;
+}
+
+constexpr const char* kAuthRejectedMessage =
+    "Navidrome: the server rejected the configured credentials — check Preferences › Tools › Navidrome";
 
 struct ScrobbleTracker {
     struct NewTrackActions {
@@ -200,5 +241,19 @@ inline std::string describeSessionEnv(const SessionEnv& e) {
         + "  scrobble=" + (e.scrobble ? "on" : "off")
         + "  startupRefresh=" + (e.startupRefresh ? "on" : "off")
         + "  customHeaders=" + (e.customHeaders ? "yes" : "no");
+}
+
+inline std::string ratingRefreshSummary(std::size_t ok, std::size_t failed, std::size_t ungrouped) {
+    std::string msg = "Navidrome: refreshed ratings from " + std::to_string(ok) + " album(s)";
+    if (failed > 0)    msg += ", " + std::to_string(failed) + " album(s) failed";
+    if (ungrouped > 0) msg += ", " + std::to_string(ungrouped) +
+        " entry/entries skipped (no album id, added by an older version)";
+    return msg;
+}
+
+inline std::string ratingRefreshNoAlbumIdsMessage(std::size_t entries) {
+    return "Navidrome: " + std::to_string(entries) +
+        " playlist entry/entries carry no album id (added by an older version)"
+        " — open their album in the browser to refresh them";
 }
 }
