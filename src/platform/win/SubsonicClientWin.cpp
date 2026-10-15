@@ -1,6 +1,6 @@
 #include "stdafx.h"
 #include "SubsonicClientWin.h"
-#include "WinHttp.h"
+#include "WinHttpClient.h"
 #include "WinUi.h"
 #include "../../core/MediaEnrichmentLogic.h"
 #include "../../core/NavidromeDebugLog.h"

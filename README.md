@@ -604,7 +604,7 @@ foo_navidrome/
 │           ├── foo_navidrome.vcxproj       #   Visual Studio project
 │           ├── stdafx.h/.cpp               #   Windows precompiled header
 │           ├── SubsonicClientWin.h/.cpp    #   WinHTTP transport over SubsonicCore
-│           ├── WinHttp.h/.cpp              #   the one WinHTTP request helper
+│           ├── WinHttpClient.h/.cpp        #   the one WinHTTP request helper
 │           ├── NavidromePluginWin.cpp      #   main prefs page, Custom Headers window, Media Library page
 │           ├── *PrefsWin.cpp               #   Radio / Libraries / Browser Sections / AudioMuse-AI prefs pages
 │           ├── NavidromeLibraryServiceWin.cpp # platform seams (core, cover bytes)
@@ -786,7 +786,7 @@ The component is a **shared C++ core + per-platform UI/HTTP layers** — see [Pr
 
 - **`src/core/` — shared by both platforms:** Subsonic API (`SubsonicCore`), data types/URI/JSON (`SubsonicTypes.h`), browser tree model (`NavidromeBrowserModel`), and the SDK glue (`main.cpp` plus one `Navidrome*.cpp` per topic: input handler, art extractor, scrobbler, menus, play queue, services). New behaviour goes here.
 - **`src/platform/mac/` (ObjC++):** `SubsonicClient.mm` (NSURLSession transport), `NavidromePlugin.mm` (prefs page and UI element registration), plus the AppKit browser, lyrics panel and preferences UI.
-- **`src/platform/win/` (Win32/ATL):** `SubsonicClientWin.cpp` + `WinHttp.cpp` (WinHTTP transport), `NavidromePluginWin.cpp` and the `*PrefsWin.cpp` pages, `BrowserWindow.*`.
+- **`src/platform/win/` (Win32/ATL):** `SubsonicClientWin.cpp` + `WinHttpClient.cpp` (WinHTTP transport), `NavidromePluginWin.cpp` and the `*PrefsWin.cpp` pages, `BrowserWindow.*`.
 
 Platform folders only hold transport, widget and wiring code — a data-layer fix belongs in `src/core/` so both platforms get it.
 

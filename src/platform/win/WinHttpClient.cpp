@@ -1,5 +1,5 @@
 #include "stdafx.h"
-#include "WinHttp.h"
+#include "WinHttpClient.h"
 #include "WinUi.h"
 #include <vector>
 

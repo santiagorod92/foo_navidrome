@@ -157,7 +157,7 @@
     <ClCompile Include="..\..\core\NavidromePlayQueue.cpp" />
     <ClCompile Include="..\..\core\NavidromeServices.cpp" />
     <ClCompile Include="NavidromeLibraryServiceWin.cpp" />
-    <ClCompile Include="WinHttp.cpp" />
+    <ClCompile Include="WinHttpClient.cpp" />
     <ClCompile Include="AudioMusePrefsWin.cpp" />
     <ClCompile Include="LyricsWindow.cpp" />
     <ClCompile Include="LyricsElementsWin.cpp" />
