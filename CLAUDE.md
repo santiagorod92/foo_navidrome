@@ -169,6 +169,13 @@ holds only what's true for both; anything repo-specific stays in the repo's own 
 - **macOS VM:** `../macos-devbox` (`mvm`, dockur/macos, Intel guest). **Windows 11 VM:**
   `../windows-devbox` (`wvm`, dockur/windows), for Dark Mode, DPI and native theming that Wine
   fakes. Never `docker prune`/`rm`/`rmi`.
+- **UI tests:** both repos drive the real foobar2000 with one script,
+  `scripts/ui-test.sh <wine|win11|mac> <scenario>`: each scenario is written once over a small
+  per-platform driver and asserts on the component log, the process and crash reports.
+  `ui-test.sh compare <scenario> [platforms]` prints a step matrix that marks where platforms
+  differ (`PARALLEL=1` runs them at once; one test agent per platform works the same way).
+  Run Windows changes on Wine *and* the Win11 VM: Wine is an emulation and real Windows
+  differs (dark-mode theming, popups, focus). Check the screenshots, not only the log.
 
 ### Troubleshooting
 - **DLL fails to load** ("No access to memory location"; fb2k falls back to the Default UI):
