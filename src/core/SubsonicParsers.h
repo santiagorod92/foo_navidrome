@@ -120,6 +120,7 @@ inline Album parseAlbum(const json::Value& a) {
     al.artist     = jStr(a, "artist");
     al.artistId   = jId(a, "artistId");
     al.coverArtId = jId(a, "coverArt");
+    al.created    = jStr(a, "created");
     al.year       = jInt(a, "year");
     al.songCount  = jInt(a, "songCount");
     al.starred    = jFlag(a, "starred");

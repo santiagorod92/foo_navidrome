@@ -22,6 +22,7 @@ struct Album {
     std::string artist;
     std::string artistId;
     std::string coverArtId;
+    std::string created;
     int year      = 0;
     int songCount = 0;
     bool starred  = false;
