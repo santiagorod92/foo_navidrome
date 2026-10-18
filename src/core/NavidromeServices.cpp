@@ -29,6 +29,7 @@
 #include <SDK/coreversion.h>
 #include <helpers/advconfig_impl.h>
 #include <atomic>
+#include <functional>
 #include <chrono>
 #include <unordered_map>
 #include <unordered_set>
@@ -68,28 +69,24 @@ public:
 
 static service_factory_single_t<navidrome_rating_api_impl> g_navidrome_rating_api_factory;
 
-class navidrome_library_api_impl : public navidrome::navidrome_library_api {
+class navidrome_library_api_impl : public navidrome::navidrome_library_api_v2 {
 public:
     bool is_configured() override { return navidrome::libraryCore().isConfigured(); }
 
     bool list_albums(navidrome::library_album_sink& sink, abort_callback& abort,
                      pfc::string_base& errorOut) override {
-        std::string err;
-        size_t n = 0;
-        const bool ok = navidrome::listLibraryAlbums(
-            navidrome::libraryClient(), [&abort] { return abort.is_aborting(); },
-            [&](const navidrome::Album& al) {
-                sink.on_album(al.id.c_str(), al.name.c_str(), al.artist.c_str(), al.artistId.c_str(),
-                              al.coverArtId.c_str(), al.year, al.songCount);
-                ++n;
-            }, err);
-        if (!ok) {
-            NAVIDROME_WARN("Library", "list_albums failed after " + std::to_string(n) + " albums: " + err);
-            errorOut = err.c_str();
-            return false;
-        }
-        NAVIDROME_LOG("Library", "list_albums: " + std::to_string(n) + " albums");
-        return true;
+        return walk_albums(abort, errorOut, [&](const navidrome::Album& al) {
+            sink.on_album(al.id.c_str(), al.name.c_str(), al.artist.c_str(), al.artistId.c_str(),
+                          al.coverArtId.c_str(), al.year, al.songCount);
+        });
+    }
+
+    bool list_albums_v2(navidrome::library_album_sink_v2& sink, abort_callback& abort,
+                        pfc::string_base& errorOut) override {
+        return walk_albums(abort, errorOut, [&](const navidrome::Album& al) {
+            sink.on_album(al.id.c_str(), al.name.c_str(), al.artist.c_str(), al.artistId.c_str(),
+                          al.coverArtId.c_str(), al.year, al.songCount, al.created.c_str());
+        });
     }
 
     album_art_data_ptr fetch_cover(const char* coverArtId, int size, abort_callback& abort) override {
@@ -124,6 +121,22 @@ public:
     }
 
 private:
+    static bool walk_albums(abort_callback& abort, pfc::string_base& errorOut,
+                            const std::function<void(const navidrome::Album&)>& emit) {
+        std::string err;
+        size_t n = 0;
+        const bool ok = navidrome::listLibraryAlbums(
+            navidrome::libraryClient(), [&abort] { return abort.is_aborting(); },
+            [&](const navidrome::Album& al) { emit(al); ++n; }, err);
+        if (!ok) {
+            NAVIDROME_WARN("Library", "list_albums failed after " + std::to_string(n) + " albums: " + err);
+            errorOut = err.c_str();
+            return false;
+        }
+        NAVIDROME_LOG("Library", "list_albums: " + std::to_string(n) + " albums");
+        return true;
+    }
+
     static void enqueue(std::vector<navidrome::BrowserNodePtr> nodes, bool replace, bool play,
                         const std::string& what, const std::string& err) {
         if (nodes.empty()) {

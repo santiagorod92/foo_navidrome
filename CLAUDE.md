@@ -44,7 +44,10 @@ installed.
   album walk = shared `listLibraryAlbums()`, tested in `tests/LibraryServiceTests.cpp`) — publishes the server's albums (streamed through a caller-implemented
   `library_album_sink`, plain `const char*`/`int` so nothing crosses the DLL boundary in a
   std/pfc container), cover-art bytes (`fetch_cover`, thumbnails cached under `<id>@<size>`) and a
-  `play_album` action. `list_albums`/`fetch_cover` block (one request per artist) — worker thread
+  `play_album` action. `navidrome_library_api_v2` (own GUID, derives from v1, reached with
+  `service_query_t`) adds `list_albums_v2` + `library_album_sink_v2`, which also passes the
+  album's Subsonic `created` date (ISO-8601) for "recently added"; v1 stays for older consumers,
+  and a consumer falls back to v1 when the query fails (older foo_navidrome). `list_albums`/`fetch_cover` block (one request per artist) — worker thread
   only. Consumer: foo_ui_panels' album grid (`src/panels/album_list.cpp`). Vendored copy:
   `foo_ui_panels/src/core/navidrome_library_api.h`.
 

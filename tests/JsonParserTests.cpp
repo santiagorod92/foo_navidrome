@@ -84,9 +84,11 @@ TEST_CASE(testSubsonicParsers) {
 
     navidrome::Album al = navidrome::parseAlbum(parse(
         "{\"id\":\"al1\",\"name\":\"Rec\",\"artist\":\"A\",\"artistId\":\"ar1\","
-        "\"coverArt\":\"c\",\"year\":1999,\"songCount\":10,\"starred\":\"x\"}"));
+        "\"coverArt\":\"c\",\"year\":1999,\"songCount\":10,\"starred\":\"x\","
+        "\"created\":\"2024-05-01T12:34:56.123Z\"}"));
     check(al.id == "al1" && al.name == "Rec" && al.year == 1999 && al.songCount == 10 && al.starred,
         "parseAlbum fields");
+    check(al.created == "2024-05-01T12:34:56.123Z", "parseAlbum keeps the server's created date");
     check(navidrome::parseAlbum(parse("{}")).name == "Unknown Album",
         "parseAlbum name default");
 
