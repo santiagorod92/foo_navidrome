@@ -10,6 +10,7 @@
 #include "NavidromeTrackInput.h"
 #include "SubsonicTypes.h"
 #include "NavidromeSettings.h"
+#include "NavidromeOfflineCache.h"
 #include <SDK/cfg_var.h>
 #include <SDK/http_client.h>
 #include <SDK/metadb.h>
@@ -56,12 +57,33 @@ void navidrome::TrackDecoder::open(const TrackURI& track, unsigned flags, abort_
     m_track = track;
     m_flags = flags;
     m_seekByReopen = false;
+    if (openCached(abort)) return;
     openAt(0.0, abort);
     if (!m_decoder->can_seek()) {
         m_seekByReopen = libraryCore().canSeekByTimeOffset();
         NAVIDROME_LOG("Input", std::string("stream not seekable; seek by timeOffset ")
                       + (m_seekByReopen ? "enabled (transcodeOffset)" : "unavailable"));
     }
+}
+
+bool navidrome::TrackDecoder::openCached(abort_callback& abort) {
+    const std::string cached = offlineCachedPath(m_track);
+    if (cached.empty()) return false;
+    const std::string path = "file://" + cached;
+    try {
+        service_ptr_t<input_decoder> decoder;
+        input_entry::g_open_for_decoding(decoder, nullptr, path.c_str(), abort, true);
+        if (decoder.is_empty()) throw exception_io_data();
+        decoder->initialize(0, m_flags, abort);
+        m_decoder = decoder;
+    } catch (const exception_aborted&) {
+        throw;
+    } catch (const std::exception& e) {
+        NAVIDROME_WARN("Input", "id=" + m_track.id + " offline copy unreadable (" + e.what() + "), streaming instead");
+        return false;
+    }
+    NAVIDROME_LOG("Input", "id=" + m_track.id + " playing offline copy " + cached);
+    return true;
 }
 
 void navidrome::TrackDecoder::openAt(double offsetSeconds, abort_callback& abort) {

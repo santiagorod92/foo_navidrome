@@ -60,6 +60,8 @@ inline std::string NBCStr(NSString *x) {
 - (IBAction)setRatingFromMenu:(NSMenuItem *)item;
 - (IBAction)sendActivePlaylist:(id)sender;
 - (IBAction)downloadSelection:(id)sender;
+- (IBAction)makeSelectionAvailableOffline:(id)sender;
+- (IBAction)removeSelectionOfflineCopies:(id)sender;
 - (void)refreshServerPlaylists;
 - (void)menuNeedsUpdate:(NSMenu *)menu;
 - (void)collectSelectedSongIds:(void (^)(NSArray<NSString *> *ids, NSError *err))done;

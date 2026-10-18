@@ -76,6 +76,8 @@ public:
         COMMAND_ID_HANDLER_EX(IDC_RENAME_PLAYLIST,  OnRenamePlaylist)
         COMMAND_ID_HANDLER_EX(IDC_DELETE_PLAYLIST,  OnDeletePlaylist)
         COMMAND_ID_HANDLER_EX(IDC_DOWNLOAD,         OnDownload)
+        COMMAND_ID_HANDLER_EX(IDC_MAKE_OFFLINE,     OnOffline)
+        COMMAND_ID_HANDLER_EX(IDC_REMOVE_OFFLINE,   OnOffline)
         COMMAND_ID_HANDLER_EX(IDC_REMOVE_BOOKMARK,  OnRemoveBookmark)
         COMMAND_ID_HANDLER_EX(IDC_NEW_RADIO,    OnNewRadioStation)
         COMMAND_ID_HANDLER_EX(IDC_EDIT_RADIO,   OnEditRadioStation)
@@ -116,6 +118,8 @@ private:
         IDC_UNSUBSCRIBE_PODCAST = 1028,
         IDC_ARTIST_INFO         = 1029,
         IDC_ALCHEMY             = 1030,
+        IDC_MAKE_OFFLINE        = 1031,
+        IDC_REMOVE_OFFLINE      = 1032,
         IDC_PLAYLIST_FIRST = 1100,
         IDC_PLAYLIST_LAST  = 1299,
     };
@@ -156,6 +160,7 @@ private:
     void    OnRenamePlaylist(UINT, int, HWND);
     void    OnDeletePlaylist(UINT, int, HWND);
     void    OnDownload(UINT, int, HWND);
+    void    OnOffline(UINT, int id, HWND);
     void    OnRemoveBookmark(UINT, int, HWND);
     void    OnNewRadioStation(UINT, int, HWND);
     void    OnEditRadioStation(UINT, int, HWND);

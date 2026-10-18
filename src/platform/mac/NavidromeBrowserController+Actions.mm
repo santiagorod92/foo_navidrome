@@ -6,6 +6,7 @@
 #include "../../core/NavidromeAudioMuse.h"
 #include "../../core/NavidromeDebugLog.h"
 #include "../../core/NavidromePlaylistSync.h"
+#include "../../core/NavidromeOfflineCache.h"
 #import "MacI18n.h"
 #include <SDK/playlist.h>
 #include <SDK/metadb.h>
@@ -230,6 +231,40 @@
         dispatch_async(dispatch_get_main_queue(), ^{
             [self->_spinner stopAnimation:nil];
             self->_statusLabel.stringValue = @(navidrome::downloadSummary(okCount, failCount).c_str());
+        });
+    });
+}
+
+- (IBAction)makeSelectionAvailableOffline:(id)sender { [self offlineSelection:YES]; }
+- (IBAction)removeSelectionOfflineCopies:(id)sender  { [self offlineSelection:NO]; }
+
+- (void)offlineSelection:(BOOL)make {
+    NSArray<NavidromeNode *> *nodes = [self selectedNodes];
+    if (nodes.count == 0) { _statusLabel.stringValue = NDTr("Select at least one item first"); return; }
+
+    [_spinner startAnimation:nil];
+    _statusLabel.stringValue = NDTr("Resolving tracks…");
+    NSArray *nodesCopy = [nodes copy];
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSError *err = nil;
+        NSMutableArray<NavidromeNode *> *songs = [self collectSelectionSongs:nodesCopy error:&err];
+        std::vector<navidrome::BrowserNodePtr> core;
+        for (NavidromeNode *s in songs)
+            core.push_back(std::make_shared<navidrome::BrowserNode>([s coreNode]));
+        if (core.empty())
+            NAVIDROME_WARN("UI", std::string(make ? "make offline" : "remove offline") +
+                           ": resolving the selection failed: " + NBCStr(err.localizedDescription ?: @""));
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self->_spinner stopAnimation:nil];
+            if (core.empty()) {
+                self->_statusLabel.stringValue = err
+                    ? NDTrf("Error: {0}", { NDStd(err.localizedDescription) })
+                    : NDTr("No tracks found");
+                return;
+            }
+            self->_statusLabel.stringValue = @"";
+            if (make) navidrome::makeNodesAvailableOffline(core);
+            else      navidrome::removeNodesOfflineCopies(core);
         });
     });
 }

@@ -155,6 +155,7 @@
     <ClCompile Include="..\..\core\NavidromeMenus.cpp" />
     <ClCompile Include="..\..\core\NavidromeAudioMuse.cpp" />
     <ClCompile Include="..\..\core\NavidromePlayQueue.cpp" />
+    <ClCompile Include="..\..\core\NavidromeOfflineCache.cpp" />
     <ClCompile Include="..\..\core\NavidromeServices.cpp" />
     <ClCompile Include="NavidromeLibraryServiceWin.cpp" />
     <ClCompile Include="WinHttpClient.cpp" />
@@ -179,6 +180,9 @@
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="..\..\core\MediaEnrichmentLogic.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\..\core\OfflineCache.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="..\..\core\I18n.cpp">
@@ -208,6 +212,8 @@
     <ClInclude Include="..\..\core\CoreBrowserClient.h" />
     <ClInclude Include="..\..\core\NavidromeGuids.h" />
     <ClInclude Include="..\..\core\NavidromeSettings.h" />
+    <ClInclude Include="..\..\core\NavidromeOfflineCache.h" />
+    <ClInclude Include="..\..\core\OfflineCache.h" />
     <ClInclude Include="..\..\core\I18n.h" />
     <ClInclude Include="..\..\core\NavidromeSdkGlue.h" />
     <ClInclude Include="SubsonicClientWin.h" />

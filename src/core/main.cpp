@@ -9,6 +9,7 @@
 #include "NavidromeTrackInput.h"
 #include "SubsonicTypes.h"
 #include "NavidromeSettings.h"
+#include "NavidromeOfflineCache.h"
 #include <SDK/cfg_var.h>
 #include <SDK/http_client.h>
 #include <SDK/metadb.h>
@@ -199,6 +200,9 @@ std::string navidrome::collectDiagnostics() {
     d.audioMuse       = cfg_audiomuse_url.get().length() > 0;
     d.verboseLogging  = dbg::Logger::get().verbose();
     d.uiLanguage      = i18n::languageCode(i18n::language());
+    d.prefetch        = prefetchEnabled();
+    d.prefetchLimitMB = prefetchLimitMB();
+    d.offline         = offlineStore().usage();
 
     NAVIDROME_LOG("Env", std::string("diagnostics collected, server ") +
                   (d.configured ? (d.serverReached ? "reachable" : "unreachable") : "not configured"));

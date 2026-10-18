@@ -808,6 +808,8 @@ void BrowserWindow::OnContextMenu(CWindow wnd, CPoint point) {
                     trw("Send Active Playlist to Navidrome").c_str());
     menu.AppendMenu(MF_STRING, IDC_RANDOM_MIX, trw("Random Mix").c_str());
     menu.AppendMenu(MF_STRING, IDC_DOWNLOAD, trw("Download Original Files…").c_str());
+    menu.AppendMenu(MF_STRING, IDC_MAKE_OFFLINE, trw("Make Available Offline").c_str());
+    menu.AppendMenu(MF_STRING, IDC_REMOVE_OFFLINE, trw("Remove Offline Copy").c_str());
 
     dbgLog("OnContextMenu: showing TrackPopupMenu");
     menu.TrackPopupMenu(TPM_LEFTALIGN | TPM_RIGHTBUTTON, point.x, point.y, *this);

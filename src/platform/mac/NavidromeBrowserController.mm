@@ -312,6 +312,16 @@ NSNotificationName const NavidromeBrowserSectionsDidChangeNotification =
                                            keyEquivalent:@""];
     downloadItem.target = self;
 
+    NSMenuItem *offlineItem = [rowMenu addItemWithTitle:NDTr("Make Available Offline")
+                                                 action:@selector(makeSelectionAvailableOffline:)
+                                          keyEquivalent:@""];
+    offlineItem.target = self;
+
+    NSMenuItem *removeOfflineItem = [rowMenu addItemWithTitle:NDTr("Remove Offline Copy")
+                                                       action:@selector(removeSelectionOfflineCopies:)
+                                                keyEquivalent:@""];
+    removeOfflineItem.target = self;
+
     _outlineView.menu = rowMenu;
 
     NSTableColumn *nameCol = [[NSTableColumn alloc] initWithIdentifier:@"name"];

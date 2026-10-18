@@ -30,6 +30,7 @@ A [foobar2000](https://www.foobar2000.org/) component that lets you browse and s
 - **ReplayGain**: the server's track/album gain and peak values are passed to foobar2000, so *Playback › ReplayGain* evens out the volume of streamed tracks like it does for local files (needs an OpenSubsonic server that reports `replayGain`, such as current Navidrome, and files with ReplayGain tags)
 - **Play queue sync** — **File › Save Play Queue to Navidrome** stores the playing (or active) playlist, the current track and its position on the server; **File › Restore Play Queue from Navidrome** loads the queue saved there by any Subsonic client (Symfonium, Feishin, Tempo, …) into a *Navidrome Play Queue* playlist and resumes where it left off. See [Play queue sync](#play-queue-sync)
 - **Download Original Files…** from the right-click menu — saves the selected tracks to a folder, always in their stored format regardless of the streaming setting
+- **Offline playback** — **Make Available Offline** (browser right-click menu, or right-click › Navidrome on playlist tracks) keeps a local copy of the original files; those tracks then play, and seek, without the server. Optional **prefetch** downloads the next track while the current one plays, into a size-capped cache. See [Offline playback](#offline-playback)
 - **English and Spanish UI** — follows the system language, or pick one in *Preferences › Tools › Navidrome › Language*. See [Language](#language)
 - Add albums or artists to playlist in one click (loads all songs automatically)
 - Right-click any row for a **Play Now / Add to Playlist** context menu
@@ -356,6 +357,36 @@ comes first — has been heard. Turn it off with **Report plays to Navidrome
 (scrobbling)** in *Preferences › Tools › Navidrome*.
 
 Tracks land in the playlist as `navidrome://track/<id>?...` URIs. The component resolves these to the current HTTP stream when playback starts, so your playlists keep working if you change credentials or move the server.
+
+#### Offline playback
+
+Every Navidrome track is checked against a local cache before it is streamed:
+when a copy is there, it plays from disk, seeks instantly and needs no server.
+The cache lives in the foobar2000 profile, under `foo_navidrome-cache/`, in two
+parts:
+
+- **Pinned copies** (`pinned/`) — right-click songs, albums, artists or
+  playlists in the browser, or tracks in a foobar2000 playlist (right-click ›
+  *Navidrome*), and pick **Make Available Offline**. The original files are
+  downloaded (`download.view`, like *Download Original Files…*) with a progress
+  window you can abort. They stay until you pick **Remove Offline Copy** on the
+  same tracks; nothing ever evicts them. On Windows, the copy of a track that's
+  playing can't be deleted while it's open: it's removed right away from
+  foo_navidrome's point of view and deleted from disk when that track stops.
+- **Prefetch** (`prefetch/`) — off by default. Turn it on in *Preferences ›
+  Advanced › Tools › Navidrome: prefetch the next track to a local cache*.
+  While a track plays, the next one is downloaded in the background, in the
+  current *Stream as* format, so it starts without buffering and survives a
+  dropped connection. The next track is known when foobar2000 plays in order:
+  the playback queue, then the following playlist entry with the *Default* or
+  *Repeat (playlist)* order (shuffle and random orders can't be predicted, so
+  nothing is prefetched there). *Navidrome: prefetch cache size (MB)* (default
+  1024) caps this part; the oldest files go first, and the two newest are always
+  kept. Turning prefetch off empties it at the next start.
+
+Playback, ratings and scrobbling still need the server: an offline track plays,
+but its play report is lost while the server is unreachable. *Copy Diagnostics*
+reports how many files each part holds and their size.
 
 #### Language
 
@@ -783,11 +814,12 @@ under `build/ui-test/`:
 
 | Platform | Run the scenario | Drive it step by step |
 |---|---|---|
-| Wine | `make win-ui-smoke`, `make win-ui ARGS=playqueue` / `search` / `i18n` / `solo` | `make win-ui ARGS='click X Y'` / `'key down'` / `'shot'` / `'prefs main'` |
-| Windows 11 VM | `make win11-smoke`, `make win11-ui ARGS=playqueue` / `search` / `cui` / `i18n` / `solo` | `make win11-ui ARGS='prefs radio'` / `'browser'` / `'log 50'` |
+| Wine | `make win-ui-smoke`, `make win-ui ARGS=playqueue` / `search` / `i18n` / `offline` / `solo` | `make win-ui ARGS='click X Y'` / `'key down'` / `'shot'` / `'prefs main'` |
+| Windows 11 VM | `make win11-smoke`, `make win11-ui ARGS=playqueue` / `search` / `cui` / `i18n` / `offline` / `solo` | `make win11-ui ARGS='prefs radio'` / `'browser'` / `'log 50'` |
 | macOS VM | `make mac-vm-smoke`, `make mac-vm-ui ARGS=playqueue` / `i18n` / `solo` | `make mac-vm-ui ARGS='browser'` / `'log 50'`, `make mac-vm-click ARGS='x y'` |
 
-`i18n` runs once in Spanish; `solo` moves the sister component [Panels UI](https://github.com/santiagorod92/foo_ui_panels)
+`i18n` runs once in Spanish; `offline` turns prefetch on and checks that the next track plays
+from the cache; `solo` moves the sister component [Panels UI](https://github.com/santiagorod92/foo_ui_panels)
 out of the profile for the run and checks foo_navidrome still works without it (Panels UI's
 own `ui-test.sh <platform> solo` checks the other direction). Every scenario restores what it
 changed. The scenarios expect an English UI: a profile set to Spanish is switched to English

@@ -127,9 +127,18 @@ TEST_CASE(testDiagnosticsText) {
     check(contains(text, "custom headers: set") && contains(text, "Recent log (1 lines)"),
           "custom headers are reported as set/none only; the log tail is included");
 
-    check(contains(text, "UI language: en"), "the UI language defaults to en");
-    d.uiLanguage = "es";
-    check(contains(navidrome::buildDiagnostics(d), "UI language: es"), "the UI language is reported");
+    check(contains(text, "UI language: en") && contains(text, "Offline: 0 pinned (0 B), prefetch off"),
+          "language and offline cache default to en / nothing cached");
+    d.uiLanguage            = "es";
+    d.prefetch              = true;
+    d.prefetchLimitMB       = 1024;
+    d.offline.pinnedFiles   = 3;
+    d.offline.pinnedBytes   = 30ull << 20;
+    d.offline.prefetchFiles = 2;
+    d.offline.prefetchBytes = 12ull << 20;
+    check(contains(navidrome::buildDiagnostics(d),
+                   "UI language: es\n- Offline: 3 pinned (30 MB), prefetch on, 2 cached (12 MB of 1024 MB)"),
+          "offline usage and the prefetch limit are reported");
 
     d.serverReached = false;
     d.serverError   = "Could not connect to https://music.example.com";

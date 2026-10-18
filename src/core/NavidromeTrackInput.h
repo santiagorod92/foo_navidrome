@@ -21,6 +21,7 @@ public:
 
 private:
     void openAt(double offsetSeconds, abort_callback& abort);
+    bool openCached(abort_callback& abort);
 
     TrackURI                     m_track;
     unsigned                     m_flags = 0;
