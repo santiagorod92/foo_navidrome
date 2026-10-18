@@ -1,3 +1,11 @@
+## [1.29.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.28.0...v1.29.0) (2026-10-18)
+
+
+### Features
+
+* **browser:** a new **Decades** section in the Navidrome Browser, right after *Random Albums* ([#37](https://github.com/santiagorod92/foo_navidrome/issues/37)). Expand it for one entry per decade your library spans (*2020s*, *2010s*, … down to your oldest album), then expand a decade for every album released in it, band by band: sorted by artist and then by year, each shown as *Artist — Album* with its year. Add to Playlist / Play Now on a decade queues all of it. Albums without a year aren't listed, and the library filter (*Preferences › Media Library › Navidrome › Libraries*) applies. Like every section, it can be hidden in *Preferences › Tools › Navidrome › Browser Sections*. In Spanish it reads *Décadas* / *Años 1970*. To browse the covers themselves by decade, [Panels UI](https://github.com/santiagorod92/foo_ui_panels) 1.13.0's album browser adds *Sort by › Decade*.
+
+
 ## [1.28.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.27.0...v1.28.0) (2026-10-17)
 
 
