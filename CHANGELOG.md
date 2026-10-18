@@ -1,3 +1,11 @@
+## [1.30.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.29.0...v1.30.0) (2026-10-18)
+
+
+### Features
+
+* **windows:** the Navidrome Browser's search field can be cleared in one go ([#38](https://github.com/santiagorod92/foo_navidrome/issues/38)). While there's text in it, a **×** button shows beside the field; click it, or press **Esc** in the field, and the full tree is back right away. With an empty field, Esc keeps its usual meaning (for example, closing Preferences when the browser is shown there). macOS's search field already had its own clear button.
+
+
 ## [1.29.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.28.0...v1.29.0) (2026-10-18)
 
 
