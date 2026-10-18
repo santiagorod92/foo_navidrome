@@ -28,7 +28,7 @@ fail() { echo "ERROR: $*" >&2; exit 1; }
 
 mkdir -p "$OBJ"
 PREFIX_H="$BUILD/win_prefix.h"
-cat > "$PREFIX_H" <<'EOF'
+cat > "$PREFIX_H.tmp" <<'EOF'
 #pragma once
 #ifndef _WIN32_WINNT
 #  define _WIN32_WINNT 0x0601
@@ -39,6 +39,7 @@ cat > "$PREFIX_H" <<'EOF'
 #include <timeapi.h>
 #include <winioctl.h>
 EOF
+if cmp -s "$PREFIX_H.tmp" "$PREFIX_H"; then rm -f "$PREFIX_H.tmp"; else mv "$PREFIX_H.tmp" "$PREFIX_H"; fi
 
 "$REPO/scripts/version.sh" --header "$REPO/version_generated.h" >/dev/null
 
@@ -60,6 +61,13 @@ while IFS= read -r f; do SRCS+=("$f"); done < <(
 echo "==> compiling ${#SRCS[@]} sources (-j $JOBS) ..."
 : > "$BUILD/errors.log"
 printf '%s\0' "${CL_COMMON[@]}" > "$BUILD/.clflags"
+FLAGS_STAMP="$OBJ/.flags"
+FLAGS_SUM="$(printf '%s\n' "${CL_COMMON[@]}" | shasum)"
+if [ "$(cat "$FLAGS_STAMP" 2>/dev/null)" != "$FLAGS_SUM" ]; then
+  [ -f "$FLAGS_STAMP" ] && echo "==> compile flags changed, dropping the object cache"
+  rm -f "$OBJ"/*.obj "$OBJ"/*.d
+  echo "$FLAGS_SUM" > "$FLAGS_STAMP"
+fi
 export CC1_LLVM="$LLVM" CC1_OBJ="$OBJ" CC1_BUILD="$BUILD" \
        CC1_R="$REPO" CC1_SDK="$SDK_ROOT" CC1_PFC="$PFC_ROOT" CC1_PPUI="$LIBPPUI_ROOT"
 fail=0
