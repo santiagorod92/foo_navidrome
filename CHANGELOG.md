@@ -1,3 +1,14 @@
+## [1.28.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.27.0...v1.28.0) (2026-10-17)
+
+
+### Features
+
+* **offline:** **Make Available Offline** keeps a local copy of Navidrome tracks, which then play and seek from disk without the server. It's in the browser's right-click menu (songs, albums, artists, playlists) and on foobar2000 playlist tracks (right-click › *Navidrome*). The original files are downloaded with a progress window you can abort, and a confirmation says how many tracks were added and how much space they take. Copies live in the foobar2000 profile under `foo_navidrome-cache/pinned/` and are never deleted on their own; **Remove Offline Copy** on the same tracks deletes them. On Windows, the copy of the track that's playing is deleted when that track stops, because Windows can't delete a file that's in use.
+* **offline:** optional **prefetch**: while a track plays, the next one is downloaded in the background (in the current *Stream as* format), so it starts without buffering and survives a dropped connection. Turn it on in *Preferences › Advanced › Tools › Navidrome: prefetch the next track to a local cache* (off by default). *Navidrome: prefetch cache size (MB)* (default 1024) caps that cache: the oldest files go first, and the two newest are always kept. The next track can only be predicted from the playback queue or with the *Default* and *Repeat (playlist)* orders, so nothing is prefetched in shuffle or random. Turning prefetch off empties its cache at the next start. Scrobbles, ratings and cover art still need the server.
+* **language:** the component is now in **English and Spanish**: windows, menus, preferences, status lines and messages. It follows the system language (macOS: the first preferred language; Windows: the display language). To pick one, use the **Language** setting (*Automatic* / *English* / *Español*) on *Preferences › Tools › Navidrome* and restart foobar2000. In Spanish, menu commands have Spanish names, so a script that runs `foobar2000 /command:"Open Navidrome Browser"` needs the Spanish name; keyboard shortcuts keep working. Log lines and *Copy Diagnostics* stay in English, since they're pasted into bug reports.
+* **diagnostics:** *Copy Diagnostics* also reports the UI language and the offline cache: pinned files and their size, and whether prefetch is on and how full its cache is.
+
+
 ## [1.27.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.26.0...v1.27.0) (2026-10-15)
 
 
