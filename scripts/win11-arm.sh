@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/win11-arm.sh <prepare|up|open|provision|deploy|fb2k|seed|cfg|run|ssh|shot|logs|down|status|reset>
+Usage: scripts/win11-arm.sh <prepare|up|open|provision|deploy|fb2k|seed|cfg|run|push|ssh|shot|logs|down|status|reset>
 
 Windows 11 ARM test VM on an Apple Silicon Mac, driven like the Linux Win11 VM:
 one command to start it, its screen in a browser tab (noVNC), ssh in.
@@ -22,10 +22,11 @@ once, by prepare, to download Windows and build its unattended setup.
   provision  one-time, after the install: put your ssh key in the guest and
            install foobar2000 (ARM build, FB2K_VERSION) silently
   deploy   copy build-win-mac/foo_navidrome.dll (or DLL) into the guest profile's
-           user-components-arm64ec/foo_navidrome and restart foobar2000 in the
-           desktop session
+           user-components-arm64ec/<DLL name> and restart foobar2000 in the
+           desktop session (foo_ui_panels deploys its own DLL the same way)
   fb2k     start|stop|cmd <menu command> foobar2000 in the guest's desktop session;
-           fb2k log [LINES] [REGEX] prints the end of the guest's foo_navidrome.log
+           fb2k log [LINES] [REGEX] prints the end of the guest's $COMPONENT.log
+           (COMPONENT, default foo_navidrome)
   seed     copy foo_navidrome's settings (server, account, language, prefetch)
            from SEED_CONFIG (default: this Mac's foobar2000 profile) into the guest.
            A server on a private address is relayed: macOS doesn't let QEMU
@@ -35,6 +36,9 @@ once, by prepare, to download Windows and build its unattended setup.
            start it again with fb2k start)
   run      run EXE [ARGS] in the guest (copied to the guest's temp folder), with
            its output and exit code
+  push     push SRC DEST: copy a local file or folder to DEST (a path under the
+           guest user's home, e.g. AppData/Local/Temp); a folder of the same
+           name already there is replaced
   ssh      ssh into the guest as tester/tester (port 2223)
   shot     save the VM screen to FILE (default build/ui-test/win11-arm-<time>.png)
   logs     follow the VM's serial/QEMU log
@@ -239,7 +243,7 @@ fb2k() {
       gps "for (\$i=0; \$i -lt 20 -and (Get-Process foobar2000 -ErrorAction SilentlyContinue); \$i++) { Start-Sleep 1 }; Stop-Process -Name foobar2000 -ErrorAction SilentlyContinue; exit 0"
       ;;
     cmd)   shift; in_session "$FB2K_EXE" "/command:\"$*\"" ;;
-    log)   gps "Get-Content -Tail ${2:-40} \$env:APPDATA\\foobar2000-v2\\foo_navidrome.log | Where-Object { \$_ -match '${3:-.}' }" ;;
+    log)   gps "Get-Content -Tail ${2:-40} \$env:APPDATA\\foobar2000-v2\\${COMPONENT:-foo_navidrome}.log | Where-Object { \$_ -match '${3:-.}' }" ;;
     *) usage; exit 2 ;;
   esac
 }
@@ -260,9 +264,10 @@ provision() {
 deploy() {
   local dll="${1:-$ROOT/build-win-mac/foo_navidrome.dll}"
   [ -f "$dll" ] || { echo "no $dll (make win-build-mac)" >&2; exit 1; }
+  local name; name="$(basename "$dll" .dll)"
   fb2k stop
-  gps "New-Item -ItemType Directory -Force \$env:APPDATA\\foobar2000-v2\\user-components-arm64ec\\foo_navidrome | Out-Null"
-  gscp "$dll" "tester@127.0.0.1:AppData/Roaming/foobar2000-v2/user-components-arm64ec/foo_navidrome/foo_navidrome.dll"
+  gps "New-Item -ItemType Directory -Force \$env:APPDATA\\foobar2000-v2\\user-components-arm64ec\\$name | Out-Null"
+  gscp "$dll" "tester@127.0.0.1:AppData/Roaming/foobar2000-v2/user-components-arm64ec/$name/$name.dll"
   fb2k start
   echo "deployed $(basename "$dll"), foobar2000 started"
 }
@@ -317,6 +322,11 @@ case "${1:-}" in
     shift; exe="${1:?usage: run EXE [ARGS]}"; shift
     gscp "$exe" "tester@127.0.0.1:AppData/Local/Temp/$(basename "$exe")"
     gssh "cd /d %TEMP% && $(basename "$exe") $*"
+    ;;
+  push)
+    shift; src="${1:?usage: push SRC DEST}"; dest="${2:?usage: push SRC DEST}"
+    gps "Remove-Item -Recurse -Force \"\$HOME\\${dest//\//\\}\\$(basename "$src")\" -ErrorAction SilentlyContinue; New-Item -ItemType Directory -Force \"\$HOME\\${dest//\//\\}\" | Out-Null"
+    gscp -r "$src" "tester@127.0.0.1:$dest/"
     ;;
   ssh)     shift; exec ssh -p "$SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null tester@127.0.0.1 "$@" ;;
   shot)

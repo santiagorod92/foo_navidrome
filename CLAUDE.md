@@ -172,6 +172,11 @@ holds only what's true for both; anything repo-specific stays in the repo's own 
 - **macOS VM:** `../macos-devbox` (`mvm`, dockur/macos, Intel guest). **Windows 11 VM:**
   `../windows-devbox` (`wvm`, dockur/windows), for Dark Mode, DPI and native theming that Wine
   fakes. Never `docker prune`/`rm`/`rmi`.
+- **Windows 11 ARM VM (Apple Silicon Mac):** foo_navidrome's `scripts/win11-arm.sh` (QEMU +
+  HVF, launchd jobs). Both repos drive it with the same `make win11-arm*` targets; foo_ui_panels
+  points at `../foo_navidrome/scripts/win11-arm.sh` (`WIN11_ARM=`). `deploy <dll>` installs into
+  `user-components-arm64ec/<dll name>`, `push` copies a folder in, `COMPONENT=` picks the log
+  `fb2k log` reads, `make win11-arm-test` runs each repo's unit tests in the guest.
 - **UI tests:** both repos drive the real foobar2000 with one script,
   `scripts/ui-test.sh <wine|win11|mac> <scenario>`: each scenario is written once over a small
   per-platform driver and asserts on the component log, the process and crash reports.
