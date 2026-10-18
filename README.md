@@ -30,6 +30,7 @@ A [foobar2000](https://www.foobar2000.org/) component that lets you browse and s
 - **ReplayGain**: the server's track/album gain and peak values are passed to foobar2000, so *Playback › ReplayGain* evens out the volume of streamed tracks like it does for local files (needs an OpenSubsonic server that reports `replayGain`, such as current Navidrome, and files with ReplayGain tags)
 - **Play queue sync** — **File › Save Play Queue to Navidrome** stores the playing (or active) playlist, the current track and its position on the server; **File › Restore Play Queue from Navidrome** loads the queue saved there by any Subsonic client (Symfonium, Feishin, Tempo, …) into a *Navidrome Play Queue* playlist and resumes where it left off. See [Play queue sync](#play-queue-sync)
 - **Download Original Files…** from the right-click menu — saves the selected tracks to a folder, always in their stored format regardless of the streaming setting
+- **English and Spanish UI** — follows the system language, or pick one in *Preferences › Tools › Navidrome › Language*. See [Language](#language)
 - Add albums or artists to playlist in one click (loads all songs automatically)
 - Right-click any row for a **Play Now / Add to Playlist** context menu
 - **Artist Info** from the right-click menu on an artist row — shows the last.fm biography and a link to the full page (`getArtistInfo2.view`)
@@ -209,6 +210,11 @@ the macOS runner before every `xcodebuild`. On Linux the equivalent is
 component** and abort on failure — pass `--no-test` to skip. All paths call
 `scripts/run-unit-tests.sh`, the one place the compile command lives.
 
+The same script first runs `make i18n-check` (`scripts/i18n-check.py`): every
+UI string wrapped in `tr()` / `trf()` / `trw()` / `NDTr()` / `N_()` must have an
+entry in the Spanish table (`src/core/I18nSpanish.cpp`), or the run fails and
+lists what's missing (`make i18n-missing` prints just the keys).
+
 No Xcode, only the Command Line Tools? `make mac-syntax` compiles the shared SDK
 glue and every macOS `.mm` file against the foobar2000 SDK with `-fsyntax-only`
 (no link, no bundle), which catches compile errors before a VM or CI build.
@@ -351,6 +357,14 @@ comes first — has been heard. Turn it off with **Report plays to Navidrome
 
 Tracks land in the playlist as `navidrome://track/<id>?...` URIs. The component resolves these to the current HTTP stream when playback starts, so your playlists keep working if you change credentials or move the server.
 
+#### Language
+
+The component's windows, menus, preferences and messages are in **English** or
+**Spanish**. By default it follows the system language (macOS: the first
+preferred language; Windows: the display language). To pick one, set
+*Preferences › Tools › Navidrome › Language* and restart foobar2000. Log lines
+and *Copy Diagnostics* stay in English, since they're pasted into bug reports.
+
 ---
 
 ## Building on Windows
@@ -442,6 +456,7 @@ Apple Silicon Mac.
 make test          # Linux: fast clang-cl+wine build/run of the unit tests
 make mac-test       # macOS: native clang++ build/run of the SAME test suite
 make mac-syntax     # macOS without Xcode: compile-check the component sources against the SDK
+make i18n-check     # every UI string has a Spanish translation
 make win-build      # Linux: cross-compile the Windows x64 component
 make win-build-launch  # …same, then relaunch Wine foobar2000
 make win-logs       # follow the colourised component debug log (Wine)

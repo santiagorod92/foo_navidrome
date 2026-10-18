@@ -31,9 +31,9 @@ public:
 
     static GUID g_get_guid() { return guid_ui_element_win; }
     static GUID g_get_subclass() { return ui_element_subclass_media_library_viewers; }
-    static void g_get_name(pfc::string_base& out) { out = "Navidrome Browser"; }
+    static void g_get_name(pfc::string_base& out) { out = navidrome::tr("Navidrome Browser"); }
     static const char* g_get_description() {
-        return "Browse, search and play your Navidrome / Subsonic library.";
+        return navidrome::tr("Browse, search and play your Navidrome / Subsonic library.");
     }
     static ui_element_config::ptr g_get_default_configuration() {
         return ui_element_config::g_create_empty(g_get_guid());

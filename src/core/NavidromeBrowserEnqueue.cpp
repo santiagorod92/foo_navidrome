@@ -86,7 +86,7 @@ void navidrome::playFrom(t_size pl, t_size first) {
 
 void navidrome::showBrowserQueueError(const std::string& msg) {
     console::printf("Navidrome Browser: %s", msg.c_str());
-    popup_message::g_show(msg.c_str(), "Navidrome Browser", popup_message::icon_error);
+    popup_message::g_show(msg.c_str(), tr("Navidrome Browser"), popup_message::icon_error);
 }
 
 std::size_t navidrome::enqueueBrowserNodes(
@@ -95,7 +95,7 @@ std::size_t navidrome::enqueueBrowserNodes(
         bool clearFirst,
         const std::function<std::string(const std::string&)>& radioUrl,
         std::string& statusOut) {
-    if (nodes.empty()) { statusOut = "No songs selected"; return 0; }
+    if (nodes.empty()) { statusOut = tr("No songs selected"); return 0; }
 
     const metadb_handle_list tracks = makeTrackHandles(nodes, radioUrl);
 
@@ -116,7 +116,7 @@ std::size_t navidrome::enqueueBrowserNodes(
             navidrome::seekWhenReady(nodes[0]->bookmarkPositionMs / 1000.0);
     }
 
-    statusOut = "Added " + std::to_string(tracks.get_count()) + " tracks";
+    statusOut = trf("Added {0} tracks", { std::to_string(tracks.get_count()) });
     return tracks.get_count();
 }
 
@@ -130,6 +130,26 @@ std::size_t navidrome::playNodesInNewPlaylist(const std::vector<BrowserNodePtr>&
     pm->playlist_add_items(pl, tracks, pfc::bit_array_false());
     playFrom(pl, 0);
     return tracks.get_count();
+}
+
+void navidrome::showConfirmation(const char* title, const std::string& msg) {
+#ifdef __APPLE__
+    fb2k::popup_toast::ptr toast;
+    if (fb2k::popup_toast::tryGet(toast)) {
+        toast->show_toast(msg.c_str(), {});
+        NAVIDROME_LOG("UI", std::string("confirmation: toast (") + title + ")");
+        return;
+    }
+#endif
+    popup_message_v3::query_t q;
+    q.title      = title;
+    q.msg        = msg.c_str();
+    q.buttons    = popup_message_v3::buttonOK;
+    q.defButton  = popup_message_v3::buttonOK;
+    q.icon       = popup_message_v3::iconInformation;
+    q.wndParent  = core_api::get_main_window();
+    q.show();
+    NAVIDROME_LOG("UI", std::string("confirmation: dialog (") + title + ")");
 }
 
 void navidrome::reportError(const char* title, const std::string& msg) {

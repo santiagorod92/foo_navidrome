@@ -8,6 +8,9 @@
 
 using navidrome::win::u8ToWide;
 using navidrome::win::wToU8;
+using navidrome::win::trw;
+using navidrome::tr;
+using navidrome::trf;
 
 namespace {
 
@@ -35,8 +38,8 @@ SIZE layoutOkCancel(HWND parent, HFONT f, const navidrome::win::UiScale& s,
         setFont(b, f);
         return b;
     };
-    HWND ok = mk(L"OK", BS_DEFPUSHBUTTON, IDOK);
-    HWND cancel = mk(L"Cancel", BS_PUSHBUTTON, IDCANCEL);
+    HWND ok = mk(trw("OK").c_str(), BS_DEFPUSHBUTTON, IDOK);
+    HWND cancel = mk(trw("Cancel").c_str(), BS_PUSHBUTTON, IDCANCEL);
     const int okW = fitWidth(ok, s, 24, 76), cancelW = fitWidth(cancel, s, 24, 76);
     ::SetWindowPos(cancel, nullptr, right - cancelW, y, cancelW, btnH, SWP_NOZORDER);
     ::SetWindowPos(ok, nullptr, right - cancelW - s(8) - okW, y, okW, btnH, SWP_NOZORDER);
@@ -230,10 +233,10 @@ private:
             edit.SetWindowText(value.c_str());
             y += rowH + s(10);
         };
-        field(IDC_NAME_LABEL, L"Name:", m_nameEdit, IDC_NAME_EDIT, m_name);
+        field(IDC_NAME_LABEL, trw("Name:").c_str(), m_nameEdit, IDC_NAME_EDIT, m_name);
         m_nameEdit.SetSel(0, -1);
-        field(IDC_URL_LABEL, L"Stream URL:", m_urlEdit, IDC_URL_EDIT, m_streamURL);
-        field(IDC_HOME_LABEL, L"Home page URL (optional):", m_homeEdit, IDC_HOME_EDIT, m_homePageURL);
+        field(IDC_URL_LABEL, trw("Stream URL:").c_str(), m_urlEdit, IDC_URL_EDIT, m_streamURL);
+        field(IDC_HOME_LABEL, trw("Home page URL (optional):").c_str(), m_homeEdit, IDC_HOME_EDIT, m_homePageURL);
 
         m_clientSize = layoutOkCancel(*this, f, s, pad + fieldW, y + s(2), rowH + s(4));
         m_darkMode.AddDialogWithControls(*this);
@@ -286,10 +289,11 @@ bool navidrome::win::promptRadioStation(HWND owner, const wchar_t* title,
 
 bool navidrome::win::pickFolder(HWND owner, std::wstring& outPath) {
     wchar_t display[MAX_PATH] = {};
+    const std::wstring title = trw("Choose a folder for the downloaded tracks");
     BROWSEINFOW bi = {};
     bi.hwndOwner      = owner;
     bi.pszDisplayName = display;
-    bi.lpszTitle      = L"Choose a folder for the downloaded tracks";
+    bi.lpszTitle      = title.c_str();
     bi.ulFlags        = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
 
     HRESULT co = ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);

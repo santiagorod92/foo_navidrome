@@ -111,10 +111,10 @@ enum class Kind { TextSearch, InstantPlaylist, Alchemy, InstantMix };
 
 inline const char* kindName(Kind k) {
     switch (k) {
-        case Kind::TextSearch:      return "Text Search";
-        case Kind::InstantPlaylist: return "Instant Playlist";
-        case Kind::Alchemy:         return "Song Alchemy";
-        case Kind::InstantMix:      return "Instant Mix";
+        case Kind::TextSearch:      return N_("Text Search");
+        case Kind::InstantPlaylist: return N_("Instant Playlist");
+        case Kind::Alchemy:         return N_("Song Alchemy");
+        case Kind::InstantMix:      return N_("Instant Mix");
     }
     return "?";
 }
@@ -127,14 +127,14 @@ inline std::string errorMessage(const HttpResult& r) {
         if (!m.empty()) return m;
     }
     if (!r.error.message.empty()) return r.error.message;
-    return "request failed";
+    return tr("request failed");
 }
 
 inline std::vector<Track> parseTracks(const std::string& body, Kind kind, std::string& outError) {
     outError.clear();
     std::string parseErr;
     const json::Value root = json::parse(body, parseErr);
-    if (!root.isObject()) { outError = "AudioMuse-AI returned an invalid response"; return {}; }
+    if (!root.isObject()) { outError = tr("AudioMuse-AI returned an invalid response"); return {}; }
 
     const json::Value& list = kind == Kind::InstantPlaylist
         ? root["response"]["query_results"] : root["results"];
@@ -155,7 +155,7 @@ inline std::vector<Track> parseTracks(const std::string& body, Kind kind, std::s
     if (out.empty() && kind == Kind::InstantPlaylist) {
         const std::string& msg = root["response"]["message"].asString();
         if (!root["error"].asString().empty()) outError = root["error"].asString();
-        else if (msg.empty()) outError = "AudioMuse-AI found no songs";
+        else if (msg.empty()) outError = tr("AudioMuse-AI found no songs");
         else {
             std::string last;
             std::size_t start = 0;
@@ -166,7 +166,7 @@ inline std::vector<Track> parseTracks(const std::string& body, Kind kind, std::s
                 if (line.find_first_not_of(" \t\r") != std::string::npos) last = line;
                 start = end + 1;
             }
-            outError = "AudioMuse-AI found no songs: " + last;
+            outError = trf("AudioMuse-AI found no songs: {0}", { last });
         }
     }
     return out;
@@ -176,7 +176,7 @@ inline std::vector<Track> request(IJsonPoster& http, const Settings& settings, K
                                   const std::string& body, std::string& outError) {
     outError.clear();
     if (!settings.configured()) {
-        outError = "AudioMuse-AI is not configured (Preferences > Tools > Navidrome > AudioMuse-AI)";
+        outError = tr("AudioMuse-AI is not configured (Preferences > Tools > Navidrome > AudioMuse-AI)");
         return {};
     }
     const char* path = kind == Kind::TextSearch      ? "/api/clap/search"
@@ -188,7 +188,7 @@ inline std::vector<Track> request(IJsonPoster& http, const Settings& settings, K
     NAVIDROME_LOG("AudioMuse", std::string(kindName(kind)) + " POST " + dbg::scrubAuth(url));
     const HttpResult r = http.postJson(url, body, settings.token, timeout);
     if (!r.error.ok()) {
-        outError = std::string(kindName(kind)) + ": " + errorMessage(r);
+        outError = std::string(tr(kindName(kind))) + ": " + errorMessage(r);
         NAVIDROME_WARN("AudioMuse", outError + " (" + errorKindName(r.error.kind) +
                        ", HTTP " + std::to_string(r.error.http) + ")");
         return {};
@@ -215,7 +215,7 @@ inline std::vector<Track> alchemy(IJsonPoster& http, const Settings& s,
                                   const std::vector<AlchemySeed>& seeds, std::string& outError) {
     bool anyAdd = false;
     for (const auto& seed : seeds) anyAdd = anyAdd || (!seed.subtract && !seed.id.empty());
-    if (!anyAdd) { outError = "Song Alchemy needs at least one song or artist"; return {}; }
+    if (!anyAdd) { outError = tr("Song Alchemy needs at least one song or artist"); return {}; }
     return request(http, s, Kind::Alchemy, alchemyBody(seeds, s.count, s.server), outError);
 }
 
@@ -229,7 +229,7 @@ inline std::vector<Track> similarTo(IJsonPoster& http, const Settings& s, const 
                                     BrowserNode::Type seedType, std::string& outError) {
     outError.clear();
     if (!canMixFrom(seedType) || seedId.empty()) {
-        outError = "AudioMuse-AI can only mix from a song or an artist";
+        outError = tr("AudioMuse-AI can only mix from a song or an artist");
         return {};
     }
     NAVIDROME_LOG("AudioMuse", "Instant Mix fallback: seed=" + seedId +
@@ -241,21 +241,21 @@ inline std::vector<Track> similarTo(IJsonPoster& http, const Settings& s, const 
 }
 
 inline std::string noSimilarMessage(MixFallback fallback, const std::string& audioMuseError) {
-    std::string msg = "Navidrome has no similar songs for this one.";
+    std::string msg = tr("Navidrome has no similar songs for this one.");
     switch (fallback) {
         case MixFallback::NotConfigured:
-            return msg + " Navidrome answers Instant Mix from its agents: the AudioMuse-AI Navidrome "
+            return msg + tr(" Navidrome answers Instant Mix from its agents: the AudioMuse-AI Navidrome "
                    "plugin when it is installed and listed in Navidrome's Agents setting, otherwise "
                    "last.fm, which knows little about less-played tracks.\n\nSet the AudioMuse-AI "
                    "server URL (Preferences > Tools > Navidrome > AudioMuse-AI) and Instant Mix asks "
-                   "AudioMuse-AI directly when Navidrome has nothing.";
+                   "AudioMuse-AI directly when Navidrome has nothing.");
         case MixFallback::Unsupported:
-            return msg + " AudioMuse-AI can only mix from a song or an artist: start the Instant Mix "
-                   "from one of this album's songs or from its artist.";
+            return msg + tr(" AudioMuse-AI can only mix from a song or an artist: start the Instant Mix "
+                   "from one of this album's songs or from its artist.");
         case MixFallback::Failed:
-            return msg + " Asking AudioMuse-AI directly failed too.\n\n" + audioMuseError;
+            return msg + tr(" Asking AudioMuse-AI directly failed too.") + "\n\n" + audioMuseError;
         case MixFallback::Empty:
-            return "Neither Navidrome nor AudioMuse-AI has similar songs for this one.";
+            return tr("Neither Navidrome nor AudioMuse-AI has similar songs for this one.");
     }
     return msg;
 }
@@ -292,7 +292,7 @@ inline std::vector<AlchemySeed> seedsFromNodes(const std::vector<BrowserNodePtr>
         if (seeds.empty()) label = n->displayName;
         seeds.push_back(std::move(s));
     }
-    if (seeds.size() > 1) label += " + " + std::to_string(seeds.size() - 1) + " more";
+    if (seeds.size() > 1) label += trf(" + {0} more", { std::to_string(seeds.size() - 1) });
     return seeds;
 }
 

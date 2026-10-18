@@ -150,7 +150,9 @@ void refreshRatingsOnStart() {
             navidrome::syncRatingsToPlaylists(std::move(updates));
             const std::string msg = navidrome::ratingRefreshSummary(albumIds.size() - failed, failed, ungrouped);
             console::print(msg.c_str());
-            NAVIDROME_LOG("Rating", "startup refresh done: " + msg);
+            NAVIDROME_LOG("Rating", "startup refresh done: " + std::to_string(albumIds.size() - failed) +
+                          " album(s), " + std::to_string(failed) + " failed, " + std::to_string(ungrouped) +
+                          " entr(ies) without album id");
         });
     }).detach();
 }

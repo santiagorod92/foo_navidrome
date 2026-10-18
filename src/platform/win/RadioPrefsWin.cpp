@@ -13,6 +13,9 @@
 
 using navidrome::win::u8ToWide;
 using navidrome::win::wToU8;
+using navidrome::win::trw;
+using navidrome::tr;
+using navidrome::trf;
 
 namespace {
 
@@ -51,9 +54,9 @@ private:
             WS_EX_CLIENTEDGE, IDC_LIST);
         m_list.SetExtendedListViewStyle(LVS_EX_FULLROWSELECT);
         const navidrome::win::UiScale s(*this);
-        m_list.InsertColumn(0, L"Name", LVCFMT_LEFT, s(150));
-        m_list.InsertColumn(1, L"Stream URL", LVCFMT_LEFT, s(260));
-        m_list.InsertColumn(2, L"Home Page", LVCFMT_LEFT, s(180));
+        m_list.InsertColumn(0, trw("Name").c_str(), LVCFMT_LEFT, s(150));
+        m_list.InsertColumn(1, trw("Stream URL").c_str(), LVCFMT_LEFT, s(260));
+        m_list.InsertColumn(2, trw("Home Page").c_str(), LVCFMT_LEFT, s(180));
 
         HFONT f = navidrome::win::uiFont(*this);
         m_list.SetFont(f);
@@ -64,9 +67,9 @@ private:
             navidrome::win::setFont(h, f);
             return h;
         };
-        m_newBtn    = mkButton(IDC_NEW, L"New\u2026");
-        m_editBtn   = mkButton(IDC_EDIT, L"Edit\u2026");
-        m_deleteBtn = mkButton(IDC_DELETE, L"Delete\u2026");
+        m_newBtn    = mkButton(IDC_NEW, trw("New…").c_str());
+        m_editBtn   = mkButton(IDC_EDIT, trw("Edit…").c_str());
+        m_deleteBtn = mkButton(IDC_DELETE, trw("Delete…").c_str());
 
         m_status = CreateWindowW(L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_ENDELLIPSIS,
             0, 0, 0, 0, *this, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_STATUS)), nullptr, nullptr);
@@ -97,8 +100,8 @@ private:
     void setStatus(const std::string& s) { ::SetWindowTextW(m_status, u8ToWide(s).c_str()); }
 
     void refresh() {
-        if (!navidrome::SubsonicClientWin::get().isConfigured()) { setStatus("Not configured"); return; }
-        setStatus("Loading…");
+        if (!navidrome::SubsonicClientWin::get().isConfigured()) { setStatus(tr("Not configured")); return; }
+        setStatus(tr("Loading…"));
         std::thread([this]() {
             std::string err;
             auto stations = navidrome::SubsonicClientWin::get().getRadioStations(err);
@@ -116,9 +119,9 @@ private:
             m_stations = std::move(*stations);
             delete stations;
             populateList();
-            setStatus(m_stations.empty() ? "No radio stations" : "");
+            setStatus(m_stations.empty() ? tr("No radio stations") : "");
         } else {
-            setStatus("Failed to load radio stations");
+            setStatus(tr("Failed to load radio stations"));
         }
         return 0;
     }
@@ -138,13 +141,13 @@ private:
 
     void OnNew(UINT, int, HWND) {
         std::wstring name, streamUrl, homePageUrl;
-        if (!navidrome::win::promptRadioStation(*this, L"New Radio Station", L"", L"", L"",
+        if (!navidrome::win::promptRadioStation(*this, trw("New Radio Station").c_str(), L"", L"", L"",
                                            name, streamUrl, homePageUrl))
             return;
         std::string nameU8 = wToU8(name), urlU8 = wToU8(streamUrl), homeU8 = wToU8(homePageUrl);
-        if (nameU8.empty() || urlU8.empty()) { setStatus("Name and stream URL are required"); return; }
+        if (nameU8.empty() || urlU8.empty()) { setStatus(tr("Name and stream URL are required")); return; }
 
-        setStatus("Creating…");
+        setStatus(tr("Creating…"));
         std::thread([this, nameU8, urlU8, homeU8]() {
             std::string err;
             std::string result = navidrome::SubsonicClientWin::get()
@@ -154,7 +157,7 @@ private:
             fb2k::inMainThread([this, ok, err]() {
                 if (!IsWindow()) return;
                 if (ok) refresh();
-                else setStatus("Failed: " + (err.empty() ? "unknown error" : err));
+                else setStatus(trf("Failed: {0}", { err.empty() ? std::string(tr("unknown error")) : err }));
             });
         }).detach();
     }
@@ -162,21 +165,21 @@ private:
     void OnEdit(UINT, int, HWND) {
         int idx = selectedIndex();
         if (idx < 0 || static_cast<std::size_t>(idx) >= m_stations.size()) {
-            setStatus("Select a station"); return;
+            setStatus(tr("Select a station")); return;
         }
         navidrome::RadioStation station = m_stations[static_cast<std::size_t>(idx)];
 
         std::wstring name, streamUrl, homePageUrl;
-        if (!navidrome::win::promptRadioStation(*this, L"Edit Radio Station",
+        if (!navidrome::win::promptRadioStation(*this, trw("Edit Radio Station").c_str(),
                                            u8ToWide(station.name), u8ToWide(station.streamUrl),
                                            u8ToWide(station.homePageUrl),
                                            name, streamUrl, homePageUrl))
             return;
         std::string nameU8 = wToU8(name), urlU8 = wToU8(streamUrl), homeU8 = wToU8(homePageUrl);
-        if (nameU8.empty() || urlU8.empty()) { setStatus("Name and stream URL are required"); return; }
+        if (nameU8.empty() || urlU8.empty()) { setStatus(tr("Name and stream URL are required")); return; }
 
         std::string id = station.id;
-        setStatus("Updating…");
+        setStatus(tr("Updating…"));
         std::thread([this, id, nameU8, urlU8, homeU8]() {
             std::string err;
             bool ok = navidrome::SubsonicClientWin::get().updateRadioStation(id, urlU8, nameU8, homeU8, err);
@@ -184,7 +187,7 @@ private:
             fb2k::inMainThread([this, ok, err]() {
                 if (!IsWindow()) return;
                 if (ok) refresh();
-                else setStatus("Failed: " + (err.empty() ? "unknown error" : err));
+                else setStatus(trf("Failed: {0}", { err.empty() ? std::string(tr("unknown error")) : err }));
             });
         }).detach();
     }
@@ -192,18 +195,18 @@ private:
     void OnDelete(UINT, int, HWND) {
         int idx = selectedIndex();
         if (idx < 0 || static_cast<std::size_t>(idx) >= m_stations.size()) {
-            setStatus("Select a station"); return;
+            setStatus(tr("Select a station")); return;
         }
         navidrome::RadioStation station = m_stations[static_cast<std::size_t>(idx)];
 
-        std::wstring prompt = L"Delete \"" + u8ToWide(station.name) + L"\" from the server?\r\n\r\n"
-                              L"The station is removed for every client.";
-        if (MessageBoxW(prompt.c_str(), L"Delete radio station",
+        std::wstring prompt = navidrome::win::trfw("Delete \"{0}\" from the server?\r\n\r\n"
+                              "The station is removed for every client.", { station.name });
+        if (MessageBoxW(prompt.c_str(), trw("Delete radio station").c_str(),
                         MB_ICONWARNING | MB_YESNO | MB_DEFBUTTON2) != IDYES)
             return;
 
         std::string id = station.id;
-        setStatus("Deleting…");
+        setStatus(tr("Deleting…"));
         std::thread([this, id]() {
             std::string err;
             bool ok = navidrome::SubsonicClientWin::get().deleteRadioStation(id, err);
@@ -211,7 +214,7 @@ private:
             fb2k::inMainThread([this, ok, err]() {
                 if (!IsWindow()) return;
                 if (ok) refresh();
-                else setStatus("Failed: " + (err.empty() ? "unknown error" : err));
+                else setStatus(trf("Failed: {0}", { err.empty() ? std::string(tr("unknown error")) : err }));
             });
         }).detach();
     }
@@ -232,7 +235,7 @@ public:
         inst->Create(parent);
         return inst;
     }
-    const char* get_name() override { return "Radio Stations"; }
+    const char* get_name() override { return tr("Radio Stations"); }
     GUID        get_guid() override {
         return navidrome::guids::radioPrefsPage;
     }

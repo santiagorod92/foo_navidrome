@@ -17,6 +17,9 @@
 
 using navidrome::win::u8ToWide;
 using navidrome::win::wToU8;
+using navidrome::win::trw;
+using navidrome::tr;
+using navidrome::trf;
 static inline void dbgLog(const std::string& msg) { NAVIDROME_LOG("UI", msg); }
 
 void BrowserWindow::OnStar(UINT, int, HWND)   { dbgLog("OnStar fired");   applyStarred(true); }
@@ -30,7 +33,7 @@ void BrowserWindow::applyStarred(bool starred) {
             n->type == NavidromeNode::Artist)
             targets.push_back(n);
     }
-    if (targets.empty()) { setStatus("Select a song, album or artist first"); return; }
+    if (targets.empty()) { setStatus(tr("Select a song, album or artist first")); return; }
 
     std::thread([this, targets, starred]() {
         auto result = navidrome::applyStarredToNodes(navidrome::libraryClient(), targets, starred);
@@ -41,8 +44,8 @@ void BrowserWindow::applyStarred(bool starred) {
             if (!IsWindow()) return;
             for (auto& n : targets) refreshLabel(n);
             setStatus(result.error.empty()
-                ? (starred ? "Starred " : "Unstarred ") + std::to_string(result.done) + " item(s)"
-                : "Error: " + result.error);
+                ? trf(starred ? "Starred {0} item(s)" : "Unstarred {0} item(s)", { std::to_string(result.done) })
+                : trf("Error: {0}", { result.error }));
         });
     }).detach();
 }
@@ -53,7 +56,7 @@ void BrowserWindow::applyRemoveBookmark() {
     std::vector<std::shared_ptr<NavidromeNode>> songs;
     for (auto& n : selectedNodes())
         if (n->type == NavidromeNode::Song) songs.push_back(n);
-    if (songs.empty()) { setStatus("Select one or more songs"); return; }
+    if (songs.empty()) { setStatus(tr("Select one or more songs")); return; }
 
     std::thread([this, songs]() {
         std::string err;
@@ -73,8 +76,8 @@ void BrowserWindow::applyRemoveBookmark() {
             for (auto& n : songs) refreshLabel(n);
             invalidateBookmarksCategory();
             setStatus(err.empty()
-                ? "Removed " + std::to_string(done) + " bookmark(s)"
-                : "Error: " + err);
+                ? trf("Removed {0} bookmark(s)", { std::to_string(done) })
+                : trf("Error: {0}", { err }));
         });
     }).detach();
 }
@@ -99,24 +102,24 @@ void BrowserWindow::OnRate(UINT, int id, HWND) {
             if (!IsWindow()) return;
             for (auto& n : songs) refreshLabel(n);
             setStatus(result.error.empty()
-                ? "Rated " + std::to_string(songs.size()) + " song(s)"
-                : "Error: " + result.error);
+                ? trf("Rated {0} song(s)", { std::to_string(songs.size()) })
+                : trf("Error: {0}", { result.error }));
         });
     }).detach();
 }
 
 void BrowserWindow::OnSendActivePlaylist(UINT, int, HWND) {
     auto active = navidrome::collectActivePlaylistIds();
-    if (!active.hasPlaylist) { setStatus("No active playlist"); return; }
+    if (!active.hasPlaylist) { setStatus(tr("No active playlist")); return; }
     if (active.songIds.empty()) {
-        setStatus("No Navidrome tracks in the active playlist");
+        setStatus(tr("No Navidrome tracks in the active playlist"));
         return;
     }
 
     const std::string name = active.name;
     const std::vector<std::string> songIds = std::move(active.songIds);
     const std::size_t skipped = active.skipped;
-    setStatus("Uploading playlist…");
+    setStatus(tr("Uploading playlist…"));
 
     std::thread([this, name, songIds, skipped]() {
         std::string err;
@@ -126,7 +129,7 @@ void BrowserWindow::OnSendActivePlaylist(UINT, int, HWND) {
         fb2k::inMainThread([this, name, songIds, skipped, ok, err]() {
             if (!IsWindow()) return;
             if (!ok) {
-                setStatus("Upload failed: " + err);
+                setStatus(trf("Upload failed: {0}", { err }));
                 return;
             }
             setStatus(navidrome::sentPlaylistSummary(name, songIds.size(), skipped));
@@ -138,19 +141,19 @@ void BrowserWindow::OnSendActivePlaylist(UINT, int, HWND) {
 
 void BrowserWindow::OnDownload(UINT, int, HWND) {
     auto selected = selectedNodes();
-    if (selected.empty()) { setStatus("Select at least one item"); return; }
+    if (selected.empty()) { setStatus(tr("Select at least one item")); return; }
 
     std::wstring destDir;
     if (!navidrome::win::pickFolder(*this, destDir)) return;
 
-    setStatus("Resolving tracks…");
+    setStatus(tr("Resolving tracks…"));
     std::thread([this, destDir, selected]() {
         std::string collectErr;
         auto songs = navidrome::collectSelectionSongs(navidrome::libraryClient(), selected, &collectErr);
         if (songs.empty() && !collectErr.empty()) {
             NAVIDROME_WARN("UI", "download: resolving the selection failed: " + collectErr);
             fb2k::inMainThread([this, collectErr]() {
-                if (IsWindow()) setStatus("Error: " + collectErr);
+                if (IsWindow()) setStatus(trf("Error: {0}", { collectErr }));
             });
             return;
         }
@@ -160,8 +163,7 @@ void BrowserWindow::OnDownload(UINT, int, HWND) {
             const std::size_t position = i + 1, total = songs.size();
             fb2k::inMainThread([this, position, total]() {
                 if (IsWindow())
-                    setStatus("Downloading " + std::to_string(position) + "/" +
-                              std::to_string(total) + "…");
+                    setStatus(trf("Downloading {0}/{1}…", { std::to_string(position), std::to_string(total) }));
             });
 
             auto& s = songs[i];
@@ -255,14 +257,14 @@ void BrowserWindow::OnAddToServerPlaylist(UINT, int id, HWND) {
     const std::string name       = m_serverPlaylists[idx].name;
 
     auto selected = selectedNodes();
-    if (selected.empty()) { setStatus("Select at least one item"); return; }
+    if (selected.empty()) { setStatus(tr("Select at least one item")); return; }
 
-    setStatus("Resolving tracks…");
+    setStatus(tr("Resolving tracks…"));
     std::thread([this, playlistId, name, selected]() {
         auto ids = collectSongIdsDeep(selected);
         if (ids.empty()) {
             fb2k::inMainThread([this]() {
-                if (IsWindow()) setStatus("No tracks in the selection");
+                if (IsWindow()) setStatus(tr("No tracks in the selection"));
             });
             return;
         }
@@ -271,8 +273,8 @@ void BrowserWindow::OnAddToServerPlaylist(UINT, int id, HWND) {
         if (!ok) NAVIDROME_WARN("UI", "OnAddToServerPlaylist \"" + name + "\" failed: " + err);
         fb2k::inMainThread([this, playlistId, name, ids, ok, err]() {
             if (!IsWindow()) return;
-            setStatus(ok ? "Added " + std::to_string(ids.size()) + " track(s) to \"" + name + "\""
-                         : "Failed: " + (err.empty() ? "unknown error" : err));
+            setStatus(ok ? trf("Added {0} track(s) to \"{1}\"", { std::to_string(ids.size()), name })
+                         : trf("Failed: {0}", { err.empty() ? std::string(tr("unknown error")) : err }));
             if (ok) { invalidatePlaylistNode(playlistId); refreshServerPlaylists(); }
         });
     }).detach();
@@ -280,16 +282,16 @@ void BrowserWindow::OnAddToServerPlaylist(UINT, int id, HWND) {
 
 void BrowserWindow::OnNewServerPlaylist(UINT, int, HWND) {
     auto selected = selectedNodes();
-    if (selected.empty()) { setStatus("Select at least one item"); return; }
+    if (selected.empty()) { setStatus(tr("Select at least one item")); return; }
 
     std::wstring name;
-    if (!navidrome::win::promptText(*this, L"New Navidrome playlist",
-                               L"Name for the new playlist:", L"", name))
+    if (!navidrome::win::promptText(*this, trw("New Navidrome playlist").c_str(),
+                               trw("Name for the new playlist:").c_str(), L"", name))
         return;
     std::string nameU8 = wToU8(name);
     if (nameU8.empty()) return;
 
-    setStatus("Resolving tracks…");
+    setStatus(tr("Resolving tracks…"));
     std::thread([this, nameU8, selected]() {
         auto ids = collectSongIdsDeep(selected);
         std::string err;
@@ -299,9 +301,8 @@ void BrowserWindow::OnNewServerPlaylist(UINT, int, HWND) {
         if (!ok) NAVIDROME_WARN("UI", "OnNewServerPlaylist \"" + nameU8 + "\" failed: " + err);
         fb2k::inMainThread([this, nameU8, ids, ok, err]() {
             if (!IsWindow()) return;
-            setStatus(ok ? "Created \"" + nameU8 + "\" (" +
-                           std::to_string(ids.size()) + " track(s))"
-                         : "Failed: " + err);
+            setStatus(ok ? trf("Created \"{0}\" ({1} track(s))", { nameU8, std::to_string(ids.size()) })
+                         : trf("Failed: {0}", { err }));
             if (ok) { invalidatePlaylistsCategory(); refreshServerPlaylists(); }
         });
     }).detach();
@@ -323,13 +324,13 @@ void BrowserWindow::OnRemoveFromPlaylist(UINT, int, HWND) {
     }
 
     if (!playlist || indexes.empty()) {
-        setStatus("Select tracks inside a server playlist first");
+        setStatus(tr("Select tracks inside a server playlist first"));
         return;
     }
 
     const std::string playlistId = playlist->id;
     const std::string name       = playlist->displayName;
-    setStatus("Removing…");
+    setStatus(tr("Removing…"));
     std::thread([this, playlistId, name, indexes]() {
         std::string err;
         bool ok = navidrome::SubsonicClientWin::get()
@@ -337,9 +338,8 @@ void BrowserWindow::OnRemoveFromPlaylist(UINT, int, HWND) {
         if (!ok) NAVIDROME_WARN("UI", "OnRemoveFromPlaylist \"" + name + "\" failed: " + err);
         fb2k::inMainThread([this, playlistId, name, indexes, ok, err]() {
             if (!IsWindow()) return;
-            setStatus(ok ? "Removed " + std::to_string(indexes.size()) +
-                           " track(s) from \"" + name + "\""
-                         : "Failed: " + (err.empty() ? "unknown error" : err));
+            setStatus(ok ? trf("Removed {0} track(s) from \"{1}\"", { std::to_string(indexes.size()), name })
+                         : trf("Failed: {0}", { err.empty() ? std::string(tr("unknown error")) : err }));
             if (ok) invalidatePlaylistNode(playlistId);
         });
     }).detach();
@@ -347,10 +347,10 @@ void BrowserWindow::OnRemoveFromPlaylist(UINT, int, HWND) {
 
 void BrowserWindow::OnRenamePlaylist(UINT, int, HWND) {
     auto playlist = singleSelectedPlaylist();
-    if (!playlist) { setStatus("Select a single server playlist"); return; }
+    if (!playlist) { setStatus(tr("Select a single server playlist")); return; }
 
     std::wstring name;
-    if (!navidrome::win::promptText(*this, L"Rename playlist", L"New name:",
+    if (!navidrome::win::promptText(*this, trw("Rename playlist").c_str(), trw("New name:").c_str(),
                                u8ToWide(playlist->displayName), name))
         return;
     std::string nameU8 = wToU8(name);
@@ -367,10 +367,10 @@ void BrowserWindow::OnRenamePlaylist(UINT, int, HWND) {
             if (ok) {
                 playlist->displayName = nameU8;
                 refreshLabel(playlist);
-                setStatus("Renamed to \"" + nameU8 + "\"");
+                setStatus(trf("Renamed to \"{0}\"", { nameU8 }));
                 refreshServerPlaylists();
             } else {
-                setStatus("Failed: " + (err.empty() ? "unknown error" : err));
+                setStatus(trf("Failed: {0}", { err.empty() ? std::string(tr("unknown error")) : err }));
             }
         });
     }).detach();
@@ -378,13 +378,12 @@ void BrowserWindow::OnRenamePlaylist(UINT, int, HWND) {
 
 void BrowserWindow::OnDeletePlaylist(UINT, int, HWND) {
     auto playlist = singleSelectedPlaylist();
-    if (!playlist) { setStatus("Select a single server playlist"); return; }
+    if (!playlist) { setStatus(tr("Select a single server playlist")); return; }
 
-    std::wstring prompt = L"Delete \"" + u8ToWide(playlist->displayName) +
-                          L"\" from the server?\r\n\r\n"
-                          L"The playlist is removed for every client. "
-                          L"The tracks themselves are not touched.";
-    if (MessageBoxW(prompt.c_str(), L"Delete playlist",
+    std::wstring prompt = navidrome::win::trfw("Delete \"{0}\" from the server?\r\n\r\n"
+                          "The playlist is removed for every client. "
+                          "The tracks themselves are not touched.", { playlist->displayName });
+    if (MessageBoxW(prompt.c_str(), trw("Delete playlist").c_str(),
                     MB_ICONWARNING | MB_YESNO | MB_DEFBUTTON2) != IDYES)
         return;
 
@@ -396,8 +395,8 @@ void BrowserWindow::OnDeletePlaylist(UINT, int, HWND) {
         if (!ok) NAVIDROME_WARN("UI", "OnDeletePlaylist \"" + name + "\" failed: " + err);
         fb2k::inMainThread([this, name, ok, err]() {
             if (!IsWindow()) return;
-            setStatus(ok ? "Deleted \"" + name + "\""
-                         : "Failed: " + (err.empty() ? "unknown error" : err));
+            setStatus(ok ? trf("Deleted \"{0}\"", { name })
+                         : trf("Failed: {0}", { err.empty() ? std::string(tr("unknown error")) : err }));
             if (ok) { invalidatePlaylistsCategory(); refreshServerPlaylists(); }
         });
     }).detach();
@@ -421,16 +420,16 @@ void BrowserWindow::invalidateRadioCategory() {
 
 void BrowserWindow::OnNewRadioStation(UINT, int, HWND) {
     std::wstring name, streamUrl, homePageUrl;
-    if (!navidrome::win::promptRadioStation(*this, L"New Radio Station", L"", L"", L"",
+    if (!navidrome::win::promptRadioStation(*this, trw("New Radio Station").c_str(), L"", L"", L"",
                                        name, streamUrl, homePageUrl))
         return;
     std::string nameU8 = wToU8(name), urlU8 = wToU8(streamUrl), homeU8 = wToU8(homePageUrl);
     if (nameU8.empty() || urlU8.empty()) {
-        setStatus("Name and stream URL are required");
+        setStatus(tr("Name and stream URL are required"));
         return;
     }
 
-    setStatus("Creating radio station…");
+    setStatus(tr("Creating radio station…"));
     std::thread([this, nameU8, urlU8, homeU8]() {
         std::string err;
         std::string result = navidrome::SubsonicClientWin::get()
@@ -439,8 +438,8 @@ void BrowserWindow::OnNewRadioStation(UINT, int, HWND) {
         if (!ok) NAVIDROME_WARN("UI", "create radio station \"" + nameU8 + "\": " + err);
         fb2k::inMainThread([this, nameU8, ok, err]() {
             if (!IsWindow()) return;
-            setStatus(ok ? "Created \"" + nameU8 + "\""
-                         : "Failed: " + (err.empty() ? "unknown error" : err));
+            setStatus(ok ? trf("Created \"{0}\"", { nameU8 })
+                         : trf("Failed: {0}", { err.empty() ? std::string(tr("unknown error")) : err }));
             if (ok) { invalidateRadioCategory(); refreshRadioStations(); }
         });
     }).detach();
@@ -448,11 +447,11 @@ void BrowserWindow::OnNewRadioStation(UINT, int, HWND) {
 
 void BrowserWindow::OnEditRadioStation(UINT, int, HWND) {
     auto node = singleSelectedRadioStation();
-    if (!node) { setStatus("Select a single radio station"); return; }
+    if (!node) { setStatus(tr("Select a single radio station")); return; }
 
     std::string currentUrl = radioStationURL(node->id);
     std::wstring name, streamUrl, homePageUrl;
-    if (!navidrome::win::promptRadioStation(*this, L"Edit Radio Station",
+    if (!navidrome::win::promptRadioStation(*this, trw("Edit Radio Station").c_str(),
                                        u8ToWide(node->displayName),
                                        u8ToWide(currentUrl),
                                        u8ToWide(node->subtitle),
@@ -460,7 +459,7 @@ void BrowserWindow::OnEditRadioStation(UINT, int, HWND) {
         return;
     std::string nameU8 = wToU8(name), urlU8 = wToU8(streamUrl), homeU8 = wToU8(homePageUrl);
     if (nameU8.empty() || urlU8.empty()) {
-        setStatus("Name and stream URL are required");
+        setStatus(tr("Name and stream URL are required"));
         return;
     }
 
@@ -472,8 +471,8 @@ void BrowserWindow::OnEditRadioStation(UINT, int, HWND) {
         if (!ok) NAVIDROME_WARN("UI", "update radio station " + stationId + ": " + err);
         fb2k::inMainThread([this, nameU8, ok, err]() {
             if (!IsWindow()) return;
-            setStatus(ok ? "Updated \"" + nameU8 + "\""
-                         : "Failed: " + (err.empty() ? "unknown error" : err));
+            setStatus(ok ? trf("Updated \"{0}\"", { nameU8 })
+                         : trf("Failed: {0}", { err.empty() ? std::string(tr("unknown error")) : err }));
             if (ok) { invalidateRadioCategory(); refreshRadioStations(); }
         });
     }).detach();
@@ -481,12 +480,11 @@ void BrowserWindow::OnEditRadioStation(UINT, int, HWND) {
 
 void BrowserWindow::OnDeleteRadioStation(UINT, int, HWND) {
     auto node = singleSelectedRadioStation();
-    if (!node) { setStatus("Select a single radio station"); return; }
+    if (!node) { setStatus(tr("Select a single radio station")); return; }
 
-    std::wstring prompt = L"Delete \"" + u8ToWide(node->displayName) +
-                          L"\" from the server?\r\n\r\n"
-                          L"The station is removed for every client.";
-    if (MessageBoxW(prompt.c_str(), L"Delete radio station",
+    std::wstring prompt = navidrome::win::trfw("Delete \"{0}\" from the server?\r\n\r\n"
+                          "The station is removed for every client.", { node->displayName });
+    if (MessageBoxW(prompt.c_str(), trw("Delete radio station").c_str(),
                     MB_ICONWARNING | MB_YESNO | MB_DEFBUTTON2) != IDYES)
         return;
 
@@ -498,8 +496,8 @@ void BrowserWindow::OnDeleteRadioStation(UINT, int, HWND) {
         if (!ok) NAVIDROME_WARN("UI", "delete radio station " + stationId + ": " + err);
         fb2k::inMainThread([this, name, ok, err]() {
             if (!IsWindow()) return;
-            setStatus(ok ? "Deleted \"" + name + "\""
-                         : "Failed: " + (err.empty() ? "unknown error" : err));
+            setStatus(ok ? trf("Deleted \"{0}\"", { name })
+                         : trf("Failed: {0}", { err.empty() ? std::string(tr("unknown error")) : err }));
             if (ok) { invalidateRadioCategory(); refreshRadioStations(); }
         });
     }).detach();
@@ -523,13 +521,13 @@ void BrowserWindow::invalidatePodcastsCategory() {
 
 void BrowserWindow::OnSubscribePodcast(UINT, int, HWND) {
     std::wstring url;
-    if (!navidrome::win::promptText(*this, L"Subscribe to Podcast",
-                               L"Podcast RSS feed URL:", L"", url))
+    if (!navidrome::win::promptText(*this, trw("Subscribe to Podcast").c_str(),
+                               trw("Podcast RSS feed URL:").c_str(), L"", url))
         return;
     std::string urlU8 = wToU8(url);
-    if (urlU8.empty()) { setStatus("A feed URL is required"); return; }
+    if (urlU8.empty()) { setStatus(tr("A feed URL is required")); return; }
 
-    setStatus("Subscribing…");
+    setStatus(tr("Subscribing…"));
     std::thread([this, urlU8]() {
         std::string err;
         navidrome::SubsonicClientWin::get().createPodcastChannel(urlU8, err);
@@ -537,7 +535,7 @@ void BrowserWindow::OnSubscribePodcast(UINT, int, HWND) {
         if (!ok) NAVIDROME_WARN("UI", "OnSubscribePodcast \"" + urlU8 + "\" failed: " + err);
         fb2k::inMainThread([this, ok, err]() {
             if (!IsWindow()) return;
-            setStatus(ok ? "Subscribed" : "Failed: " + (err.empty() ? "unknown error" : err));
+            setStatus(ok ? std::string(tr("Subscribed")) : trf("Failed: {0}", { err.empty() ? std::string(tr("unknown error")) : err }));
             if (ok) invalidatePodcastsCategory();
         });
     }).detach();
@@ -545,11 +543,11 @@ void BrowserWindow::OnSubscribePodcast(UINT, int, HWND) {
 
 void BrowserWindow::OnUnsubscribePodcast(UINT, int, HWND) {
     auto node = singleSelectedPodcastChannel();
-    if (!node) { setStatus("Select a single podcast"); return; }
+    if (!node) { setStatus(tr("Select a single podcast")); return; }
 
-    std::wstring prompt = L"Unsubscribe from \"" + u8ToWide(node->displayName) +
-                          L"\"?\r\n\r\nDownloaded episodes are removed from the server.";
-    if (MessageBoxW(prompt.c_str(), L"Unsubscribe from podcast",
+    std::wstring prompt = navidrome::win::trfw("Unsubscribe from \"{0}\"?\r\n\r\nDownloaded episodes are removed from the server.",
+                                               { node->displayName });
+    if (MessageBoxW(prompt.c_str(), trw("Unsubscribe from podcast").c_str(),
                     MB_ICONWARNING | MB_YESNO | MB_DEFBUTTON2) != IDYES)
         return;
 
@@ -561,8 +559,8 @@ void BrowserWindow::OnUnsubscribePodcast(UINT, int, HWND) {
         if (!ok) NAVIDROME_WARN("UI", "OnUnsubscribePodcast \"" + name + "\" failed: " + err);
         fb2k::inMainThread([this, name, ok, err]() {
             if (!IsWindow()) return;
-            setStatus(ok ? "Unsubscribed from \"" + name + "\""
-                         : "Failed: " + (err.empty() ? "unknown error" : err));
+            setStatus(ok ? trf("Unsubscribed from \"{0}\"", { name })
+                         : trf("Failed: {0}", { err.empty() ? std::string(tr("unknown error")) : err }));
             if (ok) invalidatePodcastsCategory();
         });
     }).detach();
@@ -592,7 +590,7 @@ void BrowserWindow::OnTimer(UINT_PTR id) {
         return;
     }
 
-    setStatus("Searching\u2026");
+    setStatus(tr("Searching…"));
     std::uint64_t generation = m_searchGeneration;
     std::thread([this, query, generation]() {
         auto* payload = new LoadedPayload{};

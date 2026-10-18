@@ -2,6 +2,7 @@
 #include <SDK/cfg_var.h>
 #include "../../core/NavidromeAudioMuse.h"
 #include "../../core/NavidromeDebugLog.h"
+#import "MacI18n.h"
 
 @implementation NavidromeAudioMusePrefsController {
     NSTextField       *_urlField;
@@ -19,27 +20,27 @@
     NSView *root = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 420, 240)];
 
     NSTextField *intro = [NSTextField wrappingLabelWithString:
-        @"AudioMuse-AI analyses your Navidrome library for Text Search, Instant Playlist and "
-         "Song Alchemy (File › AudioMuse-AI, and the Navidrome submenu on tracks)."];
+        NDTr("AudioMuse-AI analyses your Navidrome library for Text Search, Instant Playlist and "
+             "Song Alchemy (File › AudioMuse-AI, and the Navidrome submenu on tracks).")];
     intro.translatesAutoresizingMaskIntoConstraints = NO;
     [root addSubview:intro];
 
     _urlField    = [NSTextField textFieldWithString:@""];
     _urlField.placeholderString = @"http://audiomuse:8000";
     _tokenField  = [[NSSecureTextField alloc] init];
-    _tokenField.placeholderString = @"only if AudioMuse-AI has auth enabled";
+    _tokenField.placeholderString = NDTr("only if AudioMuse-AI has auth enabled");
     _serverField = [NSTextField textFieldWithString:@""];
-    _serverField.placeholderString = @"only if it serves several media servers";
+    _serverField.placeholderString = NDTr("only if it serves several media servers");
     _countField  = [NSTextField textFieldWithString:@""];
     NSNumberFormatter *nf = [NSNumberFormatter new];
     nf.minimum = @1; nf.maximum = @(navidrome::audiomuse::kMaxCount); nf.allowsFloats = NO;
     _countField.formatter = nf;
 
     NSGridView *grid = [NSGridView gridViewWithViews:@[
-        @[[NSTextField labelWithString:@"Server URL:"],  _urlField],
-        @[[NSTextField labelWithString:@"API token:"],   _tokenField],
-        @[[NSTextField labelWithString:@"Server name:"], _serverField],
-        @[[NSTextField labelWithString:@"Tracks:"],      _countField],
+        @[[NSTextField labelWithString:NDTr("Server URL:")],  _urlField],
+        @[[NSTextField labelWithString:NDTr("API token:")],   _tokenField],
+        @[[NSTextField labelWithString:NDTr("Server name:")], _serverField],
+        @[[NSTextField labelWithString:NDTr("Tracks:")],      _countField],
     ]];
     grid.translatesAutoresizingMaskIntoConstraints = NO;
     [grid columnAtIndex:0].xPlacement = NSGridCellPlacementTrailing;
@@ -49,8 +50,8 @@
     [root addSubview:grid];
 
     NSTextField *help = [NSTextField wrappingLabelWithString:
-        @"“Tracks” also sizes Instant Mix, which needs no AudioMuse-AI settings: Navidrome "
-         "answers it itself (from the AudioMuse-AI plugin when installed)."];
+        NDTr("“Tracks” also sizes Instant Mix, which needs no AudioMuse-AI settings: Navidrome "
+             "answers it itself (from the AudioMuse-AI plugin when installed).")];
     help.translatesAutoresizingMaskIntoConstraints = NO;
     help.textColor = [NSColor secondaryLabelColor];
     help.font = [NSFont systemFontOfSize:11];

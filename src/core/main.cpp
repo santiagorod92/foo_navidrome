@@ -54,6 +54,13 @@ VALIDATE_COMPONENT_FILENAME("foo_navidrome.dll");
 
 FOOBAR2000_IMPLEMENT_CFG_VAR_DOWNGRADE;
 
+static navidrome::i18n::Language resolveUiLanguage() {
+    return navidrome::i18n::resolveLanguage(navidrome::cfg_ui_language.get().c_str(),
+                                            navidrome::systemLanguageCode());
+}
+
+[[maybe_unused]] static const bool g_uiLanguageResolver = (navidrome::i18n::setResolver(&resolveUiLanguage), true);
+
 static advconfig_checkbox_factory cfg_refresh_ratings_on_start(
     "Navidrome: refresh ratings on startup",
     navidrome::guids::advRefreshRatingsOnStart, advconfig_branch::guid_branch_tools,
@@ -143,7 +150,7 @@ public:
                 filesystem::g_get_native_path(core_api::pathInProfile("foo_navidrome.log"));
             navidrome::dbg::Logger::get().configure(native.c_str());
         } catch (const std::exception& e) {
-            console::printf("Navidrome: can't open the component log: %s", e.what());
+            console::print(navidrome::trf("Navidrome: can't open the component log: {0}", { e.what() }).c_str());
         }
 #endif
         navidrome::dbg::Logger::get().setVerboseProbe([] { return cfg_verbose_log.get(); });
@@ -151,7 +158,8 @@ public:
                        core_version_info::g_get_version_string() + ", " + platformName() + " " +
                        osVersion() + " (" + buildArch() + ")" +
                        (wineVersion().empty() ? "" : ", Wine " + wineVersion()) +
-                       ", verbose=" + (cfg_verbose_log.get() ? "on" : "off"));
+                       ", verbose=" + (cfg_verbose_log.get() ? "on" : "off") +
+                       ", ui=" + navidrome::i18n::languageCode(navidrome::i18n::language()));
     }
 };
 static initquit_factory_t<NavidromeLogInit> g_navidrome_log_init;
@@ -161,7 +169,7 @@ std::string navidrome::componentLogPath() { return dbg::Logger::get().path(); }
 
 void navidrome::warnAuthRejectedOnce() {
     static std::once_flag once;
-    std::call_once(once, [] { console::print(kAuthRejectedMessage); });
+    std::call_once(once, [] { console::print(tr(kAuthRejectedMessage)); });
 }
 
 std::string navidrome::collectDiagnostics() {
@@ -190,6 +198,7 @@ std::string navidrome::collectDiagnostics() {
     d.libraryCount    = csvCount(cfg_library_ids.get().c_str());
     d.audioMuse       = cfg_audiomuse_url.get().length() > 0;
     d.verboseLogging  = dbg::Logger::get().verbose();
+    d.uiLanguage      = i18n::languageCode(i18n::language());
 
     NAVIDROME_LOG("Env", std::string("diagnostics collected, server ") +
                   (d.configured ? (d.serverReached ? "reachable" : "unreachable") : "not configured"));

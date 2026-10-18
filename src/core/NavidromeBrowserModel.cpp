@@ -69,9 +69,9 @@ std::vector<BrowserNodePtr> fetchChildren(IBrowserClient& client,
                 out.push_back(makeLibraryArtistNode(a, node.id));
             break;
         case BrowserNode::Artist:
-            out.push_back(makeArtistSubNode(BrowserNode::CatArtistTopSongs, "Top Songs",
+            out.push_back(makeArtistSubNode(BrowserNode::CatArtistTopSongs, N_("Top Songs"),
                                             node.id, node.displayName));
-            out.push_back(makeArtistSubNode(BrowserNode::CatArtistSimilarArtists, "Similar Artists",
+            out.push_back(makeArtistSubNode(BrowserNode::CatArtistSimilarArtists, N_("Similar Artists"),
                                             node.id, node.displayName));
             for (const auto& a : client.getAlbumsForArtist(node.id, node.libraryId, outError))
                 out.push_back(makeAlbumNode(a));
@@ -196,26 +196,26 @@ std::vector<BrowserNodePtr> collectSelectionSongs(IBrowserClient& client,
 }
 
 std::string queueProblemMessage(bool gotSongs, const std::string& error, bool reloaded) {
-    const std::string cause = error.empty() ? "" : "\n\nServer error: " + error;
+    const std::string cause = error.empty() ? "" : "\n\n" + trf("Server error: {0}", { error });
     if (gotSongs) {
         if (error.empty()) return "";
-        return "Some of the selected items couldn't be loaded from the Navidrome server, "
-               "so only part of the selection was queued.\n\n"
-               "If the server rescanned its library since the list loaded, press Refresh "
-               "in the Navidrome Browser and try again." + cause;
+        return tr("Some of the selected items couldn't be loaded from the Navidrome server, "
+                  "so only part of the selection was queued.\n\n"
+                  "If the server rescanned its library since the list loaded, press Refresh "
+                  "in the Navidrome Browser and try again.") + cause;
     }
     if (reloaded)
-        return "Couldn't load the tracks of the selected item from the Navidrome server.\n\n"
-               "The server's library probably changed since the list loaded (a rescan can "
-               "give artists and albums new ids), so the list was reloaded. Select the item "
-               "again and retry. If it keeps failing, check the connection to the server and "
-               "press Refresh." + cause;
+        return tr("Couldn't load the tracks of the selected item from the Navidrome server.\n\n"
+                  "The server's library probably changed since the list loaded (a rescan can "
+                  "give artists and albums new ids), so the list was reloaded. Select the item "
+                  "again and retry. If it keeps failing, check the connection to the server and "
+                  "press Refresh.") + cause;
     if (!error.empty())
-        return "Couldn't load the tracks of the selected item from the Navidrome server.\n\n"
-               "Press Refresh in the Navidrome Browser and try again." + cause;
-    return "The Navidrome server returned no tracks for the selected item.\n\n"
-           "If you expected some, the list may be out of date: press Refresh in the "
-           "Navidrome Browser and try again.";
+        return tr("Couldn't load the tracks of the selected item from the Navidrome server.\n\n"
+                  "Press Refresh in the Navidrome Browser and try again.") + cause;
+    return tr("The Navidrome server returned no tracks for the selected item.\n\n"
+              "If you expected some, the list may be out of date: press Refresh in the "
+              "Navidrome Browser and try again.");
 }
 
 std::vector<std::string> collectSongIdsDeep(IBrowserClient& client,
@@ -384,14 +384,18 @@ PlayQueueSavePlan planPlayQueueSave(const std::vector<std::string>& paths,
 }
 
 std::string playQueueSaveSummary(const PlayQueueSavePlan& plan) {
-    std::string out = "Saved " + std::to_string(plan.songIds.size()) + " track" +
-                      (plan.songIds.size() == 1 ? "" : "s") + " to the Navidrome play queue";
+    const std::string saved = std::to_string(plan.songIds.size());
+    std::string out = plan.songIds.size() == 1
+        ? trf("Saved {0} track to the Navidrome play queue", { saved })
+        : trf("Saved {0} tracks to the Navidrome play queue", { saved });
     if (plan.truncated > 0)
-        out += " (" + std::to_string(plan.truncated) + " left out: the queue holds at most " +
-               std::to_string(kPlayQueueMaxIds) + ")";
-    if (plan.skippedForeign > 0)
-        out += "; " + std::to_string(plan.skippedForeign) + " non-Navidrome item" +
-               (plan.skippedForeign == 1 ? "" : "s") + " skipped";
+        out += trf(" ({0} left out: the queue holds at most {1})",
+                   { std::to_string(plan.truncated), std::to_string(kPlayQueueMaxIds) });
+    if (plan.skippedForeign > 0) {
+        const std::string n = std::to_string(plan.skippedForeign);
+        out += plan.skippedForeign == 1 ? trf("; {0} non-Navidrome item skipped", { n })
+                                        : trf("; {0} non-Navidrome items skipped", { n });
+    }
     return out;
 }
 }

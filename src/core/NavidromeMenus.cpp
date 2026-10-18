@@ -50,9 +50,9 @@ public:
     unsigned get_num_items() override { return 8; }
 
     void get_item_name(unsigned index, pfc::string_base& out) override {
-        if (index == kItemStar)   { out = "Star";      return; }
-        if (index == kItemUnstar) { out = "Unstar";    return; }
-        if (index == 0)           { out = "No rating"; return; }
+        if (index == kItemStar)   { out = navidrome::tr("Star");      return; }
+        if (index == kItemUnstar) { out = navidrome::tr("Unstar");    return; }
+        if (index == 0)           { out = navidrome::tr("No rating"); return; }
         pfc::string_formatter name;
         for (unsigned i = 0; i < index; ++i) name << "\xE2\x98\x85";
         out = name;
@@ -60,7 +60,7 @@ public:
 
     bool get_item_description(unsigned index, pfc::string_base& out) override {
         (void)index;
-        out = "Applies to the selected Navidrome tracks, server-side.";
+        out = navidrome::tr("Applies to the selected Navidrome tracks, server-side.");
         return true;
     }
 
@@ -124,12 +124,12 @@ static void bookmarkCurrentPosition() {
     metadb_handle_ptr track;
     auto pc = playback_control::get();
     if (!pc->get_now_playing(track) || track.is_empty()) {
-        console::print("Navidrome: no track is currently playing");
+        console::print(navidrome::tr("Navidrome: no track is currently playing"));
         return;
     }
     const std::string songId = navidrome::trackIdFromURI(track->get_path());
     if (songId.empty()) {
-        console::print("Navidrome: current track isn't from Navidrome");
+        console::print(navidrome::tr("Navidrome: current track isn't from Navidrome"));
         return;
     }
     const double positionMs = pc->playback_get_position() * 1000.0;
@@ -138,7 +138,7 @@ static void bookmarkCurrentPosition() {
             std::string err;
             navidrome::libraryCore().createBookmark(songId, positionMs, "", err);
             if (!err.empty())
-                console::printf("Navidrome: failed to save bookmark: %s", err.c_str());
+                console::print(navidrome::trf("Navidrome: failed to save bookmark: {0}", { err }).c_str());
             NAVIDROME_LOG("Bookmark", "save id=" + songId + " pos=" +
                 std::to_string((long long)positionMs) + "ms" +
                 (err.empty() ? " ok" : " FAILED: " + err));
@@ -155,13 +155,13 @@ public:
         throw pfc::exception_invalid_params();
     }
     void get_name(t_uint32 i, pfc::string_base& out) override {
-        if (i == 0) { out = "Open Navidrome Browser"; return; }
-        if (i == 1) { out = "Bookmark Current Position"; return; }
+        if (i == 0) { out = navidrome::tr("Open Navidrome Browser"); return; }
+        if (i == 1) { out = navidrome::tr("Bookmark Current Position"); return; }
         throw pfc::exception_invalid_params();
     }
     bool get_description(t_uint32 i, pfc::string_base& out) override {
-        if (i == 0) { out = "Browse and stream music from your Navidrome server"; return true; }
-        if (i == 1) { out = "Save the current playback position to resume later"; return true; }
+        if (i == 0) { out = navidrome::tr("Browse and stream music from your Navidrome server"); return true; }
+        if (i == 1) { out = navidrome::tr("Save the current playback position to resume later"); return true; }
         return false;
     }
     GUID get_parent() override { return mainmenu_groups::file; }

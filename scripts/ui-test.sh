@@ -406,7 +406,7 @@ scenario_playqueue() {
   mark; d cmd "Save Play Queue to Navidrome"
   expect 'PlayQueue.*save: [0-9]+ ids, current=[^ ]+ positionMs=[0-9]' 20 "queue saved with the playing track and position"
   expect 'savePlayQueue\.view' 20 "savePlayQueue request sent"
-  expect 'PlayQueue.*confirmation: (toast|dialog)' 15 "save confirmed to the user"
+  expect 'confirmation: (toast|dialog)' 15 "save confirmed to the user"
   local how; how="$(since_mark | grep -oE 'confirmation: (toast|dialog)' | tail -1 | cut -d' ' -f2)"
   note "confirmation" "$how"
   d shot "$SHOTS/$PLATFORM-playqueue-saved-$(date +%Y%m%d-%H%M%S).png" >/dev/null && ok "screenshot (confirmation)"

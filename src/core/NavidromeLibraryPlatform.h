@@ -14,5 +14,7 @@ IBrowserClient& libraryClient();
 
 void showBrowserWindow();
 
+std::string systemLanguageCode();
+
 std::vector<uint8_t> libraryFetchCover(const std::string& coverArtId, int size, abort_callback& abort);
 }

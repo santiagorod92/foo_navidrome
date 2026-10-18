@@ -18,6 +18,7 @@
 #include "../../core/NavidromeSettings.h"
 #include <algorithm>
 #include <cstring>
+#import "MacI18n.h"
 
 @interface NavidromeLibrarySelectionPrefsController
     : NSViewController <NSTableViewDataSource, NSTableViewDelegate>
@@ -47,7 +48,7 @@
 - (void)loadView {
     NSView *root = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 480, 320)];
 
-    _filterCheckbox = [NSButton checkboxWithTitle:@"Only include selected libraries"
+    _filterCheckbox = [NSButton checkboxWithTitle:NDTr("Only include selected libraries")
                                            target:self
                                            action:@selector(filterToggled:)];
     _filterCheckbox.translatesAutoresizingMaskIntoConstraints = NO;
@@ -117,23 +118,22 @@
 
 - (void)refresh {
     if (!SubsonicClient.sharedClient.isConfigured) {
-        _statusLabel.stringValue = @"Not configured";
+        _statusLabel.stringValue = NDTr("Not configured");
         return;
     }
-    _statusLabel.stringValue = @"Loading…";
+    _statusLabel.stringValue = NDTr("Loading…");
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         NSError *err = nil;
         NSArray<SubsonicMusicFolder *> *folders =
             [SubsonicClient.sharedClient getMusicFoldersWithError:&err];
         dispatch_async(dispatch_get_main_queue(), ^{
             if (err || !folders) {
-                self->_statusLabel.stringValue = [NSString stringWithFormat:@"Failed: %@",
-                    err.localizedDescription ?: @"unknown error"];
+                self->_statusLabel.stringValue = NDTrf("Failed: {0}", { NDStd(err.localizedDescription ?: NDTr("unknown error")) });
                 return;
             }
             self->_folders = folders;
             self->_statusLabel.stringValue = folders.count < 2
-                ? @"This server reports a single library — nothing to filter."
+                ? NDTr("This server reports a single library — nothing to filter.")
                 : @"";
             [self recomputeEnabled];
         });
@@ -200,7 +200,7 @@ public:
     service_ptr instantiate() override {
         return fb2k::wrapNSObject([NavidromeLibrarySelectionPrefsController new]);
     }
-    const char *get_name() override { return "Libraries"; }
+    const char *get_name() override { return navidrome::tr("Libraries"); }
     GUID get_guid() override { return navidrome::guids::librariesPrefsPage; }
     GUID get_parent_guid() override { return navidrome::guids::prefsPage; }
 };

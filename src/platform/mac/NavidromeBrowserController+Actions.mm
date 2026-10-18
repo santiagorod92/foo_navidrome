@@ -6,6 +6,7 @@
 #include "../../core/NavidromeAudioMuse.h"
 #include "../../core/NavidromeDebugLog.h"
 #include "../../core/NavidromePlaylistSync.h"
+#import "MacI18n.h"
 #include <SDK/playlist.h>
 #include <SDK/metadb.h>
 #include <SDK/playable_location.h>
@@ -20,7 +21,7 @@
     NSMutableArray<NavidromeNode *> *songs = [NSMutableArray array];
     for (NavidromeNode *n in [self selectedNodes])
         if (n.type == NavidromeNodeTypeSong) [songs addObject:n];
-    if (songs.count == 0) { _statusLabel.stringValue = @"Select one or more songs"; return; }
+    if (songs.count == 0) { _statusLabel.stringValue = NDTr("Select one or more songs"); return; }
 
     [_spinner startAnimation:nil];
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
@@ -31,7 +32,7 @@
             if ([SubsonicClient.sharedClient deleteBookmarkForSongId:n.nodeId error:&err]) {
                 [cleared addObject:n];
             } else {
-                NSString *msg = err.localizedDescription ?: @"unknown error";
+                NSString *msg = err.localizedDescription ?: NDTr("unknown error");
                 NAVIDROME_WARN("UI", "remove bookmark " + NBCStr(n.nodeId) + ": " + NBCStr(msg));
                 if (!firstError) firstError = msg;
             }
@@ -44,8 +45,8 @@
             }
             [self invalidateBookmarksCategory];
             self->_statusLabel.stringValue = firstError
-                ? [NSString stringWithFormat:@"Error: %@", firstError]
-                : [NSString stringWithFormat:@"Removed %lu bookmark(s)", (unsigned long)cleared.count];
+                ? NDTrf("Error: {0}", { NDStd(firstError) })
+                : NDTrf("Removed {0} bookmark(s)", { std::to_string(cleared.count) });
         });
     });
 }
@@ -71,7 +72,7 @@
             [targets addObject:n];
     }
     if (targets.count == 0) {
-        _statusLabel.stringValue = @"Select a song, album or artist first";
+        _statusLabel.stringValue = NDTr("Select a song, album or artist first");
         return;
     }
 
@@ -92,10 +93,10 @@
                 targets[i].starred = core[i]->starred;
             if (!result.error.empty()) {
                 self->_statusLabel.stringValue =
-                    [NSString stringWithFormat:@"Error: %s", result.error.c_str()];
+                    NDTrf("Error: {0}", { result.error });
             } else {
-                self->_statusLabel.stringValue = [NSString stringWithFormat:@"%@ %lu item(s)",
-                    starred ? @"Starred" : @"Unstarred", (unsigned long)result.done];
+                self->_statusLabel.stringValue = NDTrf(starred ? "Starred {0} item(s)" : "Unstarred {0} item(s)",
+                          { std::to_string(result.done) });
             }
             [self->_outlineView reloadData];
         });
@@ -109,7 +110,7 @@
         if (n.type == NavidromeNodeTypeSong) [songs addObject:n];
 
     if (songs.count == 0) {
-        _statusLabel.stringValue = @"Select one or more songs to rate";
+        _statusLabel.stringValue = NDTr("Select one or more songs to rate");
         return;
     }
 
@@ -129,8 +130,8 @@
             for (NSUInteger i = 0; i < songs.count; i++)
                 songs[i].rating = core[i]->rating;
             self->_statusLabel.stringValue = !result.error.empty()
-                ? [NSString stringWithFormat:@"Error: %s", result.error.c_str()]
-                : [NSString stringWithFormat:@"Rated %lu song(s)", (unsigned long)songs.count];
+                ? NDTrf("Error: {0}", { result.error })
+                : NDTrf("Rated {0} song(s)", { std::to_string(songs.count) });
             [self->_outlineView reloadData];
         });
     });
@@ -139,11 +140,11 @@
 - (IBAction)sendActivePlaylist:(id)sender {
     auto active = navidrome::collectActivePlaylistIds();
     if (!active.hasPlaylist) {
-        _statusLabel.stringValue = @"No active playlist";
+        _statusLabel.stringValue = NDTr("No active playlist");
         return;
     }
     if (active.songIds.empty()) {
-        _statusLabel.stringValue = @"No Navidrome tracks in the active playlist";
+        _statusLabel.stringValue = NDTr("No Navidrome tracks in the active playlist");
         return;
     }
 
@@ -153,7 +154,7 @@
     const std::string summary = navidrome::sentPlaylistSummary(active.name, active.songIds.size(), active.skipped);
 
     [_spinner startAnimation:nil];
-    _statusLabel.stringValue = @"Uploading playlist…";
+    _statusLabel.stringValue = NDTr("Uploading playlist…");
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         NSError *err = nil;
         BOOL ok = [SubsonicClient.sharedClient createPlaylistNamed:name
@@ -166,8 +167,7 @@
             [self->_spinner stopAnimation:nil];
             if (!ok) {
                 self->_statusLabel.stringValue =
-                    [NSString stringWithFormat:@"Upload failed: %@",
-                     err.localizedDescription ?: @"Unknown error"];
+                    NDTrf("Upload failed: {0}", { NDStd(err.localizedDescription ?: NDTr("unknown error")) });
                 return;
             }
             self->_statusLabel.stringValue = @(summary.c_str());
@@ -179,20 +179,20 @@
 
 - (IBAction)downloadSelection:(id)sender {
     NSArray<NavidromeNode *> *nodes = [self selectedNodes];
-    if (nodes.count == 0) { _statusLabel.stringValue = @"Select at least one item first"; return; }
+    if (nodes.count == 0) { _statusLabel.stringValue = NDTr("Select at least one item first"); return; }
 
     NSOpenPanel *panel = [NSOpenPanel openPanel];
     panel.canChooseFiles = NO;
     panel.canChooseDirectories = YES;
     panel.canCreateDirectories = YES;
     panel.allowsMultipleSelection = NO;
-    panel.prompt = @"Download Here";
-    panel.message = @"Choose a folder for the downloaded tracks.";
+    panel.prompt = NDTr("Download Here");
+    panel.message = NDTr("Choose a folder for the downloaded tracks.");
     if ([panel runModal] != NSModalResponseOK || !panel.URL) return;
     NSString *destDir = panel.URL.path;
 
     [_spinner startAnimation:nil];
-    _statusLabel.stringValue = @"Resolving tracks…";
+    _statusLabel.stringValue = NDTr("Resolving tracks…");
 
     NSArray *nodesCopy = [nodes copy];
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
@@ -202,7 +202,7 @@
             dispatch_async(dispatch_get_main_queue(), ^{
                 [self->_spinner stopAnimation:nil];
                 self->_statusLabel.stringValue =
-                    [NSString stringWithFormat:@"Error: %@", err.localizedDescription];
+                    NDTrf("Error: {0}", { NDStd(err.localizedDescription) });
             });
             return;
         }
@@ -213,8 +213,7 @@
             NSUInteger position = i + 1;
             dispatch_async(dispatch_get_main_queue(), ^{
                 self->_statusLabel.stringValue =
-                    [NSString stringWithFormat:@"Downloading %lu/%lu…",
-                     (unsigned long)position, (unsigned long)songs.count];
+                    NDTrf("Downloading {0}/{1}…", { std::to_string(position), std::to_string(songs.count) });
             });
 
             NSURL *url = [SubsonicClient.sharedClient downloadURLForSongId:s.nodeId];
@@ -266,12 +265,12 @@
     }
     if (_serverPlaylists.count == 0) {
         NSMenuItem *placeholder = [menu addItemWithTitle:
-            (_playlistsLoading ? @"Loading…" : @"No playlists on server")
+            (_playlistsLoading ? NDTr("Loading…") : NDTr("No playlists on server"))
                                                   action:nil keyEquivalent:@""];
         placeholder.enabled = NO;
     }
     [menu addItem:[NSMenuItem separatorItem]];
-    NSMenuItem *newItem = [menu addItemWithTitle:@"New Playlist…"
+    NSMenuItem *newItem = [menu addItemWithTitle:NDTr("New Playlist…")
                                           action:@selector(newServerPlaylist:)
                                    keyEquivalent:@""];
     newItem.target = self;
@@ -282,11 +281,11 @@
 - (void)collectSelectedSongIds:(void (^)(NSArray<NSString *> *ids, NSError *err))done {
     NSArray<NavidromeNode *> *nodes = [self selectedNodes];
     if (nodes.count == 0) {
-        _statusLabel.stringValue = @"Select at least one item first";
+        _statusLabel.stringValue = NDTr("Select at least one item first");
         return;
     }
     [_spinner startAnimation:nil];
-    _statusLabel.stringValue = @"Resolving tracks…";
+    _statusLabel.stringValue = NDTr("Resolving tracks…");
 
     NSArray *nodesCopy = [nodes copy];
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
@@ -310,10 +309,10 @@
 
     [self collectSelectedSongIds:^(NSArray<NSString *> *ids, NSError *err) {
         if (err)       { self->_statusLabel.stringValue =
-                             [NSString stringWithFormat:@"Error: %@", err.localizedDescription]; return; }
-        if (!ids.count) { self->_statusLabel.stringValue = @"No tracks in the selection"; return; }
+                             NDTrf("Error: {0}", { NDStd(err.localizedDescription) }); return; }
+        if (!ids.count) { self->_statusLabel.stringValue = NDTr("No tracks in the selection"); return; }
 
-        self->_statusLabel.stringValue = @"Adding to playlist…";
+        self->_statusLabel.stringValue = NDTr("Adding to playlist…");
         [self->_spinner startAnimation:nil];
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
             NSError *one = nil;
@@ -326,10 +325,8 @@
             dispatch_async(dispatch_get_main_queue(), ^{
                 [self->_spinner stopAnimation:nil];
                 self->_statusLabel.stringValue = ok
-                    ? [NSString stringWithFormat:@"Added %lu track(s) to “%@”",
-                       (unsigned long)ids.count, target.name]
-                    : [NSString stringWithFormat:@"Failed: %@",
-                       one.localizedDescription ?: @"unknown error"];
+                    ? NDTrf("Added {0} track(s) to “{1}”", { std::to_string(ids.count), NDStd(target.name) })
+                    : NDTrf("Failed: {0}", { NDStd(one.localizedDescription ?: NDTr("unknown error")) });
                 if (ok) {
                     [self invalidatePlaylistNode:target.playlistId];
                     [self refreshServerPlaylists];
@@ -343,15 +340,15 @@
     [self collectSelectedSongIds:^(NSArray<NSString *> *ids, NSError *err) {
         if (err) {
             self->_statusLabel.stringValue =
-                [NSString stringWithFormat:@"Error: %@", err.localizedDescription];
+                NDTrf("Error: {0}", { NDStd(err.localizedDescription) });
             return;
         }
-        NSString *name = [self promptForText:@"New Navidrome playlist"
-                                     message:@"Name for the new playlist:"
+        NSString *name = [self promptForText:NDTr("New Navidrome playlist")
+                                     message:NDTr("Name for the new playlist:")
                                 initialValue:@""];
         if (name.length == 0) return;
 
-        self->_statusLabel.stringValue = @"Creating playlist…";
+        self->_statusLabel.stringValue = NDTr("Creating playlist…");
         [self->_spinner startAnimation:nil];
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
             NSError *one = nil;
@@ -364,10 +361,8 @@
             dispatch_async(dispatch_get_main_queue(), ^{
                 [self->_spinner stopAnimation:nil];
                 self->_statusLabel.stringValue = newId
-                    ? [NSString stringWithFormat:@"Created “%@” (%lu track(s))",
-                       name, (unsigned long)ids.count]
-                    : [NSString stringWithFormat:@"Failed: %@",
-                       one.localizedDescription ?: @"unknown error"];
+                    ? NDTrf("Created “{0}” ({1} track(s))", { NDStd(name), std::to_string(ids.count) })
+                    : NDTrf("Failed: {0}", { NDStd(one.localizedDescription ?: NDTr("unknown error")) });
                 if (newId) {
                     [self invalidatePlaylistsCategory];
                     [self refreshServerPlaylists];
@@ -392,14 +387,14 @@
     }
 
     if (!playlist || indexes.count == 0) {
-        _statusLabel.stringValue = @"Select tracks inside a server playlist first";
+        _statusLabel.stringValue = NDTr("Select tracks inside a server playlist first");
         return;
     }
 
     NSString *playlistId = playlist.nodeId;
     NSString *playlistName = playlist.displayName;
     [_spinner startAnimation:nil];
-    _statusLabel.stringValue = @"Removing…";
+    _statusLabel.stringValue = NDTr("Removing…");
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         NSError *err = nil;
         BOOL ok = [SubsonicClient.sharedClient removeIndexes:indexes
@@ -411,10 +406,8 @@
         dispatch_async(dispatch_get_main_queue(), ^{
             [self->_spinner stopAnimation:nil];
             self->_statusLabel.stringValue = ok
-                ? [NSString stringWithFormat:@"Removed %lu track(s) from “%@”",
-                   (unsigned long)indexes.count, playlistName]
-                : [NSString stringWithFormat:@"Failed: %@",
-                   err.localizedDescription ?: @"unknown error"];
+                ? NDTrf("Removed {0} track(s) from “{1}”", { std::to_string(indexes.count), NDStd(playlistName) })
+                : NDTrf("Failed: {0}", { NDStd(err.localizedDescription ?: NDTr("unknown error")) });
             if (ok) [self invalidatePlaylistNode:playlistId];
         });
     });
@@ -422,10 +415,10 @@
 
 - (IBAction)renamePlaylist:(id)sender {
     NavidromeNode *playlist = [self singleSelectedPlaylist];
-    if (!playlist) { _statusLabel.stringValue = @"Select a single server playlist"; return; }
+    if (!playlist) { _statusLabel.stringValue = NDTr("Select a single server playlist"); return; }
 
-    NSString *name = [self promptForText:@"Rename playlist"
-                                 message:@"New name:"
+    NSString *name = [self promptForText:NDTr("Rename playlist")
+                                 message:NDTr("New name:")
                             initialValue:playlist.displayName ?: @""];
     if (name.length == 0 || [name isEqualToString:playlist.displayName]) return;
 
@@ -443,12 +436,11 @@
             [self->_spinner stopAnimation:nil];
             if (ok) {
                 playlist.displayName = name;
-                self->_statusLabel.stringValue = [NSString stringWithFormat:@"Renamed to “%@”", name];
+                self->_statusLabel.stringValue = NDTrf("Renamed to “{0}”", { NDStd(name) });
                 [self->_outlineView reloadData];
                 [self refreshServerPlaylists];
             } else {
-                self->_statusLabel.stringValue = [NSString stringWithFormat:@"Failed: %@",
-                    err.localizedDescription ?: @"unknown error"];
+                self->_statusLabel.stringValue = NDTrf("Failed: {0}", { NDStd(err.localizedDescription ?: NDTr("unknown error")) });
             }
         });
     });
@@ -456,16 +448,15 @@
 
 - (IBAction)deletePlaylist:(id)sender {
     NavidromeNode *playlist = [self singleSelectedPlaylist];
-    if (!playlist) { _statusLabel.stringValue = @"Select a single server playlist"; return; }
+    if (!playlist) { _statusLabel.stringValue = NDTr("Select a single server playlist"); return; }
 
     NSAlert *confirm = [[NSAlert alloc] init];
-    confirm.messageText = [NSString stringWithFormat:@"Delete “%@” from the server?",
-                           playlist.displayName];
-    confirm.informativeText = @"The playlist is removed for every client. "
-                               "The tracks themselves are not touched.";
+    confirm.messageText = NDTrf("Delete “{0}” from the server?", { NDStd(playlist.displayName) });
+    confirm.informativeText = NDTr("The playlist is removed for every client. "
+                                    "The tracks themselves are not touched.");
     confirm.alertStyle = NSAlertStyleWarning;
-    [confirm addButtonWithTitle:@"Delete"];
-    [confirm addButtonWithTitle:@"Cancel"];
+    [confirm addButtonWithTitle:NDTr("Delete")];
+    [confirm addButtonWithTitle:NDTr("Cancel")];
     if ([confirm runModal] != NSAlertFirstButtonReturn) return;
 
     NSString *playlistId = playlist.nodeId;
@@ -480,9 +471,8 @@
         dispatch_async(dispatch_get_main_queue(), ^{
             [self->_spinner stopAnimation:nil];
             self->_statusLabel.stringValue = ok
-                ? [NSString stringWithFormat:@"Deleted “%@”", playlistName]
-                : [NSString stringWithFormat:@"Failed: %@",
-                   err.localizedDescription ?: @"unknown error"];
+                ? NDTrf("Deleted “{0}”", { NDStd(playlistName) })
+                : NDTrf("Failed: {0}", { NDStd(err.localizedDescription ?: NDTr("unknown error")) });
             if (ok) {
                 [self invalidatePlaylistsCategory];
                 [self refreshServerPlaylists];
@@ -562,17 +552,17 @@
 
 - (IBAction)newRadioStation:(id)sender {
     NSString *name = nil, *streamUrl = nil, *homePageUrl = nil;
-    if (![self promptForRadioStationWithTitle:@"New Radio Station"
+    if (![self promptForRadioStationWithTitle:NDTr("New Radio Station")
                                           name:&name
                                      streamURL:&streamUrl
                                    homePageURL:&homePageUrl])
         return;
     if (name.length == 0 || streamUrl.length == 0) {
-        _statusLabel.stringValue = @"Name and stream URL are required";
+        _statusLabel.stringValue = NDTr("Name and stream URL are required");
         return;
     }
 
-    _statusLabel.stringValue = @"Creating radio station…";
+    _statusLabel.stringValue = NDTr("Creating radio station…");
     [_spinner startAnimation:nil];
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         NSError *err = nil;
@@ -585,9 +575,8 @@
         dispatch_async(dispatch_get_main_queue(), ^{
             [self->_spinner stopAnimation:nil];
             self->_statusLabel.stringValue = result
-                ? [NSString stringWithFormat:@"Created “%@”", name]
-                : [NSString stringWithFormat:@"Failed: %@",
-                   err.localizedDescription ?: @"unknown error"];
+                ? NDTrf("Created “{0}”", { NDStd(name) })
+                : NDTrf("Failed: {0}", { NDStd(err.localizedDescription ?: NDTr("unknown error")) });
             if (result) {
                 [self invalidateRadioCategory];
                 [self refreshRadioStations];
@@ -598,11 +587,11 @@
 
 - (IBAction)editRadioStation:(id)sender {
     NavidromeNode *node = [self singleSelectedRadioStation];
-    if (!node) { _statusLabel.stringValue = @"Select a single radio station"; return; }
+    if (!node) { _statusLabel.stringValue = NDTr("Select a single radio station"); return; }
     SubsonicRadioStation *current = [self radioStationForId:node.nodeId];
 
     NSString *name = nil, *streamUrl = nil, *homePageUrl = nil;
-    if (![self promptForRadioStationWithTitle:@"Edit Radio Station"
+    if (![self promptForRadioStationWithTitle:NDTr("Edit Radio Station")
                             initialName:current.name ?: node.displayName
                        initialStreamURL:current.streamUrl ?: @""
                      initialHomePageURL:current.homePageUrl ?: @""
@@ -611,7 +600,7 @@
                             homePageURL:&homePageUrl])
         return;
     if (name.length == 0 || streamUrl.length == 0) {
-        _statusLabel.stringValue = @"Name and stream URL are required";
+        _statusLabel.stringValue = NDTr("Name and stream URL are required");
         return;
     }
 
@@ -629,9 +618,8 @@
         dispatch_async(dispatch_get_main_queue(), ^{
             [self->_spinner stopAnimation:nil];
             self->_statusLabel.stringValue = ok
-                ? [NSString stringWithFormat:@"Updated “%@”", name]
-                : [NSString stringWithFormat:@"Failed: %@",
-                   err.localizedDescription ?: @"unknown error"];
+                ? NDTrf("Updated “{0}”", { NDStd(name) })
+                : NDTrf("Failed: {0}", { NDStd(err.localizedDescription ?: NDTr("unknown error")) });
             if (ok) {
                 [self invalidateRadioCategory];
                 [self refreshRadioStations];
@@ -642,15 +630,14 @@
 
 - (IBAction)deleteRadioStation:(id)sender {
     NavidromeNode *node = [self singleSelectedRadioStation];
-    if (!node) { _statusLabel.stringValue = @"Select a single radio station"; return; }
+    if (!node) { _statusLabel.stringValue = NDTr("Select a single radio station"); return; }
 
     NSAlert *confirm = [[NSAlert alloc] init];
-    confirm.messageText = [NSString stringWithFormat:@"Delete “%@” from the server?",
-                           node.displayName];
-    confirm.informativeText = @"The station is removed for every client.";
+    confirm.messageText = NDTrf("Delete “{0}” from the server?", { NDStd(node.displayName) });
+    confirm.informativeText = NDTr("The station is removed for every client.");
     confirm.alertStyle = NSAlertStyleWarning;
-    [confirm addButtonWithTitle:@"Delete"];
-    [confirm addButtonWithTitle:@"Cancel"];
+    [confirm addButtonWithTitle:NDTr("Delete")];
+    [confirm addButtonWithTitle:NDTr("Cancel")];
     if ([confirm runModal] != NSAlertFirstButtonReturn) return;
 
     NSString *stationId = node.nodeId;
@@ -664,9 +651,8 @@
         dispatch_async(dispatch_get_main_queue(), ^{
             [self->_spinner stopAnimation:nil];
             self->_statusLabel.stringValue = ok
-                ? [NSString stringWithFormat:@"Deleted “%@”", stationName]
-                : [NSString stringWithFormat:@"Failed: %@",
-                   err.localizedDescription ?: @"unknown error"];
+                ? NDTrf("Deleted “{0}”", { NDStd(stationName) })
+                : NDTrf("Failed: {0}", { NDStd(err.localizedDescription ?: NDTr("unknown error")) });
             if (ok) {
                 [self invalidateRadioCategory];
                 [self refreshRadioStations];
@@ -694,12 +680,12 @@
 }
 
 - (IBAction)subscribePodcast:(id)sender {
-    NSString *url = [self promptForText:@"Subscribe to Podcast"
-                                 message:@"Podcast RSS feed URL:"
+    NSString *url = [self promptForText:NDTr("Subscribe to Podcast")
+                                 message:NDTr("Podcast RSS feed URL:")
                             initialValue:@""];
     if (url.length == 0) return;
 
-    _statusLabel.stringValue = @"Subscribing…";
+    _statusLabel.stringValue = NDTr("Subscribing…");
     [_spinner startAnimation:nil];
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         NSError *err = nil;
@@ -710,9 +696,8 @@
         dispatch_async(dispatch_get_main_queue(), ^{
             [self->_spinner stopAnimation:nil];
             self->_statusLabel.stringValue = ok
-                ? @"Subscribed"
-                : [NSString stringWithFormat:@"Failed: %@",
-                   err.localizedDescription ?: @"unknown error"];
+                ? NDTr("Subscribed")
+                : NDTrf("Failed: {0}", { NDStd(err.localizedDescription ?: NDTr("unknown error")) });
             if (ok) [self invalidatePodcastsCategory];
         });
     });
@@ -720,14 +705,14 @@
 
 - (IBAction)unsubscribePodcast:(id)sender {
     NavidromeNode *node = [self singleSelectedPodcastChannel];
-    if (!node) { _statusLabel.stringValue = @"Select a single podcast"; return; }
+    if (!node) { _statusLabel.stringValue = NDTr("Select a single podcast"); return; }
 
     NSAlert *confirm = [[NSAlert alloc] init];
-    confirm.messageText = [NSString stringWithFormat:@"Unsubscribe from “%@”?", node.displayName];
-    confirm.informativeText = @"Downloaded episodes are removed from the server.";
+    confirm.messageText = NDTrf("Unsubscribe from “{0}”?", { NDStd(node.displayName) });
+    confirm.informativeText = NDTr("Downloaded episodes are removed from the server.");
     confirm.alertStyle = NSAlertStyleWarning;
-    [confirm addButtonWithTitle:@"Unsubscribe"];
-    [confirm addButtonWithTitle:@"Cancel"];
+    [confirm addButtonWithTitle:NDTr("Unsubscribe")];
+    [confirm addButtonWithTitle:NDTr("Cancel")];
     if ([confirm runModal] != NSAlertFirstButtonReturn) return;
 
     NSString *channelId = node.nodeId;
@@ -741,9 +726,8 @@
         dispatch_async(dispatch_get_main_queue(), ^{
             [self->_spinner stopAnimation:nil];
             self->_statusLabel.stringValue = ok
-                ? [NSString stringWithFormat:@"Unsubscribed from “%@”", channelName]
-                : [NSString stringWithFormat:@"Failed: %@",
-                   err.localizedDescription ?: @"unknown error"];
+                ? NDTrf("Unsubscribed from “{0}”", { NDStd(channelName) })
+                : NDTrf("Failed: {0}", { NDStd(err.localizedDescription ?: NDTr("unknown error")) });
             if (ok) [self invalidatePodcastsCategory];
         });
     });
@@ -771,22 +755,22 @@
                             homePageURL:(NSString **)outHomePageURL {
     NSAlert *alert = [[NSAlert alloc] init];
     alert.messageText = title;
-    alert.informativeText = @"Name and stream URL are required. Home page URL is optional.";
-    [alert addButtonWithTitle:@"OK"];
-    [alert addButtonWithTitle:@"Cancel"];
+    alert.informativeText = NDTr("Name and stream URL are required. Home page URL is optional.");
+    [alert addButtonWithTitle:NDTr("OK")];
+    [alert addButtonWithTitle:NDTr("Cancel")];
 
     CGFloat fieldWidth = 260, rowHeight = 24, rowGap = 6, labelHeight = 16;
     NSView *container = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, fieldWidth, 3 * (rowHeight + labelHeight + rowGap))];
 
-    NSTextField *nameLabel = [NSTextField labelWithString:@"Name:"];
+    NSTextField *nameLabel = [NSTextField labelWithString:NDTr("Name:")];
     NSTextField *nameField = [[NSTextField alloc] init];
     nameField.stringValue = initialName ?: @"";
 
-    NSTextField *urlLabel = [NSTextField labelWithString:@"Stream URL:"];
+    NSTextField *urlLabel = [NSTextField labelWithString:NDTr("Stream URL:")];
     NSTextField *urlField = [[NSTextField alloc] init];
     urlField.stringValue = initialStreamURL ?: @"";
 
-    NSTextField *homeLabel = [NSTextField labelWithString:@"Home page URL (optional):"];
+    NSTextField *homeLabel = [NSTextField labelWithString:NDTr("Home page URL (optional):")];
     NSTextField *homeField = [[NSTextField alloc] init];
     homeField.stringValue = initialHomePageURL ?: @"";
 

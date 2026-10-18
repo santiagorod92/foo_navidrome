@@ -171,7 +171,7 @@ inline BrowserNodePtr makePodcastChannelNode(const PodcastChannel& c) {
     n->id          = c.id;
     n->displayName = c.title;
     n->subtitle    = !c.description.empty() ? c.description
-                    : (c.status == "error" ? ("Error: " + c.errorMessage) : c.status);
+                    : (c.status == "error" ? trf("Error: {0}", { c.errorMessage }) : c.status);
     return n;
 }
 
@@ -199,7 +199,7 @@ inline BrowserNodePtr makeCategoryNode(BrowserNode::CategoryKind kind,
     auto n = std::make_shared<BrowserNode>();
     n->type        = BrowserNode::Category;
     n->category    = kind;
-    n->displayName = title;
+    n->displayName = tr(title);
     return n;
 }
 
@@ -214,7 +214,7 @@ inline BrowserNodePtr makeArtistSubNode(BrowserNode::CategoryKind kind, const st
 inline BrowserNodePtr loadingNode() {
     auto n = std::make_shared<BrowserNode>();
     n->type           = BrowserNode::Loading;
-    n->displayName    = "Loading…";
+    n->displayName    = tr("Loading…");
     n->childrenLoaded = true;
     return n;
 }
@@ -235,18 +235,18 @@ struct CategoryEntry {
 
 inline const std::vector<CategoryEntry>& browserCategories() {
     static const std::vector<CategoryEntry> kCategories = {
-        { BrowserNode::CatAllSongs,       "All Songs",       "all_songs"       },
-        { BrowserNode::CatStarred,        "★ Starred",       "starred"         },
-        { BrowserNode::CatRecentlyAdded,  "Recently Added",  "recently_added"  },
-        { BrowserNode::CatMostPlayed,     "Most Played",     "most_played"     },
-        { BrowserNode::CatRecentlyPlayed, "Recently Played", "recently_played" },
-        { BrowserNode::CatRandom,         "Random Albums",   "random_albums"   },
-        { BrowserNode::CatGenres,         "Genres",          "genres"          },
-        { BrowserNode::CatPlaylists,      "Playlists",       "playlists"       },
-        { BrowserNode::CatBookmarks,      "Bookmarks",       "bookmarks"       },
-        { BrowserNode::CatRadio,          "Radio",           "radio"           },
-        { BrowserNode::CatPodcasts,       "Podcasts",        "podcasts"        },
-        { BrowserNode::CatNowPlaying,     "Now Playing",     "now_playing"     },
+        { BrowserNode::CatAllSongs,       N_("All Songs"),       "all_songs"       },
+        { BrowserNode::CatStarred,        N_("★ Starred"),       "starred"         },
+        { BrowserNode::CatRecentlyAdded,  N_("Recently Added"),  "recently_added"  },
+        { BrowserNode::CatMostPlayed,     N_("Most Played"),     "most_played"     },
+        { BrowserNode::CatRecentlyPlayed, N_("Recently Played"), "recently_played" },
+        { BrowserNode::CatRandom,         N_("Random Albums"),   "random_albums"   },
+        { BrowserNode::CatGenres,         N_("Genres"),          "genres"          },
+        { BrowserNode::CatPlaylists,      N_("Playlists"),       "playlists"       },
+        { BrowserNode::CatBookmarks,      N_("Bookmarks"),       "bookmarks"       },
+        { BrowserNode::CatRadio,          N_("Radio"),           "radio"           },
+        { BrowserNode::CatPodcasts,       N_("Podcasts"),        "podcasts"        },
+        { BrowserNode::CatNowPlaying,     N_("Now Playing"),     "now_playing"     },
     };
     return kCategories;
 }
@@ -521,15 +521,16 @@ inline std::string downloadFileName(const BrowserNode& n) {
 }
 
 inline std::string sentPlaylistSummary(const std::string& name, std::size_t tracks, std::size_t skipped) {
-    std::string msg = "Sent \"" + name + "\" (" + std::to_string(tracks) + " tracks";
-    if (skipped > 0) msg += ", " + std::to_string(skipped) + " non-Navidrome skipped";
-    return msg + ")";
+    return skipped > 0
+        ? trf("Sent \"{0}\" ({1} tracks, {2} non-Navidrome skipped)",
+              { name, std::to_string(tracks), std::to_string(skipped) })
+        : trf("Sent \"{0}\" ({1} tracks)", { name, std::to_string(tracks) });
 }
 
 inline std::string downloadSummary(std::size_t done, std::size_t failed) {
     return failed == 0
-        ? "Downloaded " + std::to_string(done) + " track(s)"
-        : "Downloaded " + std::to_string(done) + ", " + std::to_string(failed) + " failed";
+        ? trf("Downloaded {0} track(s)", { std::to_string(done) })
+        : trf("Downloaded {0}, {1} failed", { std::to_string(done), std::to_string(failed) });
 }
 
 inline std::string rootLoadSummary(const std::vector<BrowserNodePtr>& roots) {
@@ -539,7 +540,8 @@ inline std::string rootLoadSummary(const std::vector<BrowserNodePtr>& roots) {
         if (n->type == BrowserNode::Artist)  ++artists;
         if (n->type == BrowserNode::Library) ++libraries;
     }
-    return libraries ? std::to_string(libraries) + " libraries" : std::to_string(artists) + " artists";
+    return libraries ? trf("{0} libraries", { std::to_string(libraries) })
+                     : trf("{0} artists", { std::to_string(artists) });
 }
 
 constexpr std::size_t kMinSearchQueryLength = 2;
