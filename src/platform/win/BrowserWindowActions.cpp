@@ -599,7 +599,12 @@ void BrowserWindow::OnRefresh(UINT, int, HWND) {
 }
 
 void BrowserWindow::OnSearchChanged(UINT, int, HWND) {
+    updateClearSearchButton();
     SetTimer(kSearchDebounceTimer, kSearchDebounceMs, nullptr);
+}
+
+void BrowserWindow::OnClearSearch(UINT, int, HWND) {
+    clearSearch("button");
 }
 
 void BrowserWindow::OnTimer(UINT_PTR id) {

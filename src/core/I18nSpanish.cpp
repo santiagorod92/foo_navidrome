@@ -96,6 +96,8 @@ const std::vector<std::pair<const char*, const char*>>& spanishTable() {
           "Elige una carpeta para las pistas descargadas" },
         { "Choose a folder for the downloaded tracks.",
           "Elige una carpeta para las pistas descargadas." },
+        { "Clear search (Esc)",
+          "Borrar la búsqueda (Esc)" },
         { "Cloudflare headers",
           "Cabeceras de Cloudflare" },
         { "Collecting…",

@@ -85,6 +85,17 @@ LRESULT BrowserWindow::OnCreate(LPCREATESTRUCT) {
         WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL, 0, IDC_SEARCH);
     m_search.SetFont(hFont);
     m_search.SetCueBannerText(trw("Search artists, albums, songs…").c_str());
+    ::SetWindowSubclass(m_search, &BrowserWindow::SearchSubclassProc, 2,
+                        reinterpret_cast<DWORD_PTR>(this));
+
+    m_clearSearchBtn.Create(*this, CWindow::rcDefault, L"\u00D7",
+        WS_CHILD | BS_PUSHBUTTON, 0, IDC_CLEAR_SEARCH);
+    m_clearSearchBtn.SetFont(hFont);
+    m_clearSearchTip.Create(*this, nullptr, nullptr, TTS_ALWAYSTIP | TTS_NOPREFIX);
+    const std::wstring clearTip = trw("Clear search (Esc)");
+    m_clearSearchTip.AddTool(CToolInfo(TTF_IDISHWND | TTF_SUBCLASS, *this,
+        reinterpret_cast<UINT_PTR>(m_clearSearchBtn.m_hWnd), nullptr,
+        const_cast<LPWSTR>(clearTip.c_str())));
 
     m_tree.Create(*this, CWindow::rcDefault, nullptr,
         WS_CHILD | WS_VISIBLE | WS_BORDER | TVS_HASLINES |
@@ -170,6 +181,7 @@ void BrowserWindow::OnDestroy() {
     s_open.erase(std::remove(s_open.begin(), s_open.end(), this), s_open.end());
     KillTimer(kSearchDebounceTimer);
     ::RemoveWindowSubclass(m_tree, &BrowserWindow::TreeSubclassProc, 1);
+    ::RemoveWindowSubclass(m_search, &BrowserWindow::SearchSubclassProc, 2);
     m_selAnchor = nullptr;
     m_nodeMap.clear();
     m_rootNodes.clear();
@@ -184,9 +196,7 @@ LRESULT BrowserWindow::OnSize(UINT, CSize sz) {
     const int searchH = (std::max)(s(22), m_lineH + s(8));
     int w = sz.cx, h = sz.cy;
 
-    m_search.SetWindowPos(nullptr,
-        pad, pad, w - 2*pad, searchH,
-        SWP_NOZORDER);
+    layoutSearchRow();
     m_tree.SetWindowPos(nullptr,
         pad, pad + searchH + pad,
         w - 2*pad, h - searchH - btnH - 4*pad,
@@ -204,6 +214,56 @@ LRESULT BrowserWindow::OnSize(UINT, CSize sz) {
     m_addBtn.SetWindowPos(nullptr,
         w - pad - playW - pad - addW, btnY, addW, btnH, SWP_NOZORDER);
     return 0;
+}
+
+void BrowserWindow::layoutSearchRow() {
+    if (!m_search.IsWindow()) return;
+    const navidrome::win::UiScale s(*this);
+    const int pad = s(6), searchH = (std::max)(s(22), m_lineH + s(8));
+    RECT rc{}; GetClientRect(&rc);
+    const int w = rc.right - rc.left;
+    const bool showClear = hasSearchText();
+    const int clearW = showClear ? searchH : 0;
+    const int searchW = (std::max)(0, w - 2*pad - (showClear ? clearW + s(2) : 0));
+    m_search.SetWindowPos(nullptr, pad, pad, searchW, searchH, SWP_NOZORDER);
+    m_clearSearchBtn.SetWindowPos(nullptr, pad + searchW + s(2), pad, clearW, searchH,
+        SWP_NOZORDER | (showClear ? SWP_SHOWWINDOW : SWP_HIDEWINDOW));
+}
+
+void BrowserWindow::updateClearSearchButton() {
+    if (!m_clearSearchBtn.IsWindow()) return;
+    if (hasSearchText() != (m_clearSearchBtn.IsWindowVisible() != FALSE)) layoutSearchRow();
+}
+
+void BrowserWindow::clearSearch(const char* how) {
+    if (!hasSearchText()) return;
+    NAVIDROME_LOG("UI", std::string("search cleared (") + how + ")");
+    m_search.SetWindowText(L"");
+    KillTimer(kSearchDebounceTimer);
+    ++m_searchGeneration;
+    if (m_isSearching) restoreBrowseTree();
+    else setStatus(navidrome::rootLoadSummary(m_rootNodes));
+    m_search.SetFocus();
+}
+
+LRESULT CALLBACK BrowserWindow::SearchSubclassProc(HWND hWnd, UINT msg, WPARAM wParam,
+                                                   LPARAM lParam, UINT_PTR, DWORD_PTR ref) {
+    auto* self = reinterpret_cast<BrowserWindow*>(ref);
+    switch (msg) {
+    case WM_GETDLGCODE: {
+        const auto* m = reinterpret_cast<const MSG*>(lParam);
+        if (m && m->message == WM_KEYDOWN && m->wParam == VK_ESCAPE && self->hasSearchText())
+            return ::DefSubclassProc(hWnd, msg, wParam, lParam) | DLGC_WANTMESSAGE;
+        break;
+    }
+    case WM_KEYDOWN:
+        if (wParam == VK_ESCAPE && self->hasSearchText()) { self->clearSearch("Esc"); return 0; }
+        break;
+    case WM_CHAR:
+        if (wParam == VK_ESCAPE) return 0;
+        break;
+    }
+    return ::DefSubclassProc(hWnd, msg, wParam, lParam);
 }
 
 using navidrome::buildCategoryNodes;

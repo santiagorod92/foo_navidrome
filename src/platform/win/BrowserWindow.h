@@ -68,6 +68,7 @@ public:
         COMMAND_ID_HANDLER_EX(IDC_RANDOM_MIX, OnRandomMix)
         COMMAND_ID_HANDLER_EX(IDC_ARTIST_INFO, OnArtistInfo)
         COMMAND_ID_HANDLER_EX(IDC_REFRESH, OnRefresh)
+        COMMAND_ID_HANDLER_EX(IDC_CLEAR_SEARCH, OnClearSearch)
         COMMAND_ID_HANDLER_EX(IDC_STAR,    OnStar)
         COMMAND_ID_HANDLER_EX(IDC_UNSTAR,  OnUnstar)
         COMMAND_ID_HANDLER_EX(IDC_SEND_PLAYLIST, OnSendActivePlaylist)
@@ -120,6 +121,7 @@ private:
         IDC_ALCHEMY             = 1030,
         IDC_MAKE_OFFLINE        = 1031,
         IDC_REMOVE_OFFLINE      = 1032,
+        IDC_CLEAR_SEARCH        = 1033,
         IDC_PLAYLIST_FIRST = 1100,
         IDC_PLAYLIST_LAST  = 1299,
     };
@@ -154,6 +156,7 @@ private:
     void    OnRate(UINT, int, HWND);
     void    OnSendActivePlaylist(UINT, int, HWND);
     void    OnSearchChanged(UINT, int, HWND);
+    void    OnClearSearch(UINT, int, HWND);
     void    OnAddToServerPlaylist(UINT, int, HWND);
     void    OnNewServerPlaylist(UINT, int, HWND);
     void    OnRemoveFromPlaylist(UINT, int, HWND);
@@ -194,6 +197,12 @@ private:
 
     static LRESULT CALLBACK TreeSubclassProc(HWND, UINT, WPARAM, LPARAM,
                                              UINT_PTR, DWORD_PTR);
+    static LRESULT CALLBACK SearchSubclassProc(HWND, UINT, WPARAM, LPARAM,
+                                               UINT_PTR, DWORD_PTR);
+    bool    hasSearchText() const { return m_search.IsWindow() && m_search.GetWindowTextLength() > 0; }
+    void    clearSearch(const char* how);
+    void    updateClearSearchButton();
+    void    layoutSearchRow();
     bool    onTreeLButtonDown(LPARAM lParam);
     std::vector<HTREEITEM> visibleItems();
     void    clearSelectionExcept(HTREEITEM keep);
@@ -227,7 +236,8 @@ private:
 
     CTreeViewCtrl m_tree;
     CEdit         m_search;
-    CButton       m_addBtn, m_playBtn, m_refreshBtn;
+    CButton       m_addBtn, m_playBtn, m_refreshBtn, m_clearSearchBtn;
+    CToolTipCtrl  m_clearSearchTip;
     CStatic       m_status;
     int           m_lineH = 16;
     fb2k::CCoreDarkModeHooks m_darkMode;

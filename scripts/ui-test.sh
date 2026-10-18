@@ -169,6 +169,7 @@ wine_open_browser() {
 wine_key() { wclick 120 200 "key:$(wine_vk "$1")" >/dev/null; sleep 0.4; }
 wine_type_search() { wclick "$SEARCH_X" "$SEARCH_Y" l >/dev/null; sleep 0.3; wclick "$SEARCH_X" "$SEARCH_Y" "type:$1" >/dev/null; }
 wine_erase_search() { local b; b="$(printf '\b%.0s' $(seq 1 "$1"))"; wclick "$SEARCH_X" "$SEARCH_Y" "type:$b" >/dev/null; }
+wine_esc_search() { wclick "$SEARCH_X" "$SEARCH_Y" "key:0x1B" >/dev/null; sleep 0.4; }
 wine_focus_tree() { wclick "$FIRST_ROW_X" "$FIRST_ROW_Y" l >/dev/null; sleep 0.5; }
 wine_expand_artist() { wine_focus_tree; wine_key end; wine_key right; }
 wine_cmd() { foobar2000 "-command:$1" >/dev/null 2>&1 & }
@@ -270,6 +271,7 @@ win11_focus_tree() { win11_click_client "$FIRST_ROW_X" "$FIRST_ROW_Y"; sleep 0.5
 win11_expand_artist() { win11_focus_tree; win11_key end; win11_key right; }
 win11_type_search() { win11_click_client "$SEARCH_X" "$SEARCH_Y"; sleep 0.3; "$WVM" type "$1" >/dev/null; }
 win11_erase_search() { for _ in $(seq 1 "$1"); do "$WVM" key bsp >/dev/null; done; }
+win11_esc_search() { win11_key esc; }
 win11_cmd() { "$WVM" fb2k cmd "$1" >/dev/null; }
 win11_window_exists() { [ -n "$(win11_window "$1")" ]; }
 win11_press_in_window() { win11_key "$2"; }
@@ -577,6 +579,14 @@ scenario_search() {
   mark; d erase_search "${#query}"
   expect 'restoreBrowseTree .* took' 20 "browse tree restored"
   check_rebuild restoreBrowseTree
+
+  say "search '$query' again, clear it with Escape"
+  mark; d type_search "$query"
+  expect 'populateSearchResults .* took' 20 "search results shown"
+  sleep 1
+  mark; d esc_search
+  expect 'search cleared .Esc.' 10 "Escape cleared the search field"
+  expect 'restoreBrowseTree .* took' 20 "browse tree restored"
   post_checks search
 }
 
