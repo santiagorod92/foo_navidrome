@@ -26,6 +26,17 @@ Scenarios (one implementation each, run on any platform that supports it)
                         installed, the panel added to its layout via Live layout editing)
   prefs [PAGE]          wine, win11: Preferences on one of our pages, screenshot
                         (main | audiomuse | libraries | sections | radio | media | components)
+  i18n [ARTIFACT]       run in Spanish for once (UI language "es", restored after): assert the
+                        session banner says ui=es, open the browser through its Spanish menu
+                        command and window title, screenshot
+  solo [ARTIFACT]       the sister component (SIBLING, default foo_ui_panels) moved out of
+                        user-components and the Default UI selected for the run (both restored
+                        after): assert it isn't loaded, then the smoke steps; foo_navidrome must
+                        work without it
+
+Runs assume the UI language is English: a profile set to another language is switched to
+English for the run (UI_LANG=en, restored after); "automatic" is left alone, so the system
+language must be English.
 
 ARTIFACT: what gets deployed first. wine: nothing (make win-build installs into the Wine
 profile); win11: a DLL (default build-win/foo_navidrome.dll); mac: a .fb2k-component (default:
@@ -53,6 +64,11 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 SHOTS="$REPO/build/ui-test"
 GUID_PREFIX='A1B2C3D4-1111-2222-AABB-CCDDEEFF'
 STREAM_FORMAT_KEY="cfg_var.${GUID_PREFIX}010C"
+UI_LANG_KEY="cfg_var.${GUID_PREFIX}0801"
+UI_MODULE_KEY='cfg_var.094A28DA-C6E8-4392-BAF1-AD0F29E5B303'
+UI_MODULE_KEY2='cfg_var.22AF8F41-D22D-4529-B0ED-437BE9AEC30C'
+SIBLING="${SIBLING:-foo_ui_panels}"
+UI_LANG="${UI_LANG:-en}"
 FIRST_ROW_X=60; FIRST_ROW_Y=43
 SEARCH_X=200; SEARCH_Y=15
 
@@ -65,6 +81,21 @@ fail() {
   d_shot "$SHOTS/$PLATFORM-fail-$(date +%H%M%S).png" >/dev/null 2>&1 || true
   exit 1
 }
+CLEANUPS=()
+on_exit() { CLEANUPS+=("$1"); trap run_cleanups EXIT; }
+run_cleanups() {
+  local i
+  for (( i = ${#CLEANUPS[@]} - 1; i >= 0; i-- )); do eval "${CLEANUPS[$i]}" >/dev/null 2>&1 || true; done
+}
+
+ui_strings() {
+  case "$UI_LANG" in
+    es) BROWSER_TITLE='Navegador de Navidrome'; OPEN_CMD='Abrir el Navegador de Navidrome'; OPEN_PREFIX='Abrir el N' ;;
+    *)  BROWSER_TITLE='Navidrome Browser';      OPEN_CMD='Open Navidrome Browser';           OPEN_PREFIX='Open N' ;;
+  esac
+}
+ui_strings
+
 record() { [ -n "${RESULTS:-}" ] && printf '%s\t%s\n' "$1" "${2%% — *}" >> "$RESULTS"; return 0; }
 
 pages() {
@@ -83,7 +114,7 @@ wine_init() {
   WINE_CFG="$HOME/.foobar2000/profile/config.sqlite"
   XWIN="${XWIN_SDK:-$HOME/.local/share/xwin/sdk}"
   WCLICK_DIR="$REPO/build/tools"; WCLICK="$WCLICK_DIR/wclick.exe"
-  SUPPORTS="smoke playqueue search prefs"
+  SUPPORTS="smoke playqueue search prefs i18n solo"
 }
 build_wclick() {
   [ "$WCLICK" -nt "$REPO/tools/wclick.c" ] && return
@@ -107,7 +138,7 @@ t = sys.argv[1]
 cs = [c for c in json.load(sys.stdin) if c['class'].lower() == 'foobar2000.exe' and t in c['title']]
 if not cs: sys.exit(1)
 c = max(cs, key=lambda c: c['size'][0] * c['size'][1])
-print('%d,%d %dx%d' % (c['at'][0], c['at'][1], c['size'][0], c['size'][1]))" "${1-Navidrome Browser}"
+print('%d,%d %dx%d' % (c['at'][0], c['at'][1], c['size'][0], c['size'][1]))" "${1-$BROWSER_TITLE}"
 }
 wine_deploy() { [ -n "${1:-}" ] && [ "$1" != - ] && warn "wine installs with make win-build; ignoring $1"; return 0; }
 wine_running() { pgrep -f 'foobar2000[.]exe' >/dev/null; }
@@ -127,7 +158,7 @@ wine_clear_log() { : > "$LOG" 2>/dev/null || true; }
 wine_crash_count() { ls "$HOME/.foobar2000/profile/crash reports"/*.txt 2>/dev/null | wc -l; }
 wine_cfg_sql() { wine_stop; sqlite3 "$WINE_CFG" "$1"; }
 wine_open_browser() {
-  foobar2000 "-command:Open Navidrome Browser" >/dev/null 2>&1 &
+  foobar2000 "-command:$OPEN_CMD" >/dev/null 2>&1 &
   for _ in $(seq 1 30); do geom >/dev/null 2>&1 && return 0; sleep 0.5; done
   fail "the Navidrome Browser window didn't open"
 }
@@ -143,9 +174,25 @@ wine_close_window() { wclick 0 0 "top:$1" close >/dev/null 2>&1 || true; }
 wine_shot() {
   local f="$1" g
   mkdir -p "$(dirname "$f")"
-  g="$(geom "${2-Navidrome Browser}" || geom '')" || { echo "no foobar2000 window to capture"; return 1; }
+  g="$(geom "${2-$BROWSER_TITLE}" || geom '')" || { echo "no foobar2000 window to capture"; return 1; }
   grim -g "$g" "$f" && echo "$f"
 }
+wine_sibling_dir() { echo "$HOME/.foobar2000/profile/user-components-x64/$1"; }
+wine_sibling_off() { echo "$HOME/.foobar2000/profile/.solo-off-$1"; }
+wine_sibling_disable() {
+  wine_stop
+  local on off; on="$(wine_sibling_dir "$1")"; off="$(wine_sibling_off "$1")"
+  [ -d "$off" ] && [ ! -d "$on" ] && return 0
+  [ -d "$on" ] || return 1
+  mv "$on" "$off"
+}
+wine_sibling_enable() {
+  wine_stop
+  local on off; on="$(wine_sibling_dir "$1")"; off="$(wine_sibling_off "$1")"
+  [ -d "$off" ] && [ ! -d "$on" ] && mv "$off" "$on"
+  return 0
+}
+wine_sibling_loaded() { grep -qi "$1" "/proc/$(pgrep -f 'foobar2000[.]exe' | head -1)/maps" 2>/dev/null; }
 wine_prefs() {
   local guid; guid="$(pages "${1:-main}")"
   wine_cfg_sql "INSERT OR REPLACE INTO configStrings VALUES ('preferences.lastOpenPage', '$guid');"
@@ -162,7 +209,7 @@ win11_init() {
   LOG="$("$WVM" shared)/tmp/foo_navidrome_debug.log"
   WINE_CFG="${WINE_CFG:-$HOME/.foobar2000/profile/config.sqlite}"
   GUEST_PROFILE='AppData/Roaming/foobar2000-v2'
-  SUPPORTS="smoke playqueue search cui prefs"
+  SUPPORTS="smoke playqueue search cui prefs i18n solo"
 }
 win11_deploy() {
   local dll="${1:-$REPO/build-win/foo_navidrome.dll}"
@@ -211,8 +258,8 @@ win11_click_client() {
   "$WVM" click $(( x + $1 * dpi / 96 )) $(( y + $2 * dpi / 96 ))
 }
 win11_open_browser() {
-  "$WVM" fb2k cmd "Open Navidrome Browser" >/dev/null
-  BROWSER="$(win11_wait_window "Navidrome Browser" 30)" || fail "the Navidrome Browser window didn't open"
+  "$WVM" fb2k cmd "$OPEN_CMD" >/dev/null
+  BROWSER="$(win11_wait_window "$BROWSER_TITLE" 30)" || fail "the Navidrome Browser window didn't open"
 }
 win11_key() { "$WVM" key "$1" >/dev/null; sleep 0.4; }
 win11_focus_tree() { win11_click_client "$FIRST_ROW_X" "$FIRST_ROW_Y"; sleep 0.5; }
@@ -231,6 +278,21 @@ win11_prefs() {
   win11_wait_window "Preferences" 30 >/dev/null || fail "Preferences didn't open"
   sleep 2
   win11_shot "$SHOTS/win11-prefs-${1:-main}-$(date +%H%M%S).png"
+}
+win11_sibling_disable() {
+  win11_stop
+  "$WVM" ps "\$base = \"\$env:APPDATA\\foobar2000-v2\"; \$on = \"\$base\\user-components-x64\\$1\"; \$off = \"\$base\\.solo-off-$1\";
+    if ((Test-Path \$off) -and -not (Test-Path \$on)) { exit 0 }
+    if (-not (Test-Path \$on)) { exit 1 }
+    Move-Item \$on \$off; exit 0" >/dev/null 2>&1
+}
+win11_sibling_enable() {
+  win11_stop
+  "$WVM" ps "\$base = \"\$env:APPDATA\\foobar2000-v2\"; \$on = \"\$base\\user-components-x64\\$1\"; \$off = \"\$base\\.solo-off-$1\";
+    if ((Test-Path \$off) -and -not (Test-Path \$on)) { Move-Item \$off \$on }" >/dev/null 2>&1 || true
+}
+win11_sibling_loaded() {
+  "$WVM" ps "if (Get-Process foobar2000 -ErrorAction SilentlyContinue | ForEach-Object { \$_.Modules } | Where-Object { \$_.ModuleName -like '$1*' }) { exit 0 } else { exit 1 }" >/dev/null 2>&1
 }
 win11_seed() {
   [ -f "$WINE_CFG" ] || fail "no Wine profile at $WINE_CFG (WINE_CFG=...)"
@@ -252,7 +314,7 @@ mac_init() {
   GUEST_CFG='~/Library/foobar2000-v2/config.sqlite'
   FILE_MENU_X=162; FILE_MENU_Y=11
   CATEGORY_ROWS=12
-  SUPPORTS="smoke playqueue"
+  SUPPORTS="smoke playqueue i18n solo"
 }
 g() { "$MVM" ssh "$@"; }
 mac_deploy() {
@@ -278,7 +340,7 @@ mac_file_menu() {
   "$MVM" click "$FILE_MENU_X" "$FILE_MENU_Y" >/dev/null; sleep 1
   "$MVM" type "$1" >/dev/null; mac_keys enter
 }
-mac_open_browser() { mac_file_menu "Open N"; sleep 2; }
+mac_open_browser() { mac_file_menu "$OPEN_PREFIX"; sleep 2; }
 mac_key() { mac_keys "$1"; }
 mac_expand_artist() {
   mac_keys tab
@@ -289,6 +351,19 @@ mac_cmd() { mac_file_menu "$1"; }
 mac_window_exists() { return 2; }
 mac_press_in_window() { mac_keys "$2"; }
 mac_close_window() { mac_keys esc; }
+mac_sibling_disable() {
+  mac_stop
+  g "on=~/Library/foobar2000-v2/user-components/$1; off=~/Library/foobar2000-v2/.solo-off-$1;
+     if [ -d \$off ] && [ ! -d \$on ]; then exit 0; fi
+     [ -d \$on ] || exit 1
+     mv \$on \$off"
+}
+mac_sibling_enable() {
+  mac_stop
+  g "on=~/Library/foobar2000-v2/user-components/$1; off=~/Library/foobar2000-v2/.solo-off-$1;
+     if [ -d \$off ] && [ ! -d \$on ]; then mv \$off \$on; fi; true"
+}
+mac_sibling_loaded() { g "lsof -p \$(pgrep -x foobar2000 | head -1) 2>/dev/null | grep -qi $1"; }
 mac_shot() { local src; src="$("$MVM" shot | tail -1)"; mkdir -p "$(dirname "$1")"; cp "$src" "$1" && echo "$1"; }
 
 d() { local fn="${PLATFORM}_$1"; shift; "$fn" "$@"; }
@@ -313,8 +388,24 @@ seen() { [ "$HAVE_LOG" = 1 ] && since_mark | grep -Eq -- "$1"; }
 
 supports() { case " $SUPPORTS " in *" $1 "*) return 0 ;; esac; fail "$1 isn't supported on $PLATFORM (supported: $SUPPORTS)"; }
 
+cfg_restore_string() {
+  if [ -n "$2" ]; then d cfg_sql "INSERT OR REPLACE INTO configStrings VALUES ('$1', '$2');"
+  else d cfg_sql "DELETE FROM configStrings WHERE name = '$1';"; fi
+}
+ensure_ui_language() {
+  [ -n "${UI_LANG_DONE:-}" ] && return 0
+  UI_LANG_DONE=1
+  local cur; cur="$(d cfg_sql "SELECT value FROM configStrings WHERE name = '$UI_LANG_KEY';" 2>/dev/null || true)"
+  [ "$cur" = "$UI_LANG" ] && return 0
+  [ "$UI_LANG" = en ] && [ -z "$cur" ] && return 0
+  say "UI language $UI_LANG for the run (was ${cur:-automatic}; restored on exit)"
+  d cfg_sql "INSERT OR REPLACE INTO configStrings VALUES ('$UI_LANG_KEY', '$UI_LANG');"
+  on_exit "cfg_restore_string '$UI_LANG_KEY' '$cur'"
+}
+
 restart() {
   say "restart foobar2000 (fresh log)"
+  ensure_ui_language
   d stop
   d clear_log
   mark
@@ -389,7 +480,7 @@ scenario_playqueue() {
   saved="$(d cfg_sql "SELECT value FROM configStrings WHERE name = '$STREAM_FORMAT_KEY';" 2>/dev/null || true)"
   say "transcode to $fmt"
   set_stream_format "$fmt"
-  trap "set_stream_format '$saved' >/dev/null 2>&1" EXIT
+  on_exit "set_stream_format '$saved'"
   restart
   play_first_album
   sleep 1
@@ -482,8 +573,6 @@ scenario_search() {
 }
 
 COLUMNS_UI_GUID_HEX='240A2DF1A4A8184696596F66DE067524'
-UI_MODULE_KEY='cfg_var.094A28DA-C6E8-4392-BAF1-AD0F29E5B303'
-UI_MODULE_KEY2='cfg_var.22AF8F41-D22D-4529-B0ED-437BE9AEC30C'
 set_ui_module() {
   win11_cfg_sql "
     INSERT OR REPLACE INTO main.configBlobs VALUES ('$UI_MODULE_KEY', X'$1');
@@ -496,7 +585,7 @@ scenario_cui() {
   if [ "$prev" != "$COLUMNS_UI_GUID_HEX" ]; then
     say "switch the UI module to Columns UI (was ${prev:-unset}; restored on exit)"
     set_ui_module "$COLUMNS_UI_GUID_HEX"
-    [ -n "$prev" ] && trap "say 'restore the UI module'; set_ui_module '$prev'" EXIT
+    [ -n "$prev" ] && on_exit "set_ui_module '$prev'"
   fi
   restart
   expect 'Columns UI panel instantiated' 20 "Columns UI created the Navidrome Browser panel"
@@ -510,6 +599,43 @@ scenario_cui() {
 }
 
 scenario_prefs() { d prefs "${1:-main}"; }
+
+scenario_i18n() {
+  UI_LANG=es; ui_strings
+  d deploy "${1:-}"
+  restart
+  expect 'NOTE +Env .*ui=es' 5 "the component runs in Spanish"
+  open_browser
+  d shot "$SHOTS/$PLATFORM-i18n-browser-$(date +%Y%m%d-%H%M%S).png" >/dev/null && ok "screenshot (Spanish browser)"
+  post_checks i18n
+}
+
+scenario_solo() {
+  local prev
+  d deploy "${1:-}"
+  say "move $SIBLING out of user-components (restored on exit)"
+  if d sibling_disable "$SIBLING"; then
+    on_exit "d sibling_enable '$SIBLING'"
+    ok "$SIBLING moved out"
+  else
+    warn "$SIBLING isn't installed on $PLATFORM; foo_navidrome already runs alone"
+  fi
+  prev="$(d cfg_sql "SELECT hex(value) FROM configBlobs WHERE name = '$UI_MODULE_KEY';" 2>/dev/null || true)"
+  if [ -n "$prev" ]; then
+    say "select the Default UI for the run (restored on exit)"
+    d cfg_sql "DELETE FROM configBlobs WHERE name IN ('$UI_MODULE_KEY', '$UI_MODULE_KEY2');"
+    on_exit "d cfg_sql \"INSERT OR REPLACE INTO configBlobs VALUES ('$UI_MODULE_KEY', X'$prev'); INSERT OR REPLACE INTO configBlobs VALUES ('$UI_MODULE_KEY2', X'$prev');\""
+  fi
+  restart
+  d sibling_loaded "$SIBLING"
+  case $? in
+    0) fail "$SIBLING not loaded — it still is" ;;
+    1) ok "$SIBLING not loaded" ;;
+    *) warn "can't list loaded modules on $PLATFORM" ;;
+  esac
+  play_first_album
+  post_checks solo
+}
 
 compare() {
   local scenario="${1:-}"; shift || true
@@ -573,7 +699,7 @@ esac
 HAVE_LOG=1
 CMD="${1:-}"; shift || true
 case "$CMD" in
-  smoke|playqueue|search|cui|prefs)
+  smoke|playqueue|search|cui|prefs|i18n|solo)
     supports "$CMD"; "scenario_$CMD" "$@"; say "$PLATFORM $CMD passed" ;;
   browser) d open_browser ;;
   log)     d log_from 1 | tail -n "${1:-50}" ;;

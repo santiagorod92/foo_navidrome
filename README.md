@@ -783,9 +783,15 @@ under `build/ui-test/`:
 
 | Platform | Run the scenario | Drive it step by step |
 |---|---|---|
-| Wine | `make win-ui-smoke`, `make win-ui ARGS=playqueue` / `search` | `make win-ui ARGS='click X Y'` / `'key down'` / `'shot'` / `'prefs main'` |
-| Windows 11 VM | `make win11-smoke`, `make win11-ui ARGS=playqueue` / `search` / `cui` | `make win11-ui ARGS='prefs radio'` / `'browser'` / `'log 50'` |
-| macOS VM | `make mac-vm-smoke`, `make mac-vm-ui ARGS=playqueue` | `make mac-vm-ui ARGS='browser'` / `'log 50'`, `make mac-vm-click ARGS='x y'` |
+| Wine | `make win-ui-smoke`, `make win-ui ARGS=playqueue` / `search` / `i18n` / `solo` | `make win-ui ARGS='click X Y'` / `'key down'` / `'shot'` / `'prefs main'` |
+| Windows 11 VM | `make win11-smoke`, `make win11-ui ARGS=playqueue` / `search` / `cui` / `i18n` / `solo` | `make win11-ui ARGS='prefs radio'` / `'browser'` / `'log 50'` |
+| macOS VM | `make mac-vm-smoke`, `make mac-vm-ui ARGS=playqueue` / `i18n` / `solo` | `make mac-vm-ui ARGS='browser'` / `'log 50'`, `make mac-vm-click ARGS='x y'` |
+
+`i18n` runs once in Spanish; `solo` moves the sister component [Panels UI](https://github.com/santiagorod92/foo_ui_panels)
+out of the profile for the run and checks foo_navidrome still works without it (Panels UI's
+own `ui-test.sh <platform> solo` checks the other direction). Every scenario restores what it
+changed. The scenarios expect an English UI: a profile set to Spanish is switched to English
+for the run.
 
 All three rows are the same script, `scripts/ui-test.sh <platform> <scenario>`: a scenario is
 written once and each platform only supplies the low-level actions. To see whether Wine
