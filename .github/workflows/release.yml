@@ -11,7 +11,9 @@ on:
       - 'dev/**'
       - 'tools/**'
       - 'scripts/mac-vm/**'
-      - 'scripts/win-vm/**'
+      - 'scripts/win-setup-toolchain-mac.sh'
+      - 'scripts/win-build-mac.sh'
+      - 'scripts/win-build-mac-cc1.sh'
       - 'scripts/audiomuse-dev.sh'
       - 'scripts/install-macos.sh'
       - 'scripts/install-windows.sh'
@@ -20,6 +22,8 @@ on:
       - 'scripts/win-test.sh'
       - 'scripts/win-build-local.sh'
       - 'scripts/mac-dev-build.sh'
+      - 'scripts/mac-syntax-check.sh'
+      - 'scripts/win11-arm.sh'
   workflow_dispatch:
 
 permissions:

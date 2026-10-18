@@ -4,7 +4,7 @@ if [ -z "${BASH_VERSINFO:-}" ] || [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
   exec "$(brew --prefix)/bin/bash" "$0" "$@"
 fi
 
-REPO="$(cd "$(dirname "$0")/../.." && pwd)"
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
 SDKROOT_DEFAULT="$HOME/.local/share/foo_navidrome-sdk"
 SDK_ROOT="${SDK_ROOT:-$SDKROOT_DEFAULT/foobar2000}"
 PFC_ROOT="${PFC_ROOT:-$SDKROOT_DEFAULT/pfc}"
@@ -16,7 +16,7 @@ LLD="$(brew --prefix lld)/bin"
 BUILD="${BUILD:-$REPO/build-win-mac}"
 OBJ="$BUILD/obj"; OUT="$BUILD/foo_navidrome.dll"
 JOBS="$(sysctl -n hw.ncpu)"
-HELPER="$(dirname "$0")/cc1.sh"
+HELPER="$(dirname "$0")/win-build-mac-cc1.sh"
 
 fail() { echo "ERROR: $*" >&2; exit 1; }
 [ -x "$LLVM/clang-cl" ] || fail "clang-cl missing — run setup-mac-toolchain.sh"
@@ -33,6 +33,7 @@ cat > "$PREFIX_H" <<'EOF'
 #ifndef _WIN32_WINNT
 #  define _WIN32_WINNT 0x0601
 #endif
+#define _NO_SYS_GUID_OPERATOR_EQ_
 #include <WinSock2.h>
 #include <windows.h>
 #include <timeapi.h>
