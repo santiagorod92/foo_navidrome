@@ -38,6 +38,7 @@ inline constexpr GUID inputHandler              = make(0x02, 0x01);
 inline constexpr GUID contextMenuGroup          = make(0x03, 0x00);
 inline constexpr GUID contextMenuItemsBase      = make(0x03, 0x01);
 inline constexpr GUID contextMenuMixItemsBase   = make(0x03, 0x10);
+inline constexpr GUID contextMenuOfflineItemsBase = make(0x03, 0x20);
 inline constexpr GUID cfgAudioMuseUrl           = make(0x04, 0x01);
 inline constexpr GUID cfgAudioMuseToken         = make(0x04, 0x02);
 inline constexpr GUID cfgAudioMuseServer        = make(0x04, 0x03);
@@ -49,6 +50,8 @@ inline constexpr GUID mainmenuAudioMusePlaylist = make(0x04, 0x12);
 inline constexpr GUID advVerboseLog             = make(0x05, 0x01);
 inline constexpr GUID mainmenuPlayQueueSave     = make(0x06, 0x01);
 inline constexpr GUID mainmenuPlayQueueRestore  = make(0x06, 0x02);
+inline constexpr GUID advPrefetch               = make(0x07, 0x01);
+inline constexpr GUID advPrefetchLimit          = make(0x07, 0x02);
 inline constexpr GUID cfgUiLanguage             = make(0x08, 0x01);
 
 }

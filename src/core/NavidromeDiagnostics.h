@@ -1,6 +1,7 @@
 #pragma once
 #include "NavidromeDebugLog.h"
 #include "SubsonicTypes.h"
+#include "OfflineCache.h"
 
 #include <string>
 #include <vector>
@@ -31,6 +32,10 @@ struct DiagnosticsInfo {
     bool        audioMuse = false;
     bool        verboseLogging = false;
     std::string uiLanguage;
+
+    bool        prefetch = false;
+    std::uint64_t prefetchLimitMB = 0;
+    offline::Usage offline;
 
     std::vector<std::string> logLines;
 };
@@ -106,6 +111,12 @@ inline std::string buildDiagnostics(const DiagnosticsInfo& d) {
            ", AudioMuse-AI: " + (d.audioMuse ? "configured" : "not configured") + "\n";
     out += "- Verbose logging: " + yesNo(d.verboseLogging) +
            ", UI language: " + (d.uiLanguage.empty() ? std::string("en") : d.uiLanguage) + "\n";
+    out += "- Offline: " + std::to_string(d.offline.pinnedFiles) + " pinned (" +
+           offline::formatBytes(d.offline.pinnedBytes) + "), prefetch " +
+           (d.prefetch ? "on, " + std::to_string(d.offline.prefetchFiles) + " cached (" +
+                             offline::formatBytes(d.offline.prefetchBytes) + " of " +
+                             std::to_string(d.prefetchLimitMB) + " MB)"
+                       : std::string("off")) + "\n";
 
     out += "\n<details><summary>Recent log (" + std::to_string(d.logLines.size()) +
            " lines)</summary>\n\n```\n";

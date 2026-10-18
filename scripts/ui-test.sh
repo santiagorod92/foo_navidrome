@@ -29,6 +29,9 @@ Scenarios (one implementation each, run on any platform that supports it)
   i18n [ARTIFACT]       run in Spanish for once (UI language "es", restored after): assert the
                         session banner says ui=es, open the browser through its Spanish menu
                         command and window title, screenshot
+  offline [ARTIFACT]    wine, win11: prefetch on (restored after), play an album, assert the next
+                        track is downloaded into the cache, Playback > Next, assert it plays from
+                        the offline copy (needs the Default or Repeat (playlist) playback order)
   solo [ARTIFACT]       the sister component (SIBLING, default foo_ui_panels) moved out of
                         user-components and the Default UI selected for the run (both restored
                         after): assert it isn't loaded, then the smoke steps; foo_navidrome must
@@ -65,6 +68,7 @@ SHOTS="$REPO/build/ui-test"
 GUID_PREFIX='A1B2C3D4-1111-2222-AABB-CCDDEEFF'
 STREAM_FORMAT_KEY="cfg_var.${GUID_PREFIX}010C"
 UI_LANG_KEY="cfg_var.${GUID_PREFIX}0801"
+PREFETCH_KEY='foo_navidrome.prefetch'
 UI_MODULE_KEY='cfg_var.094A28DA-C6E8-4392-BAF1-AD0F29E5B303'
 UI_MODULE_KEY2='cfg_var.22AF8F41-D22D-4529-B0ED-437BE9AEC30C'
 SIBLING="${SIBLING:-foo_ui_panels}"
@@ -114,7 +118,7 @@ wine_init() {
   WINE_CFG="$HOME/.foobar2000/profile/config.sqlite"
   XWIN="${XWIN_SDK:-$HOME/.local/share/xwin/sdk}"
   WCLICK_DIR="$REPO/build/tools"; WCLICK="$WCLICK_DIR/wclick.exe"
-  SUPPORTS="smoke playqueue search prefs i18n solo"
+  SUPPORTS="smoke playqueue search prefs i18n offline solo"
 }
 build_wclick() {
   [ "$WCLICK" -nt "$REPO/tools/wclick.c" ] && return
@@ -209,7 +213,7 @@ win11_init() {
   LOG="$("$WVM" shared)/tmp/foo_navidrome_debug.log"
   WINE_CFG="${WINE_CFG:-$HOME/.foobar2000/profile/config.sqlite}"
   GUEST_PROFILE='AppData/Roaming/foobar2000-v2'
-  SUPPORTS="smoke playqueue search cui prefs i18n solo"
+  SUPPORTS="smoke playqueue search cui prefs i18n offline solo"
 }
 win11_deploy() {
   local dll="${1:-$REPO/build-win/foo_navidrome.dll}"
@@ -391,6 +395,10 @@ supports() { case " $SUPPORTS " in *" $1 "*) return 0 ;; esac; fail "$1 isn't su
 cfg_restore_string() {
   if [ -n "$2" ]; then d cfg_sql "INSERT OR REPLACE INTO configStrings VALUES ('$1', '$2');"
   else d cfg_sql "DELETE FROM configStrings WHERE name = '$1';"; fi
+}
+cfg_restore_int() {
+  if [ -n "$2" ]; then d cfg_sql "INSERT OR REPLACE INTO configInts VALUES ('$1', $2);"
+  else d cfg_sql "DELETE FROM configInts WHERE name = '$1';"; fi
 }
 ensure_ui_language() {
   [ -n "${UI_LANG_DONE:-}" ] && return 0
@@ -610,6 +618,25 @@ scenario_i18n() {
   post_checks i18n
 }
 
+scenario_offline() {
+  local prev
+  d deploy "${1:-}"
+  prev="$(d cfg_sql "SELECT value FROM configInts WHERE name = '$PREFETCH_KEY';" 2>/dev/null || true)"
+  say "prefetch on (was ${prev:-default}; restored on exit)"
+  d cfg_sql "INSERT OR REPLACE INTO configInts VALUES ('$PREFETCH_KEY', 1);"
+  on_exit "cfg_restore_int '$PREFETCH_KEY' '$prev'"
+  restart
+  expect 'Offline.*startup: prefetch on' 15 "prefetch is on at startup"
+  play_first_album
+  expect 'Offline.*prefetch id=[^ ]+ suffix=' 30 "the next track is being prefetched"
+  expect 'Offline.*prefetch id=[^ ]+ done' 180 "the next track is in the cache"
+  say "Playback > Next"
+  mark; d cmd "Next"
+  expect 'playing offline copy' 30 "the next track plays from the offline copy"
+  expect 'decode_initialize' 5 "it went through the navidrome:// input"
+  post_checks offline
+}
+
 scenario_solo() {
   local prev
   d deploy "${1:-}"
@@ -699,7 +726,7 @@ esac
 HAVE_LOG=1
 CMD="${1:-}"; shift || true
 case "$CMD" in
-  smoke|playqueue|search|cui|prefs|i18n|solo)
+  smoke|playqueue|search|cui|prefs|i18n|offline|solo)
     supports "$CMD"; "scenario_$CMD" "$@"; say "$PLATFORM $CMD passed" ;;
   browser) d open_browser ;;
   log)     d log_from 1 | tail -n "${1:-50}" ;;

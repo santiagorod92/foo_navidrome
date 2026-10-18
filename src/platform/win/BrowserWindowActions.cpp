@@ -7,6 +7,7 @@
 #include "../../core/NavidromePlaylistSync.h"
 #include "../../core/NavidromeLibraryPlatform.h"
 #include "../../core/NavidromeDebugLog.h"
+#include "../../core/NavidromeOfflineCache.h"
 #include <SDK/playlist.h>
 #include <SDK/metadb.h>
 #include <SDK/playback_control.h>
@@ -135,6 +136,32 @@ void BrowserWindow::OnSendActivePlaylist(UINT, int, HWND) {
             setStatus(navidrome::sentPlaylistSummary(name, songIds.size(), skipped));
             invalidatePlaylistsCategory();
             refreshServerPlaylists();
+        });
+    }).detach();
+}
+
+void BrowserWindow::OnOffline(UINT, int id, HWND) {
+    auto selected = selectedNodes();
+    if (selected.empty()) { setStatus(tr("Select at least one item")); return; }
+    const bool make = id == IDC_MAKE_OFFLINE;
+    setStatus(tr("Resolving tracks…"));
+    std::thread([this, selected, make]() {
+        navidrome::dbg::runGuarded("UI", "offline", [&] {
+            std::string err;
+            auto songs = navidrome::collectSelectionSongs(navidrome::libraryClient(), selected, &err);
+            if (songs.empty()) {
+                NAVIDROME_WARN("UI", std::string(make ? "make offline" : "remove offline") +
+                               ": resolving the selection failed: " + err);
+                fb2k::inMainThread([this, err]() {
+                    if (IsWindow()) setStatus(err.empty() ? std::string(tr("No tracks found")) : trf("Error: {0}", { err }));
+                });
+                return;
+            }
+            fb2k::inMainThread([this, songs = std::move(songs), make]() {
+                if (IsWindow()) setStatus("");
+                if (make) navidrome::makeNodesAvailableOffline(songs);
+                else      navidrome::removeNodesOfflineCopies(songs);
+            });
         });
     }).detach();
 }

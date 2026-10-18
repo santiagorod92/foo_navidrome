@@ -8,6 +8,7 @@ SRC=("$ROOT"/tests/*.cpp \
      "$ROOT/src/core/MediaEnrichmentLogic.cpp" \
      "$ROOT/src/core/NavidromeBrowserModel.cpp" \
      "$ROOT/src/core/SubsonicCore.cpp" \
+     "$ROOT/src/core/OfflineCache.cpp" \
      "$ROOT/src/core/I18n.cpp" \
      "$ROOT/src/core/I18nSpanish.cpp")
 
