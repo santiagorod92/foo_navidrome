@@ -15,6 +15,7 @@ A [foobar2000](https://www.foobar2000.org/) component that lets you browse and s
 - **All Songs** at the top of the tree — Add to Playlist / Play Now (or double-click) queues your whole library in one go. It doesn't expand in the tree (tens of thousands of rows would freeze it); the songs are fetched in pages of 500 via `search3.view`, honouring the library filter
 - **Multi-select** on both platforms: Ctrl+click to add/remove rows, Shift+click (or Shift+arrows) for a range, then Add / Play / any right-click action applies to all of them. Tracks that two selected rows share (an artist and one of its albums) are queued once
 - **Smart lists** at the top of the tree: ★ Starred, Recently Added, Most Played, Recently Played, Random Albums, 🔀 **Random Mix** (a fresh batch of random tracks), **Genres**, and your **server-side playlists**
+- **Decades**: expand it for one entry per decade your library spans (2020s, 2010s, … down to your oldest album); expand a decade for every album released in it, band by band (sorted by artist, then year), shown as *Artist — Album* with the year. Add / Play on a decade queues all of it. Albums without a year aren't listed; the library filter applies
 - **Scrobbling**: plays are reported back to Navidrome, so play counts, "Recently Played" and any Last.fm / ListenBrainz relay the server has configured stay in sync (toggle in Preferences)
 - **Favorites and ratings** from the right-click menu — Star / Unstar and a 0-5 star rating, stored per-user on the server so they show up in the web UI and on your phone, and available in the playlist as `%navidrome_rating%` / `%navidrome_starred%` for a custom column. Also available straight from **the playlist's own right-click menu** (rate/star a track without going back to the browser), and kept in sync in already-added playlist entries — see [Showing ratings in the playlist](#showing-ratings-in-the-playlist)
 - **Manage server playlists** from the right-click menu — add the selection to any existing playlist or a **New Playlist…**, remove tracks, rename, delete. Changes land on the server, so they show up everywhere
@@ -236,7 +237,7 @@ Three ways to open the browser:
 
 Then:
 - Expand an artist to see albums, expand an album to see songs
-- Expand a smart list (★ Starred, Recently Added, Most Played, Recently Played, Random Albums), **Genres** or **Playlists** to browse without digging through artists
+- Expand a smart list (★ Starred, Recently Added, Most Played, Recently Played, Random Albums), **Decades**, **Genres** or **Playlists** to browse without digging through artists
 - Select one or more items (Ctrl/Shift+click; Cmd/Shift on macOS) and click **Add to Playlist** or **Play Now**
 - Select **All Songs** and click **Add to Playlist** to load the whole library
 - Double-click a song to play it immediately

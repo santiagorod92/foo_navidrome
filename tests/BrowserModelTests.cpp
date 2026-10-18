@@ -9,7 +9,7 @@ namespace {
 TEST_CASE(testHiddenCategories) {
     using navidrome::BrowserNode;
 
-    check(navidrome::browserCategories().size() == 12, "category table lists all 12 root categories");
+    check(navidrome::browserCategories().size() == 13, "category table lists all 13 root categories");
     check(navidrome::parseHiddenCategories("").empty(), "empty csv hides nothing");
 
     auto h = navidrome::parseHiddenCategories(" radio,podcasts,,bogus,radio , starred");
@@ -33,25 +33,64 @@ TEST_CASE(testHiddenCategories) {
     check(keysUnique, "category keys and kinds are unique");
 
     auto nodes = navidrome::buildCategoryNodes({ BrowserNode::CatAllSongs, BrowserNode::CatNowPlaying });
-    check(nodes.size() == 10 && nodes.front()->category == BrowserNode::CatStarred &&
+    check(nodes.size() == 11 && nodes.front()->category == BrowserNode::CatStarred &&
           nodes.back()->category == BrowserNode::CatPodcasts,
           "buildCategoryNodes drops hidden kinds and keeps the rest in order");
+}
+
+TEST_CASE(testDecadeHelpers) {
+    using navidrome::BrowserNode;
+    using V = std::vector<int>;
+
+    check(navidrome::decadeStarts(1968, 2024) == V({ 2020, 2010, 2000, 1990, 1980, 1970, 1960 }),
+          "decades run newest first and cover both ends");
+    check(navidrome::decadeStarts(2024, 1968) == navidrome::decadeStarts(1968, 2024),
+          "the two ends can come in either order");
+    check(navidrome::decadeStarts(1970, 1979) == V({ 1970 }), "one decade when both ends share it");
+    check(navidrome::decadeStarts(0, 2024).empty() && navidrome::decadeStarts(1990, 0).empty(),
+          "an unknown year (0) gives no decades");
+
+    auto d = navidrome::makeDecadeNode(1980);
+    check(d->type == BrowserNode::Category && d->category == BrowserNode::CatDecade &&
+          d->id == "1980" && d->displayName == "1980s" && !navidrome::isLeaf(*d),
+          "a decade node is an expandable category keyed by its first year");
+
+    navidrome::Album a; a.id = "al1"; a.name = "Highway to Hell"; a.artist = "AC/DC"; a.year = 1979;
+    auto n = navidrome::makeDecadeAlbumNode(a);
+    check(n->type == BrowserNode::Album && n->id == "al1" &&
+          n->displayName == "AC/DC \u2014 Highway to Hell" && n->subtitle.empty() && n->infoText == "1979",
+          "a decade album row names the artist and shows the year");
+    check(navidrome::singleColumnLabel(*n) == "AC/DC \u2014 Highway to Hell  1979",
+          "the single-column (Windows) label carries artist, album and year");
+    navidrome::Album noYear; noYear.id = "al2"; noYear.name = "Untitled";
+    auto u = navidrome::makeDecadeAlbumNode(noYear);
+    check(u->displayName == "Untitled" && u->infoText.empty(), "no artist and no year leave the name alone");
+
+    std::vector<navidrome::Album> al(4);
+    al[0].name = "Powerage"; al[0].artist = "AC/DC"; al[0].year = 1978;
+    al[1].name = "Wish You Were Here"; al[1].artist = "Pink Floyd"; al[1].year = 1975;
+    al[2].name = "Let There Be Rock"; al[2].artist = "ac/dc"; al[2].year = 1977;
+    al[3].name = "Animals"; al[3].artist = "Pink Floyd"; al[3].year = 1977;
+    navidrome::sortDecadeAlbums(al);
+    check(al[0].name == "Let There Be Rock" && al[1].name == "Powerage" &&
+          al[2].name == "Wish You Were Here" && al[3].name == "Animals",
+          "decade albums sort by artist (case-insensitive), then year");
 }
 
 TEST_CASE(testBrowserModel) {
     using navidrome::BrowserNode;
 
     auto cats = navidrome::buildCategoryNodes();
-    check(cats.size() == 12, "buildCategoryNodes returns All Songs + the 11 smart lists");
+    check(cats.size() == 13, "buildCategoryNodes returns All Songs + the 12 smart lists");
     const BrowserNode::CategoryKind expectedOrder[] = {
         BrowserNode::CatAllSongs, BrowserNode::CatStarred, BrowserNode::CatRecentlyAdded,
         BrowserNode::CatMostPlayed, BrowserNode::CatRecentlyPlayed,
-        BrowserNode::CatRandom, BrowserNode::CatGenres,
+        BrowserNode::CatRandom, BrowserNode::CatDecades, BrowserNode::CatGenres,
         BrowserNode::CatPlaylists, BrowserNode::CatBookmarks,
         BrowserNode::CatRadio, BrowserNode::CatPodcasts,
         BrowserNode::CatNowPlaying,
     };
-    bool orderOk = cats.size() == 12;
+    bool orderOk = cats.size() == 13;
     for (size_t i = 0; i < cats.size() && orderOk; ++i)
         orderOk = cats[i]->type == BrowserNode::Category &&
                   cats[i]->category == expectedOrder[i] &&
@@ -59,8 +98,8 @@ TEST_CASE(testBrowserModel) {
     check(orderOk, "category nodes are in canonical order with non-empty titles");
     check(cats[0]->displayName == "All Songs", "All Songs heads the category list");
     check(cats[1]->displayName == "\xE2\x98\x85 Starred", "Starred keeps its icon prefix");
-    check(cats[8]->category == BrowserNode::CatBookmarks &&
-          cats[8]->displayName == "Bookmarks",
+    check(cats[9]->category == BrowserNode::CatBookmarks &&
+          cats[9]->displayName == "Bookmarks",
           "Bookmarks sits between Playlists and Radio");
 
     check(navidrome::albumListTypeForCategory(BrowserNode::CatRecentlyAdded) ==

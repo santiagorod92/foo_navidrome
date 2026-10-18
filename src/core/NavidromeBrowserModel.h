@@ -3,6 +3,7 @@
 #include "SubsonicTypes.h"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <functional>
@@ -33,6 +34,8 @@ struct BrowserNode {
         CatArtistTopSongs,
         CatArtistSimilarArtists,
         CatAllSongs,
+        CatDecades,
+        CatDecade,
     };
 
     Type         type       = Loading;
@@ -227,6 +230,49 @@ inline BrowserNodePtr errorNode(const std::string& msg) {
     return n;
 }
 
+inline std::vector<int> decadeStarts(int oldestYear, int newestYear) {
+    std::vector<int> out;
+    if (oldestYear <= 0 || newestYear <= 0) return out;
+    if (oldestYear > newestYear) std::swap(oldestYear, newestYear);
+    for (int d = newestYear - newestYear % 10; d >= oldestYear - oldestYear % 10; d -= 10)
+        out.push_back(d);
+    return out;
+}
+
+inline std::string decadeLabel(int startYear) {
+    return trf("{0}s", { std::to_string(startYear) });
+}
+
+inline BrowserNodePtr makeDecadeNode(int startYear) {
+    auto n = std::make_shared<BrowserNode>();
+    n->type        = BrowserNode::Category;
+    n->category    = BrowserNode::CatDecade;
+    n->id          = std::to_string(startYear);
+    n->displayName = decadeLabel(startYear);
+    return n;
+}
+
+inline BrowserNodePtr makeDecadeAlbumNode(const Album& a) {
+    auto n = makeAlbumNode(a);
+    if (!a.artist.empty()) n->displayName = a.artist + " \u2014 " + a.name;
+    n->subtitle.clear();
+    if (a.year > 0) n->infoText = std::to_string(a.year);
+    return n;
+}
+
+inline void sortDecadeAlbums(std::vector<Album>& albums) {
+    auto lower = [](std::string s) {
+        for (auto& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return s;
+    };
+    std::stable_sort(albums.begin(), albums.end(), [&](const Album& a, const Album& b) {
+        const std::string la = lower(a.artist), lb = lower(b.artist);
+        if (la != lb) return la < lb;
+        if (a.year != b.year) return a.year < b.year;
+        return lower(a.name) < lower(b.name);
+    });
+}
+
 struct CategoryEntry {
     BrowserNode::CategoryKind kind;
     const char* title;
@@ -241,6 +287,7 @@ inline const std::vector<CategoryEntry>& browserCategories() {
         { BrowserNode::CatMostPlayed,     N_("Most Played"),     "most_played"     },
         { BrowserNode::CatRecentlyPlayed, N_("Recently Played"), "recently_played" },
         { BrowserNode::CatRandom,         N_("Random Albums"),   "random_albums"   },
+        { BrowserNode::CatDecades,        N_("Decades"),         "decades"         },
         { BrowserNode::CatGenres,         N_("Genres"),          "genres"          },
         { BrowserNode::CatPlaylists,      N_("Playlists"),       "playlists"       },
         { BrowserNode::CatBookmarks,      N_("Bookmarks"),       "bookmarks"       },
@@ -378,6 +425,8 @@ struct IBrowserClient {
     virtual std::vector<Playlist>     getPlaylists(std::string& outError) = 0;
     virtual std::vector<Album>        getAlbumList(AlbumListType type, int size,
                                                   std::string& outError) = 0;
+    virtual std::vector<Album>        getAlbumsByYear(int fromYear, int toYear, int size,
+                                                      std::string& outError) = 0;
     virtual std::vector<RadioStation> getRadioStations(std::string& outError) = 0;
     virtual std::vector<Bookmark>     getBookmarks(std::string& outError) = 0;
     virtual std::vector<PodcastChannel> getPodcastChannels(std::string& outError) = 0;

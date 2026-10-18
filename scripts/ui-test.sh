@@ -317,7 +317,7 @@ mac_init() {
   LOG=/tmp/foo_navidrome_debug.log
   GUEST_CFG='~/Library/foobar2000-v2/config.sqlite'
   FILE_MENU_X=162; FILE_MENU_Y=11
-  CATEGORY_ROWS=12
+  CATEGORY_ROWS=13
   SUPPORTS="smoke playqueue i18n solo"
 }
 g() { "$MVM" ssh "$@"; }

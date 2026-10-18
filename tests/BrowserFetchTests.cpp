@@ -7,6 +7,51 @@
 
 namespace {
 
+TEST_CASE(testDecadesFetch) {
+    using navidrome::BrowserNode;
+    auto album = [](const char* id, const char* name, const char* artist, int year) {
+        navidrome::Album a; a.id = id; a.name = name; a.artist = artist; a.year = year; return a;
+    };
+
+    FakeBrowserClient fc;
+    fc.byYearAlbums = { album("a1", "Animals", "Pink Floyd", 1977),
+                        album("a2", "Powerage", "AC/DC", 1978),
+                        album("a3", "Black Ice", "AC/DC", 2008),
+                        album("a4", "Rumours", "Fleetwood Mac", 1977) };
+    auto root = navidrome::makeCategoryNode(BrowserNode::CatDecades, "Decades");
+    std::string err;
+    auto decades = navidrome::fetchChildren(fc, *root, err);
+    check(err.empty() && decades.size() == 4 && decades[0]->displayName == "2000s" &&
+          decades[3]->displayName == "1970s" && decades[3]->category == BrowserNode::CatDecade,
+          "Decades lists every decade between the oldest and the newest album, newest first");
+    check(fc.calls.size() == 2 && fc.calls[0] == "getAlbumsByYear:1-9999:1" &&
+          fc.calls[1] == "getAlbumsByYear:9999-1:1",
+          "Decades finds the year range with two one-album byYear requests");
+
+    fc.calls.clear();
+    auto seventies = navidrome::fetchChildren(fc, *decades[3], err);
+    check(err.empty() && fc.calls.size() == 1 && fc.calls[0] == "getAlbumsByYear:1970-1979:0",
+          "a decade asks for every album of its ten years");
+    check(seventies.size() == 3 && seventies[0]->id == "a2" && seventies[1]->id == "a4" &&
+          seventies[2]->id == "a1" && seventies[0]->type == BrowserNode::Album &&
+          seventies[0]->infoText == "1978",
+          "a decade's albums come sorted by artist, as album rows with the year");
+
+    std::vector<navidrome::BrowserNodePtr> songs;
+    navidrome::collectSongsDeep(fc, decades[3], songs, &err);
+    check(!songs.empty(), "Play/Add on a decade queues its albums' songs");
+
+    FakeBrowserClient empty;
+    auto none = navidrome::fetchChildren(empty, *root, err);
+    check(err.empty() && none.empty(), "a library without album years shows no decades");
+
+    FakeBrowserClient broken; broken.error = "boom";
+    std::string e2;
+    auto failed = navidrome::fetchChildren(broken, *root, e2);
+    check(e2 == "boom" && failed.empty() && broken.calls.size() == 1,
+          "a failed range request stops there and reports the error");
+}
+
 TEST_CASE(testBrowserFetchDispatch) {
     using navidrome::BrowserNode;
 
@@ -15,8 +60,8 @@ TEST_CASE(testBrowserFetchDispatch) {
         std::string err;
         auto roots = navidrome::buildRootNodes(fc, err);
         check(err.empty(), "flat root load reports no error");
-        check(roots.size() == 13 && roots.back()->type == BrowserNode::Artist,
-              "flat roots = 12 categories + the artist list");
+        check(roots.size() == 14 && roots.back()->type == BrowserNode::Artist,
+              "flat roots = 13 categories + the artist list");
         check(roots.front()->type == BrowserNode::Category,
               "categories come first in the root list");
     }
@@ -24,9 +69,9 @@ TEST_CASE(testBrowserFetchDispatch) {
         FakeBrowserClient fc; fc.groupIds = {"1", "2"};
         std::string err;
         auto roots = navidrome::buildRootNodes(fc, err);
-        check(roots.size() == 14, "grouped roots = 12 categories + 2 library nodes");
-        check(roots[12]->type == BrowserNode::Library && roots[12]->id == "1" &&
-              roots[12]->displayName == "Music" && roots[13]->displayName == "Podcasts",
+        check(roots.size() == 15, "grouped roots = 13 categories + 2 library nodes");
+        check(roots[13]->type == BrowserNode::Library && roots[13]->id == "1" &&
+              roots[13]->displayName == "Music" && roots[14]->displayName == "Podcasts",
               "library nodes carry the folder id and resolved name");
         bool calledGetArtists = false;
         for (auto& c : fc.calls) if (c == "getArtists") calledGetArtists = true;
@@ -37,7 +82,7 @@ TEST_CASE(testBrowserFetchDispatch) {
         fc.hidden = { BrowserNode::CatRadio, BrowserNode::CatPodcasts, BrowserNode::CatBookmarks };
         std::string err;
         auto roots = navidrome::buildRootNodes(fc, err);
-        check(roots.size() == 10 && roots.back()->type == BrowserNode::Artist,
+        check(roots.size() == 11 && roots.back()->type == BrowserNode::Artist,
               "hidden categories are left out of the flat roots");
         bool leaked = false;
         for (auto& r : roots)

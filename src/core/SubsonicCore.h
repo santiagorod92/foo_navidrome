@@ -64,6 +64,8 @@ public:
     SearchResults       search(const std::string& query, std::string& outError);
 
     std::vector<Album> getAlbumList(AlbumListType type, int size, std::string& outError);
+    std::vector<Album> getAlbumsByYear(int fromYear, int toYear, int size, std::string& outError,
+                                       int pageSize = 500);
     std::vector<Song>  getStarredSongs(std::string& outError);
     std::vector<Genre> getGenres(std::string& outError);
     std::vector<Song>  getSongsForGenre(const std::string& genre, int count, std::string& outError);

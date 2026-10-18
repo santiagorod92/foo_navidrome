@@ -1,6 +1,7 @@
 #pragma once
 #include "../src/core/NavidromeBrowserModel.h"
 
+#include <algorithm>
 #include <set>
 #include <string>
 #include <vector>
@@ -67,6 +68,22 @@ struct FakeBrowserClient : navidrome::IBrowserClient {
         e = error;
         if (!error.empty()) return {};
         navidrome::Album a; a.id = "al2"; a.name = "Newest"; return { a };
+    }
+    std::vector<navidrome::Album> byYearAlbums;
+    std::vector<navidrome::Album> getAlbumsByYear(int from, int to, int size, std::string& e) override {
+        calls.push_back("getAlbumsByYear:" + std::to_string(from) + "-" + std::to_string(to) +
+                        ":" + std::to_string(size));
+        e = error;
+        if (!error.empty()) return {};
+        std::vector<navidrome::Album> out;
+        const int lo = (std::min)(from, to), hi = (std::max)(from, to);
+        for (const auto& a : byYearAlbums)
+            if (a.year >= lo && a.year <= hi) out.push_back(a);
+        std::stable_sort(out.begin(), out.end(), [&](const navidrome::Album& x, const navidrome::Album& y) {
+            return from <= to ? x.year < y.year : x.year > y.year;
+        });
+        if (size > 0 && (int)out.size() > size) out.resize(size);
+        return out;
     }
     std::vector<navidrome::RadioStation> getRadioStations(std::string& e) override {
         navidrome::RadioStation r; r.id = "r1"; r.name = "Radio";

@@ -428,6 +428,51 @@ std::vector<Album> SubsonicCore::getAlbumList(AlbumListType type, int size, std:
                               [](const Album& a) { return a.id; });
 }
 
+std::vector<Album> SubsonicCore::getAlbumsByYear(int fromYear, int toYear, int size,
+                                                 std::string& outError, int pageSize) {
+    const int page = size > 0 ? (std::min)(size, pageSize) : pageSize;
+    auto fetch = [&](const std::string& folderId) -> std::vector<Album> {
+        std::vector<Album> result;
+        std::unordered_set<std::string> seen;
+        for (int offset = 0;; offset += page) {
+            const std::string params = "type=byYear&fromYear=" + std::to_string(fromYear) +
+                                       "&toYear=" + std::to_string(toYear) +
+                                       "&size=" + std::to_string(page) +
+                                       "&offset=" + std::to_string(offset);
+            std::string body = httpGet(
+                buildURL("getAlbumList2.view", appendMusicFolderParam(params, folderId)), outError);
+            if (body.empty()) return {};
+            auto root = checkResponse(body, outError);
+            if (root.isNull()) return {};
+
+            int pageCount = 0;
+            bool anyNew = false;
+            for (auto* a : root["albumList2"]["album"].items()) {
+                ++pageCount;
+                Album al = parseAlbum(*a);
+                if (!al.id.empty() && !seen.insert(al.id).second) continue;
+                anyNew = true;
+                result.push_back(std::move(al));
+            }
+            if (size > 0 || pageCount < page) break;
+            if (!anyNew) {
+                NAVIDROME_WARN("API", "getAlbumsByYear: server repeated a page at offset " +
+                               std::to_string(offset) + " — stopping at " +
+                               std::to_string(result.size()) + " albums");
+                break;
+            }
+        }
+        return result;
+    };
+
+    auto albums = mergeFanOut<Album>(activeMusicFolderIds(), fetch,
+                                     [](const Album& a) { return a.id; });
+    if (!outError.empty()) return {};
+    NAVIDROME_LOG("API", "getAlbumsByYear " + std::to_string(fromYear) + "-" +
+                         std::to_string(toYear) + ": " + std::to_string(albums.size()) + " albums");
+    return albums;
+}
+
 std::vector<Song> SubsonicCore::getStarredSongs(std::string& outError) {
     auto fetch = [&](const std::string& folderId) -> std::vector<Song> {
         std::string body = httpGet(

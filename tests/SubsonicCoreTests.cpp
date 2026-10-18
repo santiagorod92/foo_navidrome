@@ -199,6 +199,34 @@ TEST_CASE(testSubsonicCore) {
         auto songs = core.getAllSongs(err, 2);
         check(!err.empty() && songs.empty(), "getAllSongs surfaces a server error");
     }
+    {
+        FakeTransport tx; FakeSettings cfg; cfg.s = basicSettings();
+        tx.routes.push_back({"offset=0",
+            R"({"subsonic-response":{"status":"ok","albumList2":{"album":[)"
+            R"({"id":"a1","name":"A","year":1971},{"id":"a2","name":"B","year":1975}]}}})"});
+        tx.routes.push_back({"offset=2",
+            R"({"subsonic-response":{"status":"ok","albumList2":{"album":[)"
+            R"({"id":"a3","name":"C","year":1979}]}}})"});
+        SubsonicCore core(tx, cfg);
+        std::string err;
+        auto albums = core.getAlbumsByYear(1970, 1979, 0, err, 2);
+        check(err.empty() && albums.size() == 3 && albums[2].year == 1979,
+              "getAlbumsByYear with no size pages until a short page");
+        check(tx.urls.size() == 2 && tx.urls[0].find("getAlbumList2.view") != std::string::npos &&
+              tx.urls[0].find("type=byYear&fromYear=1970&toYear=1979&size=2&offset=0") != std::string::npos,
+              "getAlbumsByYear asks getAlbumList2 by year with size and offset");
+    }
+    {
+        FakeTransport tx; FakeSettings cfg; cfg.s = basicSettings();
+        tx.routes.push_back({"getAlbumList2.view",
+            R"({"subsonic-response":{"status":"ok","albumList2":{"album":[{"id":"a9","name":"Z","year":2021}]}}})"});
+        SubsonicCore core(tx, cfg);
+        std::string err;
+        auto albums = core.getAlbumsByYear(9999, 1, 1, err);
+        check(err.empty() && albums.size() == 1 && tx.urls.size() == 1 &&
+              tx.urls[0].find("fromYear=9999&toYear=1&size=1&offset=0") != std::string::npos,
+              "a sized getAlbumsByYear is one request, reverse order kept as asked");
+    }
 }
 
 struct ScanTransport : navidrome::IHttpTransport {

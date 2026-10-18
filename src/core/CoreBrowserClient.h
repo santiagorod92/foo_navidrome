@@ -40,6 +40,9 @@ public:
     std::vector<Album> getAlbumList(AlbumListType t, int n, std::string& e) override {
         return m_core.getAlbumList(t, n, e);
     }
+    std::vector<Album> getAlbumsByYear(int from, int to, int n, std::string& e) override {
+        return m_core.getAlbumsByYear(from, to, n, e);
+    }
     std::vector<RadioStation> getRadioStations(std::string& e) override {
         return m_core.getRadioStations(e);
     }

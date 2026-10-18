@@ -1,6 +1,7 @@
 #include "NavidromeBrowserModel.h"
 #include "NavidromePlaylistSync.h"
 
+#include <cstdlib>
 #include <unordered_set>
 
 namespace navidrome {
@@ -127,6 +128,29 @@ std::vector<BrowserNodePtr> fetchChildren(IBrowserClient& client,
                 case BrowserNode::CatAllSongs:
                     for (const auto& s : client.getAllSongs(outError)) addSong(s);
                     break;
+                case BrowserNode::CatDecades: {
+                    auto ends = client.getAlbumsByYear(1, 9999, 1, outError);
+                    if (!outError.empty()) break;
+                    auto newest = client.getAlbumsByYear(9999, 1, 1, outError);
+                    if (!outError.empty()) break;
+                    ends.insert(ends.end(), newest.begin(), newest.end());
+                    int lo = 0, hi = 0;
+                    for (const auto& a : ends) {
+                        if (a.year <= 0) continue;
+                        if (lo == 0 || a.year < lo) lo = a.year;
+                        if (a.year > hi) hi = a.year;
+                    }
+                    for (int d : decadeStarts(lo, hi)) out.push_back(makeDecadeNode(d));
+                    break;
+                }
+                case BrowserNode::CatDecade: {
+                    const int start = std::atoi(node.id.c_str());
+                    if (start <= 0) break;
+                    auto albums = client.getAlbumsByYear(start, start + 9, 0, outError);
+                    sortDecadeAlbums(albums);
+                    for (const auto& a : albums) out.push_back(makeDecadeAlbumNode(a));
+                    break;
+                }
                 case BrowserNode::CatArtistSimilarArtists: {
                     auto info = client.getArtistInfo(node.id, outError);
                     for (const auto& a : info.similarArtists) out.push_back(makeArtistNode(a));
