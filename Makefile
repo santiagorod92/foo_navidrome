@@ -1,9 +1,11 @@
 .PHONY: help test test-clean mac-test mac-test-clean \
 	win-build win-build-x86 win-build-release-log win-build-patch win-build-minor win-build-major win-build-launch win-install win-test win-logs win-ui-smoke win-ui ui-compare \
-	mac-build mac-build-patch mac-build-minor mac-build-major mac-build-no-install mac-install mac-release mac-ci-build mac-logs \
-	win-vm-setup win-vm-fetch win-vm-install win-vm-test \
+	mac-syntax mac-build mac-build-patch mac-build-minor mac-build-major mac-build-no-install mac-install mac-release mac-ci-build mac-logs \
+	win-setup-toolchain-mac win-build-mac \
 	mac-vm mac-vm-vnc mac-vm-open mac-vm-smoke mac-vm-ui mac-vm-test mac-vm-release mac-vm-build mac-vm-build-test \
 	win11 win11-vnc win11-open win11-test win11-release win11-seed win11-smoke win11-ui win11-logs \
+	win11-arm win11-arm-vnc win11-arm-web win11-arm-up win11-arm-open win11-arm-ssh win11-arm-logs win11-arm-down win11-arm-status win11-arm-prepare win11-arm-reset win11-arm-shot \
+	win11-arm-provision win11-arm-deploy win11-arm-seed win11-arm-fb2k win11-arm-log win11-arm-test win11-arm-cfg \
 	audiomuse-up audiomuse-analyze audiomuse-status audiomuse-search audiomuse-logs audiomuse-down clean
 
 XWIN_SDK ?= $(HOME)/.local/share/xwin/sdk
@@ -17,6 +19,7 @@ help:
 	@echo "  test-clean            same, forcing a clean recompile"
 	@echo "  mac-test              native clang++ build/run of the SAME test suite (macOS)"
 	@echo "  mac-test-clean        same, forcing a clean recompile"
+	@echo "  mac-syntax            compile-check the shared SDK glue + macOS .mm sources against the SDK, no Xcode needed (ARGS=files)"
 	@echo ""
 	@echo "  win-build             cross-compile Windows x64 component locally (win-build-local.sh, no version bump)"
 	@echo "  win-build-x86         cross-compile the 32-bit (x86) DLL -> build-win-x86/ + _win-x86.fb2k-component"
@@ -43,10 +46,8 @@ help:
 	@echo "  mac-ci-build VERSION=x.y.z   hermetic macOS CI build (as used by semantic-release)"
 	@echo "  mac-logs              follow the local macOS debug log, colourised (run beside mac-build)"
 	@echo ""
-	@echo "  win-vm-setup          one-time: set up macOS clang-cl/xwin/WTL toolchain"
-	@echo "  win-vm-fetch          build the Win11 ARM64 QEMU install ISO"
-	@echo "  win-vm-install        unattended-install the QEMU guest"
-	@echo "  win-vm-test           cross-build x64 DLL, deploy over SSH, relaunch in guest [ARGS=--launch]"
+	@echo "  win-setup-toolchain-mac  one-time on a Mac: clang-cl/lld/xwin/WTL + foobar SDK + colima/docker"
+	@echo "  win-build-mac         cross-compile the Windows x64 DLL on a Mac -> build-win-mac/foo_navidrome.dll"
 	@echo ""
 	@echo "  mac-vm                boot the macOS VM (../macos-devbox), open its screen (VNC) in the browser, deploy the latest release, launch [VNC=0: no browser]"
 	@echo "  mac-vm-vnc            boot the macOS VM and open its screen (noVNC) in the browser — nothing deployed"
@@ -66,6 +67,23 @@ help:
 	@echo "  win11-seed            copy foo_navidrome settings (server/account) from the Wine profile into the VM"
 	@echo "  win11-smoke           build, deploy, run the UI smoke test on real Windows (scripts/ui-test.sh win11 smoke)"
 	@echo "  win11-ui              ui-test.sh win11 ARGS='playqueue' / 'search' / 'cui' / 'prefs radio' / 'log 50' — no build"
+	@echo "  win11-arm             Apple Silicon Mac: start the Windows 11 ARM VM (QEMU + HVF) and open its screen [VNC=0: no browser]"
+	@echo "  win11-arm-vnc         same as win11-arm (start + open the noVNC screen)"
+	@echo "  win11-arm-web         open the VM screen (noVNC, http://127.0.0.1:8006) once it answers; win11-arm-open does the same"
+	@echo "  win11-arm-up          start the VM only (QEMU + the noVNC page as launchd jobs; first boot installs Windows)"
+	@echo "  win11-arm-down        stop the VM (the Windows disk is kept); win11-arm-reset also deletes it"
+	@echo "  win11-arm-ssh         ssh into the guest (tester/tester, :2223) [ARGS=command]"
+	@echo "  win11-arm-logs        follow the QEMU + serial log"
+	@echo "  win11-arm-status      VM, screen and ssh state"
+	@echo "  win11-arm-shot        save the VM screen to build/ui-test/ [ARGS=file.png]"
+	@echo "  win11-arm-provision   one-time after the install: ssh key + foobar2000 (ARM) in the guest"
+	@echo "  win11-arm-deploy      build the DLL (win-build-mac) and install it in the guest's foobar2000"
+	@echo "  win11-arm-seed        copy this Mac's foo_navidrome settings (server, account) into the guest"
+	@echo "  win11-arm-fb2k        foobar2000 in the guest: ARGS='start|stop|cmd <menu command>'"
+	@echo "  win11-arm-log         end of the guest's foo_navidrome.log [ARGS='LINES REGEX']"
+	@echo "  win11-arm-test        unit tests built for Windows, run in the guest"
+	@echo "  win11-arm-cfg         run ARGS=\"SQL\" on the guest's config.sqlite (stops foobar2000)"
+	@echo "  win11-arm-prepare     one-time: fetch the Windows 11 ARM ISO + unattended setup through dockur (run by -up when missing)"
 	@echo "  win11-logs            follow the guest's debug log (lands in the VM's shared folder)"
 	@echo "  win11-<cmd>           any wvm command: win11-up, -down, -ssh, -shot, -dpi ARGS=144, -theme ARGS=dark, ..."
 	@echo "                        (see ../macos-devbox/README.md; one-time: mvm setup, up, provision, snapshot base)"
@@ -87,6 +105,9 @@ test-clean:
 
 mac-test:
 	./scripts/run-unit-tests.sh mac
+
+mac-syntax:
+	./scripts/mac-syntax-check.sh $(ARGS)
 
 mac-test-clean:
 	rm -rf $(BUILD_MAC)/tests
@@ -159,17 +180,11 @@ mac-ci-build:
 mac-logs:
 	./scripts/navidrome-logs.sh $(ARGS)
 
-win-vm-setup:
-	./scripts/win-vm/setup-mac-toolchain.sh
+win-setup-toolchain-mac:
+	./scripts/win-setup-toolchain-mac.sh
 
-win-vm-fetch:
-	./scripts/win-vm/fetch-win11-arm.sh
-
-win-vm-install:
-	./scripts/win-vm/win-vm.sh install
-
-win-vm-test:
-	./scripts/win-vm/win-vm-test.sh $(ARGS)
+win-build-mac:
+	./scripts/win-build-mac.sh
 
 MVM ?= $(abspath ../macos-devbox/mvm)
 COMPONENT ?= $(firstword $(shell ls -t foo_navidrome*.fb2k-component 2>/dev/null))
@@ -266,6 +281,65 @@ win11-logs:
 
 win11-%:
 	$(WVM) $* $(ARGS)
+
+win11-arm:
+	./scripts/win11-arm.sh up
+	@if [ "$(VNC)" != 0 ]; then ./scripts/win11-arm.sh open; fi
+
+win11-arm-vnc:
+	./scripts/win11-arm.sh up
+	./scripts/win11-arm.sh open
+
+win11-arm-web:
+	./scripts/win11-arm.sh open
+
+win11-arm-up:
+	./scripts/win11-arm.sh up
+
+win11-arm-open:
+	./scripts/win11-arm.sh open
+
+win11-arm-ssh:
+	./scripts/win11-arm.sh ssh $(ARGS)
+
+win11-arm-logs:
+	./scripts/win11-arm.sh logs
+
+win11-arm-down:
+	./scripts/win11-arm.sh down
+
+win11-arm-status:
+	./scripts/win11-arm.sh status
+
+win11-arm-prepare:
+	./scripts/win11-arm.sh prepare
+
+win11-arm-reset:
+	./scripts/win11-arm.sh reset
+
+win11-arm-shot:
+	./scripts/win11-arm.sh shot $(ARGS)
+
+win11-arm-provision:
+	./scripts/win11-arm.sh provision
+
+win11-arm-deploy: win-build-mac
+	./scripts/win11-arm.sh deploy
+
+win11-arm-seed:
+	./scripts/win11-arm.sh seed
+
+win11-arm-fb2k:
+	./scripts/win11-arm.sh fb2k $(ARGS)
+
+win11-arm-log:
+	./scripts/win11-arm.sh fb2k log $(ARGS)
+
+win11-arm-test:
+	./scripts/run-unit-tests.sh win11-arm
+
+win11-arm-cfg:
+	./scripts/win11-arm.sh cfg "$(ARGS)"
 
 audiomuse-up:
 	./scripts/audiomuse-dev.sh up

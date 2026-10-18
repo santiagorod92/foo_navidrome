@@ -11,7 +11,9 @@ say() { echo "==> $*"; }
 command -v brew >/dev/null || { echo "Homebrew required: https://brew.sh"; exit 1; }
 
 say "Homebrew packages"
-brew install llvm lld bash xwin qemu aria2 cabextract wimlib cdrtools
+brew install llvm lld bash xwin colima docker docker-compose
+mkdir -p "$HOME/.docker/cli-plugins"
+ln -sfn "$(brew --prefix)/opt/docker-compose/bin/docker-compose" "$HOME/.docker/cli-plugins/docker-compose"
 
 if [ ! -f "$XWIN_SDK/crt/include/atlbase.h" ]; then
   say "xwin splat (Microsoft CRT/SDK/ATL, x86_64 + aarch64) — ~1GB"
@@ -37,6 +39,5 @@ if [ ! -f "$SDKDIR/foobar2000/helpers/foobar2000+atl.h" ]; then
 fi
 
 say "Done. Next:"
-echo "   scripts/win-vm/fetch-win11-arm.sh     # build the Win11 ARM ISO (once)"
-echo "   scripts/win-vm/win-vm.sh install       # unattended VM install (once)"
-echo "   scripts/win-vm/win-vm-test.sh --launch # build DLL -> deploy -> run"
+echo "   make win-build-mac      # cross-compile build-win-mac/foo_navidrome.dll"
+echo "   make win11-arm-up       # Windows 11 ARM test VM in a container, then make win11-arm-open"

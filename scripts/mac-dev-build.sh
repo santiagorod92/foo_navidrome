@@ -62,7 +62,7 @@ Fix it either way:
        git clone https://github.com/reupen/foobar2000-sdk-unmodified _sdk
        mkdir -p "$SDK_TREE"
        mv _sdk/foobar2000 _sdk/pfc _sdk/libPPUI "$SDK_TREE"/
-     (scripts/win-vm/setup-mac-toolchain.sh does this for you.)
+     (scripts/win-setup-toolchain-mac.sh does this for you.)
   b) Point FOO_NAVIDROME_SDK at an existing tree laid out as
      <tree>/foobar2000/{SDK,helpers,helpers-mac,shared,...} and <tree>/pfc
 EOF

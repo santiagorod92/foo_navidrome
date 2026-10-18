@@ -209,6 +209,10 @@ the macOS runner before every `xcodebuild`. On Linux the equivalent is
 component** and abort on failure — pass `--no-test` to skip. All paths call
 `scripts/run-unit-tests.sh`, the one place the compile command lives.
 
+No Xcode, only the Command Line Tools? `make mac-syntax` compiles the shared SDK
+glue and every macOS `.mm` file against the foobar2000 SDK with `-fsyntax-only`
+(no link, no bundle), which catches compile errors before a VM or CI build.
+
 ### Configuration
 
 1. Open **Preferences › Tools › Navidrome**
@@ -430,13 +434,14 @@ A root [`Makefile`](Makefile) wraps the most common ones as `make` targets — r
 remain the source of truth. Highlights:
 
 Targets follow an `<os>-<action>` naming scheme — `win-*` for the Linux
-cross-compile, `mac-*` for the native macOS build, `win-vm-*` for the
-Windows-on-macOS VM flow, `mac-vm-*` for the macOS-on-Linux VM flow, `win11-*` for the
-Windows-11-on-Linux VM flow.
+cross-compile, `mac-*` for the native macOS build, `mac-vm-*` for the macOS-on-Linux VM
+flow, `win11-*` for the Windows-11-on-Linux VM flow and `win11-arm-*` for the same VM on an
+Apple Silicon Mac.
 
 ```bash
 make test          # Linux: fast clang-cl+wine build/run of the unit tests
 make mac-test       # macOS: native clang++ build/run of the SAME test suite
+make mac-syntax     # macOS without Xcode: compile-check the component sources against the SDK
 make win-build      # Linux: cross-compile the Windows x64 component
 make win-build-launch  # …same, then relaunch Wine foobar2000
 make win-logs       # follow the colourised component debug log (Wine)
@@ -446,7 +451,8 @@ make mac-build      # macOS: bump patch, xcodebuild Release, install
 make mac-logs       # follow the colourised component debug log (macOS)
 make mac-release    # macOS: bump, build, install, package, gh release create
 make mac-ci-build VERSION=1.11.0     # hermetic macOS CI build
-make win-vm-test ARGS="--launch" # Windows-on-macOS VM: cross-build, deploy, relaunch
+make win-build-mac   # macOS: cross-compile the Windows x64 DLL
+make win11-arm-up    # macOS (Apple Silicon): Windows 11 ARM VM (QEMU + HVF); make win11-arm-web for its screen
 make mac-vm-release  # macOS-on-Linux VM (../macos-devbox): deploy the latest release, relaunch
 make win11-smoke     # Windows 11 VM on Linux (../windows-devbox): build, deploy, UI smoke test
 ```
@@ -502,19 +508,31 @@ tell "credentials rejected" from "connection reset" without string-matching.
 | `./scripts/install-macos.sh` | Install an already-built component + package the `.fb2k-component` (called by `mac-dev-build.sh`) |
 | `./scripts/navidrome-logs.sh` | Follow `/tmp/foo_navidrome_debug.log`, colourised (also `make mac-logs`; needs a build from `mac-dev-build.sh` without `--new-release`) |
 
-### macOS — build & test the *Windows* component in a Win11 ARM VM
+### macOS — build & test the *Windows* component in a Windows 11 ARM VM
 
-No Windows machine needed: cross-compile the Windows x64 DLL on the Mac
-(`clang-cl` + `lld-link` + `xwin`) and runtime-test it in a headless Windows 11
-ARM64 QEMU/HVF guest. See [`scripts/win-vm/README.md`](scripts/win-vm/README.md)
-for the full walkthrough.
+Same commands as the Windows 11 VM on Linux: one `make` target starts it and opens its
+screen in a browser tab. On a Mac the VM is QEMU with Apple's own hypervisor (Windows
+doesn't run in a container there: under colima's nested virtualization it hangs at
+boot). [dockur](https://github.com/dockur/windows-arm) is used once, in Docker, to
+download Windows 11 ARM from Microsoft and build its unattended setup. The DLL is
+cross-compiled on the Mac (`clang-cl` + `lld-link` + `xwin`); it's the x64 build, which
+Windows on ARM runs emulated.
 
 | Command | What it does |
 |---------|--------------|
-| `./scripts/win-vm/setup-mac-toolchain.sh` | One-time: Homebrew deps + xwin CRT/SDK/ATL + WTL + foobar SDK |
-| `./scripts/win-vm/fetch-win11-arm.sh` | Build the Win11 ARM ISO (uupdump) + fetch the virtio ISO |
-| `./scripts/win-vm/win-vm.sh install` | Unattended headless Windows install into the QEMU guest |
-| `./scripts/win-vm/win-vm-test.sh --launch` | Cross-build the x64 DLL → deploy into the guest over SSH → relaunch foobar2000 |
+| `make win-setup-toolchain-mac` | One-time: Homebrew clang-cl/lld/xwin + WTL + foobar SDK + colima/docker |
+| `make win-build-mac` | Cross-compile `build-win-mac/foo_navidrome.dll` |
+| `make win11-arm` | Start the VM and open its screen at http://127.0.0.1:8006 (`VNC=0`: no browser). The first run downloads Windows (`win11-arm-prepare`, ~8 GB) and installs it unattended (~20-30 min) |
+| `make win11-arm-web` | Open the screen once it answers (also `win11-arm-open`; `win11-arm-vnc` = start + open) |
+| `make win11-arm-up` / `-down` | Start / stop the VM only; it runs under launchd, so closing the terminal doesn't stop it |
+| `make win11-arm-ssh` / `-logs` / `-status` / `-shot` | Shell in the guest (tester/tester), QEMU log, state, screenshot |
+| `make win11-arm-reset` | Delete the Windows disk; the next start installs again |
+| `make win11-arm-provision` | One-time after the install: your ssh key and foobar2000 (ARM build) in the guest |
+| `make win11-arm-seed` | Copy this Mac's foo_navidrome settings (server, account) into the guest; a server on your LAN is relayed through the Mac |
+| `make win11-arm-deploy` | Build the DLL and install it in the guest's foobar2000, then restart it |
+| `make win11-arm-fb2k ARGS='start\|stop\|cmd <menu command>'` / `win11-arm-log` | Drive foobar2000 in the guest's desktop session / read its `foo_navidrome.log` |
+| `make win11-arm-cfg ARGS="SQL"` | Change a guest setting in its `config.sqlite` (stops foobar2000 first) |
+| `make win11-arm-test` | Build the unit tests for Windows and run them in the guest |
 
 ### Linux — runtime-test the *macOS* component in a local macOS VM
 
