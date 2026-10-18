@@ -2,6 +2,7 @@
 #include "SubsonicClientWin.h"
 #include "../../core/MediaEnrichmentLogic.h"
 #include "../../core/NavidromeLibraryPlatform.h"
+#include "WinUi.h"
 #include <mutex>
 #include <set>
 #include <string>
@@ -33,6 +34,13 @@ namespace {
             console::print(msg);
         }
     }
+}
+
+std::string navidrome::systemLanguageCode() {
+    wchar_t name[LOCALE_NAME_MAX_LENGTH] = {};
+    const LANGID id = ::GetUserDefaultUILanguage();
+    if (::LCIDToLocaleName(MAKELCID(id, SORT_DEFAULT), name, LOCALE_NAME_MAX_LENGTH, 0) <= 0) return {};
+    return navidrome::win::wToU8(name);
 }
 
 navidrome::SubsonicCore& navidrome::libraryCore() {

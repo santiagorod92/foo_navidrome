@@ -713,8 +713,8 @@ std::string SubsonicCore::createPlaylist(const std::string& name,
 
     if (playlistId.empty()) {
         if (songIds.size() > kChunk) {
-            outError = "Playlist created, but the server returned no id — "
-                       "only the first " + std::to_string(kChunk) + " tracks were added";
+            outError = trf("Playlist created, but the server returned no id — "
+                           "only the first {0} tracks were added", { std::to_string(kChunk) });
         }
         return "";
     }
@@ -935,7 +935,7 @@ bool SubsonicCore::getPlayQueue(PlayQueue& out, std::string& outError) {
 
 bool SubsonicCore::savePlayQueue(const std::vector<std::string>& songIds, const std::string& currentId,
                                  double positionMs, std::string& outError) {
-    if (songIds.empty()) { outError = "Play queue is empty"; return false; }
+    if (songIds.empty()) { outError = tr("Play queue is empty"); return false; }
     std::string params;
     for (const auto& id : songIds) {
         if (!params.empty()) params += "&";

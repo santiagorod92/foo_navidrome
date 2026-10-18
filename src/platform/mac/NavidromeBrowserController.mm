@@ -1,4 +1,5 @@
 #import "NavidromeBrowserController+Private.h"
+#import "MacI18n.h"
 #import "MacSubsonicBrowserClient.h"
 #include "../../core/SubsonicTypes.h"
 #include "../../core/NavidromeBrowserModel.h"
@@ -21,7 +22,7 @@ navidrome::IBrowserClient& NBCBrowserClient() {
 + (instancetype)loadingNode {
     NavidromeNode *n = [NavidromeNode new];
     n.type        = NavidromeNodeTypeLoading;
-    n.displayName = @"Loading…";
+    n.displayName = NDTr("Loading…");
     n.children    = [NSMutableArray array];
     n.childrenLoaded = YES;
     return n;
@@ -171,7 +172,7 @@ NSNotificationName const NavidromeBrowserSectionsDidChangeNotification =
 
     _searchField = [NSSearchField new];
     _searchField.translatesAutoresizingMaskIntoConstraints = NO;
-    _searchField.placeholderString = @"Search artists, albums, songs…";
+    _searchField.placeholderString = NDTr("Search artists, albums, songs…");
     _searchField.target = self;
     _searchField.action = @selector(searchChanged:);
     _searchField.delegate = self;
@@ -198,48 +199,48 @@ NSNotificationName const NavidromeBrowserSectionsDidChangeNotification =
     _outlineView.doubleAction = @selector(doubleClicked:);
 
     NSMenu *rowMenu = [[NSMenu alloc] init];
-    NSMenuItem *playItem = [rowMenu addItemWithTitle:@"Play Now"
+    NSMenuItem *playItem = [rowMenu addItemWithTitle:NDTr("Play Now")
                                               action:@selector(playNow:)
                                        keyEquivalent:@""];
     playItem.target = self;
-    NSMenuItem *addItem = [rowMenu addItemWithTitle:@"Add to Playlist"
+    NSMenuItem *addItem = [rowMenu addItemWithTitle:NDTr("Add to Playlist")
                                              action:@selector(addToPlaylist:)
                                       keyEquivalent:@""];
     addItem.target = self;
-    NSMenuItem *similarItem = [rowMenu addItemWithTitle:@"Instant Mix"
+    NSMenuItem *similarItem = [rowMenu addItemWithTitle:NDTr("Instant Mix")
                                                  action:@selector(playSimilarSelection:)
                                           keyEquivalent:@""];
     similarItem.target = self;
-    _alchemyItem = [rowMenu addItemWithTitle:@"Song Alchemy (AudioMuse-AI)"
+    _alchemyItem = [rowMenu addItemWithTitle:NDTr("Song Alchemy (AudioMuse-AI)")
                                       action:@selector(alchemySelection:)
                                keyEquivalent:@""];
     _alchemyItem.target = self;
     rowMenu.delegate = self;
-    NSMenuItem *artistInfoItem = [rowMenu addItemWithTitle:@"Artist Info"
+    NSMenuItem *artistInfoItem = [rowMenu addItemWithTitle:NDTr("Artist Info")
                                                      action:@selector(showArtistInfo:)
                                               keyEquivalent:@""];
     artistInfoItem.target = self;
 
     [rowMenu addItem:[NSMenuItem separatorItem]];
-    NSMenuItem *starItem = [rowMenu addItemWithTitle:@"Star"
+    NSMenuItem *starItem = [rowMenu addItemWithTitle:NDTr("Star")
                                               action:@selector(starSelection:)
                                        keyEquivalent:@""];
     starItem.target = self;
-    NSMenuItem *unstarItem = [rowMenu addItemWithTitle:@"Unstar"
+    NSMenuItem *unstarItem = [rowMenu addItemWithTitle:NDTr("Unstar")
                                                 action:@selector(unstarSelection:)
                                          keyEquivalent:@""];
     unstarItem.target = self;
-    NSMenuItem *removeBookmarkItem = [rowMenu addItemWithTitle:@"Remove Bookmark"
+    NSMenuItem *removeBookmarkItem = [rowMenu addItemWithTitle:NDTr("Remove Bookmark")
                                                         action:@selector(removeBookmarkSelection:)
                                                  keyEquivalent:@""];
     removeBookmarkItem.target = self;
 
-    NSMenuItem *ratingItem = [rowMenu addItemWithTitle:@"Rating"
+    NSMenuItem *ratingItem = [rowMenu addItemWithTitle:NDTr("Rating")
                                                 action:nil
                                          keyEquivalent:@""];
     NSMenu *ratingMenu = [[NSMenu alloc] init];
     for (NSInteger stars = 0; stars <= 5; stars++) {
-        NSString *title = stars == 0 ? @"None"
+        NSString *title = stars == 0 ? NDTr("None")
                         : [@"" stringByPaddingToLength:(NSUInteger)stars * 1
                                             withString:@"★" startingAtIndex:0];
         NSMenuItem *it = [ratingMenu addItemWithTitle:title
@@ -251,62 +252,62 @@ NSNotificationName const NavidromeBrowserSectionsDidChangeNotification =
     [rowMenu setSubmenu:ratingMenu forItem:ratingItem];
 
     [rowMenu addItem:[NSMenuItem separatorItem]];
-    NSMenuItem *addToPlaylistItem = [rowMenu addItemWithTitle:@"Add to Navidrome Playlist"
+    NSMenuItem *addToPlaylistItem = [rowMenu addItemWithTitle:NDTr("Add to Navidrome Playlist")
                                                        action:nil
                                                 keyEquivalent:@""];
     _playlistsMenu = [[NSMenu alloc] init];
     _playlistsMenu.delegate = self;
     [rowMenu setSubmenu:_playlistsMenu forItem:addToPlaylistItem];
 
-    NSMenuItem *removeItem = [rowMenu addItemWithTitle:@"Remove from Playlist"
+    NSMenuItem *removeItem = [rowMenu addItemWithTitle:NDTr("Remove from Playlist")
                                                 action:@selector(removeFromPlaylist:)
                                          keyEquivalent:@""];
     removeItem.target = self;
-    NSMenuItem *renameItem = [rowMenu addItemWithTitle:@"Rename Playlist…"
+    NSMenuItem *renameItem = [rowMenu addItemWithTitle:NDTr("Rename Playlist…")
                                                 action:@selector(renamePlaylist:)
                                          keyEquivalent:@""];
     renameItem.target = self;
-    NSMenuItem *deleteItem = [rowMenu addItemWithTitle:@"Delete Playlist…"
+    NSMenuItem *deleteItem = [rowMenu addItemWithTitle:NDTr("Delete Playlist…")
                                                 action:@selector(deletePlaylist:)
                                          keyEquivalent:@""];
     deleteItem.target = self;
 
     [rowMenu addItem:[NSMenuItem separatorItem]];
-    NSMenuItem *newRadioItem = [rowMenu addItemWithTitle:@"New Radio Station…"
+    NSMenuItem *newRadioItem = [rowMenu addItemWithTitle:NDTr("New Radio Station…")
                                                   action:@selector(newRadioStation:)
                                            keyEquivalent:@""];
     newRadioItem.target = self;
-    NSMenuItem *editRadioItem = [rowMenu addItemWithTitle:@"Edit Radio Station…"
+    NSMenuItem *editRadioItem = [rowMenu addItemWithTitle:NDTr("Edit Radio Station…")
                                                    action:@selector(editRadioStation:)
                                             keyEquivalent:@""];
     editRadioItem.target = self;
-    NSMenuItem *deleteRadioItem = [rowMenu addItemWithTitle:@"Delete Radio Station…"
+    NSMenuItem *deleteRadioItem = [rowMenu addItemWithTitle:NDTr("Delete Radio Station…")
                                                      action:@selector(deleteRadioStation:)
                                               keyEquivalent:@""];
     deleteRadioItem.target = self;
 
     [rowMenu addItem:[NSMenuItem separatorItem]];
-    NSMenuItem *subscribePodcastItem = [rowMenu addItemWithTitle:@"Subscribe to Podcast…"
+    NSMenuItem *subscribePodcastItem = [rowMenu addItemWithTitle:NDTr("Subscribe to Podcast…")
                                                            action:@selector(subscribePodcast:)
                                                     keyEquivalent:@""];
     subscribePodcastItem.target = self;
-    NSMenuItem *unsubscribePodcastItem = [rowMenu addItemWithTitle:@"Unsubscribe from Podcast…"
+    NSMenuItem *unsubscribePodcastItem = [rowMenu addItemWithTitle:NDTr("Unsubscribe from Podcast…")
                                                              action:@selector(unsubscribePodcast:)
                                                       keyEquivalent:@""];
     unsubscribePodcastItem.target = self;
 
     [rowMenu addItem:[NSMenuItem separatorItem]];
-    NSMenuItem *uploadItem = [rowMenu addItemWithTitle:@"Send Active Playlist to Navidrome"
+    NSMenuItem *uploadItem = [rowMenu addItemWithTitle:NDTr("Send Active Playlist to Navidrome")
                                                 action:@selector(sendActivePlaylist:)
                                          keyEquivalent:@""];
     uploadItem.target = self;
 
-    NSMenuItem *randomMixItem = [rowMenu addItemWithTitle:@"Random Mix"
+    NSMenuItem *randomMixItem = [rowMenu addItemWithTitle:NDTr("Random Mix")
                                                     action:@selector(playRandomMix:)
                                              keyEquivalent:@""];
     randomMixItem.target = self;
 
-    NSMenuItem *downloadItem = [rowMenu addItemWithTitle:@"Download Original Files…"
+    NSMenuItem *downloadItem = [rowMenu addItemWithTitle:NDTr("Download Original Files…")
                                                   action:@selector(downloadSelection:)
                                            keyEquivalent:@""];
     downloadItem.target = self;
@@ -314,20 +315,20 @@ NSNotificationName const NavidromeBrowserSectionsDidChangeNotification =
     _outlineView.menu = rowMenu;
 
     NSTableColumn *nameCol = [[NSTableColumn alloc] initWithIdentifier:@"name"];
-    nameCol.title = @"Name";
+    nameCol.title = NDTr("Name");
     nameCol.minWidth = 160;
     nameCol.width = 280;
     [_outlineView addTableColumn:nameCol];
     _outlineView.outlineTableColumn = nameCol;
 
     NSTableColumn *subCol = [[NSTableColumn alloc] initWithIdentifier:@"sub"];
-    subCol.title = @"Artist / Album";
+    subCol.title = NDTr("Artist / Album");
     subCol.minWidth = 80;
     subCol.width = 160;
     [_outlineView addTableColumn:subCol];
 
     NSTableColumn *durCol = [[NSTableColumn alloc] initWithIdentifier:@"dur"];
-    durCol.title = @"Duration";
+    durCol.title = NDTr("Duration");
     durCol.minWidth = 50;
     durCol.width = 60;
     [_outlineView addTableColumn:durCol];
@@ -346,17 +347,17 @@ NSNotificationName const NavidromeBrowserSectionsDidChangeNotification =
     _statusLabel.font = [NSFont systemFontOfSize:11];
     [content addSubview:_statusLabel];
 
-    NSButton *addBtn = [NSButton buttonWithTitle:@"Add to Playlist"
+    NSButton *addBtn = [NSButton buttonWithTitle:NDTr("Add to Playlist")
                                           target:self
                                           action:@selector(addToPlaylist:)];
     addBtn.translatesAutoresizingMaskIntoConstraints = NO;
 
-    NSButton *playBtn = [NSButton buttonWithTitle:@"Play Now"
+    NSButton *playBtn = [NSButton buttonWithTitle:NDTr("Play Now")
                                            target:self
                                            action:@selector(playNow:)];
     playBtn.translatesAutoresizingMaskIntoConstraints = NO;
 
-    NSButton *refreshBtn = [NSButton buttonWithTitle:@"Refresh"
+    NSButton *refreshBtn = [NSButton buttonWithTitle:NDTr("Refresh")
                                               target:self
                                               action:@selector(refresh:)];
     refreshBtn.translatesAutoresizingMaskIntoConstraints = NO;
@@ -400,11 +401,11 @@ NSNotificationName const NavidromeBrowserSectionsDidChangeNotification =
 
 - (void)loadArtists {
     if (![SubsonicClient.sharedClient isConfigured]) {
-        _statusLabel.stringValue = @"Not configured — set server in Preferences > Navidrome";
+        _statusLabel.stringValue = NDTr("Not configured — set server in Preferences > Navidrome");
         return;
     }
     [_spinner startAnimation:nil];
-    _statusLabel.stringValue = @"Loading artists…";
+    _statusLabel.stringValue = NDTr("Loading artists…");
     [_rootNodes removeAllObjects];
     [_outlineView reloadData];
     [self refreshServerPlaylists];
@@ -420,7 +421,7 @@ NSNotificationName const NavidromeBrowserSectionsDidChangeNotification =
             [self->_spinner stopAnimation:nil];
             if (!errCopy.empty()) {
                 self->_reloadNotice = nil;
-                self->_statusLabel.stringValue = [NSString stringWithFormat:@"Error: %s", errCopy.c_str()];
+                self->_statusLabel.stringValue = NDTrf("Error: {0}", { errCopy });
                 return;
             }
             self->_treeLoadedAtMs = navidrome::browserNowMs();
@@ -466,7 +467,7 @@ NSNotificationName const NavidromeBrowserSectionsDidChangeNotification =
             [node.children removeAllObjects];
             if (err) {
                 [node.children addObject:[NavidromeNode errorNodeWithMessage:
-                    [NSString stringWithFormat:@"Error: %@", err.localizedDescription]]];
+                    NDTrf("Error: {0}", { NDStd(err.localizedDescription) })]];
             } else {
                 [node.children addObjectsFromArray:childNodes];
             }
@@ -507,7 +508,7 @@ NSNotificationName const NavidromeBrowserSectionsDidChangeNotification =
 
     _isSearching = YES;
     [_spinner startAnimation:nil];
-    _statusLabel.stringValue = @"Searching…";
+    _statusLabel.stringValue = NDTr("Searching…");
 
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         std::string err;
@@ -520,7 +521,7 @@ NSNotificationName const NavidromeBrowserSectionsDidChangeNotification =
             [self->_filteredNodes removeAllObjects];
 
             if (!err.empty()) {
-                self->_statusLabel.stringValue = [NSString stringWithFormat:@"Search error: %@", @(err.c_str())];
+                self->_statusLabel.stringValue = NDTrf("Search error: {0}", { err });
                 [self->_outlineView reloadData];
                 return;
             }
@@ -528,7 +529,7 @@ NSNotificationName const NavidromeBrowserSectionsDidChangeNotification =
             for (const auto &n : nodes)
                 [self->_filteredNodes addObject:[NavidromeNode wrapCoreNode:*n]];
 
-            self->_statusLabel.stringValue = [NSString stringWithFormat:@"%lu songs found", (unsigned long)nodes.size()];
+            self->_statusLabel.stringValue = NDTrf("{0} songs found", { std::to_string(nodes.size()) });
 
             [self->_outlineView reloadData];
         });
@@ -563,7 +564,7 @@ NSNotificationName const NavidromeBrowserSectionsDidChangeNotification =
              closeWhenDone:(BOOL)closeWhenDone
                 clearFirst:(BOOL)clearFirst {
     if (nodes.count == 0) {
-        _statusLabel.stringValue = @"Select at least one item first";
+        _statusLabel.stringValue = NDTr("Select at least one item first");
         return;
     }
     NAVIDROME_LOG("UI", "queueNodes: " + std::to_string((unsigned long)nodes.count) +
@@ -579,7 +580,7 @@ NSNotificationName const NavidromeBrowserSectionsDidChangeNotification =
     }
 
     [_spinner startAnimation:nil];
-    _statusLabel.stringValue = @"Loading tracks…";
+    _statusLabel.stringValue = NDTr("Loading tracks…");
 
     NSArray *nodesCopy = [nodes copy];
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
@@ -598,11 +599,11 @@ NSNotificationName const NavidromeBrowserSectionsDidChangeNotification =
             if (!problem.empty()) navidrome::showBrowserQueueError(problem);
             if (reload) {
                 NAVIDROME_WARN("UI", "addNodesToPlaylist: nothing to queue, reloading the browse tree");
-                self.reloadNotice = @"Couldn't load tracks — list reloaded, select again";
+                self.reloadNotice = NDTr("Couldn't load tracks — list reloaded, select again");
                 [self refresh:nil];
             } else if (!gotSongs) {
                 NAVIDROME_WARN("UI", "addNodesToPlaylist: the selection resolved to no tracks");
-                self->_statusLabel.stringValue = @"No tracks found — try Refresh";
+                self->_statusLabel.stringValue = NDTr("No tracks found — try Refresh");
             } else {
                 [self enqueueNodes:songs play:play clearFirst:clearFirst];
                 if (closeWhenDone) [self closeStandaloneWindow];
@@ -703,7 +704,7 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
     NavidromeNode *node = [self selectedNodes].firstObject;
     navidrome::BrowserNode core = node ? [node coreNode] : navidrome::BrowserNode{};
     if (!node || !navidrome::isSimilarEligible(core)) {
-        _statusLabel.stringValue = @"Instant Mix needs an artist, album, or song";
+        _statusLabel.stringValue = NDTr("Instant Mix needs an artist, album, or song");
         return;
     }
     navidrome::startInstantMix(std::make_shared<navidrome::BrowserNode>(core));
@@ -716,7 +717,7 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
     std::string label;
     auto seeds = navidrome::audiomuse::seedsFromNodes(core, label);
     if (seeds.empty()) {
-        _statusLabel.stringValue = @"Song Alchemy needs songs or artists";
+        _statusLabel.stringValue = NDTr("Song Alchemy needs songs or artists");
         return;
     }
     navidrome::audioMuseAlchemy(std::move(seeds), std::move(label));
@@ -725,12 +726,12 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
 - (IBAction)showArtistInfo:(id)sender {
     NavidromeNode *node = [self selectedNodes].firstObject;
     if (!node || node.type != NavidromeNodeTypeArtist) {
-        _statusLabel.stringValue = @"Artist Info needs an artist";
+        _statusLabel.stringValue = NDTr("Artist Info needs an artist");
         return;
     }
 
     [_spinner startAnimation:nil];
-    _statusLabel.stringValue = @"Fetching artist info…";
+    _statusLabel.stringValue = NDTr("Fetching artist info…");
     std::string artistId = NBCStr(node.nodeId);
     NSString *artistName = node.displayName;
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
@@ -742,15 +743,15 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
         dispatch_async(dispatch_get_main_queue(), ^{
             [self->_spinner stopAnimation:nil];
             if (!errCopy.empty()) {
-                self->_statusLabel.stringValue = [NSString stringWithFormat:@"Error: %s", errCopy.c_str()];
+                self->_statusLabel.stringValue = NDTrf("Error: {0}", { errCopy });
                 return;
             }
             self->_statusLabel.stringValue = @"";
             NSAlert *alert = [[NSAlert alloc] init];
             alert.messageText = artistName;
             alert.informativeText = text;
-            [alert addButtonWithTitle:@"OK"];
-            if (lastFmUrl) [alert addButtonWithTitle:@"Open on Last.fm"];
+            [alert addButtonWithTitle:NDTr("OK")];
+            if (lastFmUrl) [alert addButtonWithTitle:NDTr("Open on Last.fm")];
             if ([alert runModal] == NSAlertSecondButtonReturn && lastFmUrl) {
                 [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:lastFmUrl]];
             }
@@ -760,7 +761,7 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
 
 - (IBAction)playRandomMix:(id)sender {
     [_spinner startAnimation:nil];
-    _statusLabel.stringValue = @"Fetching random mix…";
+    _statusLabel.stringValue = NDTr("Fetching random mix…");
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         std::string err;
         auto nodes = navidrome::fetchRandomMix(NBCBrowserClient(), 100, err);
@@ -769,11 +770,11 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
         dispatch_async(dispatch_get_main_queue(), ^{
             [self->_spinner stopAnimation:nil];
             if (!errCopy.empty()) {
-                self->_statusLabel.stringValue = [NSString stringWithFormat:@"Error: %s", errCopy.c_str()];
+                self->_statusLabel.stringValue = NDTrf("Error: {0}", { errCopy });
                 return;
             }
             if (songNodes.count == 0) {
-                self->_statusLabel.stringValue = @"No tracks found";
+                self->_statusLabel.stringValue = NDTr("No tracks found");
                 return;
             }
             [self enqueueNodes:songNodes play:YES clearFirst:NO];
@@ -921,7 +922,7 @@ void NavidromeShowStandaloneBrowser(void) {
                                     NSWindowStyleMaskResizable)
                          backing:NSBackingStoreBuffered
                          defer:NO];
-        win.title = @"Navidrome Browser";
+        win.title = NDTr("Navidrome Browser");
         win.minSize = NSMakeSize(360, 300);
         win.releasedWhenClosed = NO;
         win.contentViewController = owner.vc;
@@ -938,8 +939,8 @@ bool navidrome::promptForText(const char* title, const char* label, std::string&
     NSAlert *alert = [[NSAlert alloc] init];
     alert.messageText = @(title);
     alert.informativeText = @(label);
-    [alert addButtonWithTitle:@"OK"];
-    [alert addButtonWithTitle:@"Cancel"];
+    [alert addButtonWithTitle:NDTr("OK")];
+    [alert addButtonWithTitle:NDTr("Cancel")];
 
     NSTextField *input = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 320, 24)];
     input.stringValue = @(inOut.c_str()) ?: @"";

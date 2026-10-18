@@ -1,5 +1,6 @@
 #import "NavidromePreferencesController.h"
 #import "SubsonicClient.h"
+#import "MacI18n.h"
 #include <SDK/cfg_var.h>
 #include "../../core/NavidromeAudioMuse.h"
 #include "../../core/NavidromeDiagnostics.h"
@@ -10,7 +11,7 @@
 static NSArray<NSArray *> *NavidromeStreamFormats(void) {
     NSMutableArray<NSArray *> *out = [NSMutableArray array];
     for (const auto &o : navidrome::streamFormatOptions())
-        [out addObject:@[ @(o.label), @(o.value) ]];
+        [out addObject:@[ NDTr(o.label), @(o.value) ]];
     return out;
 }
 
@@ -50,13 +51,13 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
         styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
                    NSWindowStyleMaskResizable)
         backing:NSBackingStoreBuffered defer:NO];
-    win.title = @"Navidrome — Custom HTTP Headers";
+    win.title = NDTr("Navidrome — Custom HTTP Headers");
     win.releasedWhenClosed = NO;
     win.delegate = self;
     NSView *content = win.contentView;
 
     NSTextField *hint = [NSTextField wrappingLabelWithString:
-        @"One header per line, as  Name: Value  (e.g. for a Cloudflare Zero Trust tunnel)."];
+        NDTr("One header per line, as  Name: Value  (e.g. for a Cloudflare Zero Trust tunnel).")];
     hint.translatesAutoresizingMaskIntoConstraints = NO;
     hint.textColor = [NSColor secondaryLabelColor];
     hint.font = [NSFont systemFontOfSize:11];
@@ -80,13 +81,13 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
     self.textView = tv;
     [content addSubview:scroll];
 
-    NSButton *cf = [NSButton buttonWithTitle:@"Add Cloudflare headers"
+    NSButton *cf = [NSButton buttonWithTitle:NDTr("Add Cloudflare headers")
                                       target:self action:@selector(addCloudflare:)];
     cf.translatesAutoresizingMaskIntoConstraints = NO;
-    NSButton *save = [NSButton buttonWithTitle:@"Save" target:self action:@selector(save:)];
+    NSButton *save = [NSButton buttonWithTitle:NDTr("Save") target:self action:@selector(save:)];
     save.translatesAutoresizingMaskIntoConstraints = NO;
     save.keyEquivalent = @"\r";
-    NSButton *cancel = [NSButton buttonWithTitle:@"Cancel" target:self action:@selector(cancel:)];
+    NSButton *cancel = [NSButton buttonWithTitle:NDTr("Cancel") target:self action:@selector(cancel:)];
     cancel.translatesAutoresizingMaskIntoConstraints = NO;
     [content addSubview:cf];
     [content addSubview:save];
@@ -151,6 +152,7 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
 @property (nonatomic, strong) NSTextField        *diagStatusLabel;
 @property (nonatomic, strong) NSPopUpButton      *formatPopup;
 @property (nonatomic, strong) NSPopUpButton      *bitratePopup;
+@property (nonatomic, strong) NSPopUpButton      *languagePopup;
 @end
 
 @implementation NavidromePreferencesController
@@ -187,37 +189,37 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
         return f;
     };
 
-    NSTextField *lServer   = makeLabel(@"Server URL:");
-    NSTextField *lUser     = makeLabel(@"Username:");
-    NSTextField *lPassword = makeLabel(@"Password:");
+    NSTextField *lServer   = makeLabel(NDTr("Server URL:"));
+    NSTextField *lUser     = makeLabel(NDTr("Username:"));
+    NSTextField *lPassword = makeLabel(NDTr("Password:"));
 
     _serverField   = makeField(@"http://localhost:4533/");
     _usernameField = makeField(@"admin");
     _passwordField = makeSecure(@"••••••");
 
-    _testButton = [NSButton buttonWithTitle:@"Test Connection"
+    _testButton = [NSButton buttonWithTitle:NDTr("Test Connection")
                                      target:self
                                      action:@selector(testConnection:)];
     _testButton.translatesAutoresizingMaskIntoConstraints = NO;
     [root addSubview:_testButton];
 
-    _headersButton = [NSButton buttonWithTitle:@"Custom Headers…"
+    _headersButton = [NSButton buttonWithTitle:NDTr("Custom Headers…")
                                         target:self
                                         action:@selector(openCustomHeaders:)];
     _headersButton.translatesAutoresizingMaskIntoConstraints = NO;
     [root addSubview:_headersButton];
 
-    _scrobbleCheckbox = [NSButton checkboxWithTitle:@"Report plays to Navidrome (scrobbling)"
+    _scrobbleCheckbox = [NSButton checkboxWithTitle:NDTr("Report plays to Navidrome (scrobbling)")
                                              target:self
                                              action:@selector(scrobbleToggled:)];
     _scrobbleCheckbox.translatesAutoresizingMaskIntoConstraints = NO;
-    _scrobbleCheckbox.toolTip = @"Updates play counts and “Recently Played” on the "
-                                 "server, and feeds any Last.fm / ListenBrainz relay it has "
-                                 "configured.";
+    _scrobbleCheckbox.toolTip = NDTr("Updates play counts and “Recently Played” on the "
+                                      "server, and feeds any Last.fm / ListenBrainz relay it has "
+                                      "configured.");
     [root addSubview:_scrobbleCheckbox];
 
-    NSTextField *lFormat  = makeLabel(@"Stream as:");
-    NSTextField *lBitrate = makeLabel(@"Max bitrate:");
+    NSTextField *lFormat  = makeLabel(NDTr("Stream as:"));
+    NSTextField *lBitrate = makeLabel(NDTr("Max bitrate:"));
 
     _formatPopup = [[NSPopUpButton alloc] init];
     _formatPopup.translatesAutoresizingMaskIntoConstraints = NO;
@@ -225,27 +227,42 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
         [_formatPopup addItemWithTitle:entry[0]];
     _formatPopup.target = self;
     _formatPopup.action = @selector(transcodeChanged:);
-    _formatPopup.toolTip = @"Ask the server to transcode on the fly. "
-                            "Useful on slow links; “Original” always sends the stored file. "
-                            "The server must have a transcoding configured for the chosen "
-                            "format — Navidrome ships MP3, Opus and AAC; FLAC and WAV have "
-                            "to be added in its admin UI.";
+    _formatPopup.toolTip = NDTr("Ask the server to transcode on the fly. "
+                                 "Useful on slow links; “Original” always sends the stored file. "
+                                 "The server must have a transcoding configured for the chosen "
+                                 "format — Navidrome ships MP3, Opus and AAC; FLAC and WAV have "
+                                 "to be added in its admin UI.");
     [root addSubview:_formatPopup];
 
     _bitratePopup = [[NSPopUpButton alloc] init];
     _bitratePopup.translatesAutoresizingMaskIntoConstraints = NO;
     for (NSNumber *kbps in NavidromeMaxBitrates())
         [_bitratePopup addItemWithTitle:kbps.integerValue == 0
-            ? @"Unlimited"
+            ? NDTr("Unlimited")
             : [NSString stringWithFormat:@"%ld kbps", (long)kbps.integerValue]];
     _bitratePopup.target = self;
     _bitratePopup.action = @selector(transcodeChanged:);
-    _bitratePopup.toolTip = @"Upper bound the server may not exceed. "
-                             "Ignored when the stream isn't transcoded, and when the "
-                             "target format is lossless (FLAC / WAV).";
+    _bitratePopup.toolTip = NDTr("Upper bound the server may not exceed. "
+                                  "Ignored when the stream isn't transcoded, and when the "
+                                  "target format is lossless (FLAC / WAV).");
     [root addSubview:_bitratePopup];
 
-    _rescanButton = [NSButton buttonWithTitle:@"Rescan"
+    NSTextField *lLanguage = makeLabel(NDTr("Language:"));
+    _languagePopup = [[NSPopUpButton alloc] init];
+    _languagePopup.translatesAutoresizingMaskIntoConstraints = NO;
+    for (const auto &o : navidrome::i18n::languageOptions())
+        [_languagePopup addItemWithTitle:NDTr(o.label)];
+    _languagePopup.target = self;
+    _languagePopup.action = @selector(languageChanged:);
+    [root addSubview:_languagePopup];
+
+    NSTextField *languageHint = [NSTextField labelWithString:NDTr("Restart foobar2000 to apply.")];
+    languageHint.translatesAutoresizingMaskIntoConstraints = NO;
+    languageHint.textColor = [NSColor secondaryLabelColor];
+    languageHint.font = [NSFont systemFontOfSize:11];
+    [root addSubview:languageHint];
+
+    _rescanButton = [NSButton buttonWithTitle:NDTr("Rescan")
                                         target:self
                                         action:@selector(rescanLibrary:)];
     _rescanButton.translatesAutoresizingMaskIntoConstraints = NO;
@@ -274,20 +291,20 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
         [root addSubview:line];
         return line;
     };
-    NSTextField *connSection    = makeSection(@"Navidrome Server Connection");
+    NSTextField *connSection    = makeSection(NDTr("Navidrome Server Connection"));
     NSBox       *connLine       = makeLine();
-    NSTextField *librarySection = makeSection(@"Rescan Navidrome Library");
+    NSTextField *librarySection = makeSection(NDTr("Rescan Navidrome Library"));
     NSBox       *libraryLine    = makeLine();
-    NSTextField *logsSection    = makeSection(@"Logs and Troubleshooting");
+    NSTextField *logsSection    = makeSection(NDTr("Logs and Troubleshooting"));
     NSBox       *logsLine       = makeLine();
 
-    _diagButton = [NSButton buttonWithTitle:@"Copy Diagnostics"
+    _diagButton = [NSButton buttonWithTitle:NDTr("Copy Diagnostics")
                                      target:self
                                      action:@selector(copyDiagnostics:)];
     _diagButton.translatesAutoresizingMaskIntoConstraints = NO;
     [root addSubview:_diagButton];
 
-    _logFolderButton = [NSButton buttonWithTitle:@"Show Log in Finder"
+    _logFolderButton = [NSButton buttonWithTitle:NDTr("Show Log in Finder")
                                           target:self
                                           action:@selector(showLogInFinder:)];
     _logFolderButton.translatesAutoresizingMaskIntoConstraints = NO;
@@ -313,7 +330,7 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
     [root addSubview:_statusLabel];
 
     NSTextField *creditLabel = [NSTextField labelWithString:
-        [NSString stringWithFormat:@"%s\n%s", navidrome::kPrefsAuthorLine, navidrome::kSourceCodeUrl]];
+        [NSString stringWithFormat:@"%@\n%s", NDTr(navidrome::kPrefsAuthorLine), navidrome::kSourceCodeUrl]];
     creditLabel.translatesAutoresizingMaskIntoConstraints = NO;
     creditLabel.textColor = [NSColor tertiaryLabelColor];
     creditLabel.font = [NSFont systemFontOfSize:10];
@@ -322,7 +339,7 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
 
     CGFloat pad   = 16;
     CGFloat vGap  = 10;
-    CGFloat labelW = 90;
+    CGFloat labelW = 120;
     CGFloat fieldH = 22;
 
     [NSLayoutConstraint activateConstraints:@[
@@ -388,7 +405,17 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
         [_bitratePopup.topAnchor constraintEqualToAnchor:_formatPopup.bottomAnchor constant:vGap],
         [_bitratePopup.leadingAnchor constraintEqualToAnchor:lBitrate.trailingAnchor constant:8],
 
-        [librarySection.topAnchor constraintEqualToAnchor:_bitratePopup.bottomAnchor constant:vGap * 2],
+        [lLanguage.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:pad],
+        [lLanguage.widthAnchor constraintEqualToConstant:labelW],
+        [lLanguage.centerYAnchor constraintEqualToAnchor:_languagePopup.centerYAnchor],
+
+        [_languagePopup.topAnchor constraintEqualToAnchor:_bitratePopup.bottomAnchor constant:vGap],
+        [_languagePopup.leadingAnchor constraintEqualToAnchor:lLanguage.trailingAnchor constant:8],
+        [languageHint.topAnchor constraintEqualToAnchor:_languagePopup.bottomAnchor constant:4],
+        [languageHint.leadingAnchor constraintEqualToAnchor:_languagePopup.leadingAnchor constant:2],
+        [languageHint.trailingAnchor constraintLessThanOrEqualToAnchor:root.trailingAnchor constant:-pad],
+
+        [librarySection.topAnchor constraintEqualToAnchor:languageHint.bottomAnchor constant:vGap * 2],
         [librarySection.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:pad],
         [libraryLine.centerYAnchor constraintEqualToAnchor:librarySection.centerYAnchor],
         [libraryLine.leadingAnchor constraintEqualToAnchor:librarySection.trailingAnchor constant:8],
@@ -464,6 +491,17 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
     for (NSUInteger i = 0; i < rates.count; i++)
         if (rates[i].integerValue == bitrate) { bitrateIndex = (NSInteger)i; break; }
     [_bitratePopup selectItemAtIndex:bitrateIndex];
+
+    [_languagePopup selectItemAtIndex:navidrome::i18n::languageOptionIndex(navidrome::cfg_ui_language.get().c_str())];
+}
+
+- (IBAction)languageChanged:(id)sender {
+    const auto &langs = navidrome::i18n::languageOptions();
+    NSInteger li = _languagePopup.indexOfSelectedItem;
+    if (li < 0 || li >= (NSInteger)langs.size()) return;
+    const char *value = langs[(std::size_t)li].value;
+    NAVIDROME_NOTE("Env", std::string("UI language set to \"") + value + "\" (applies after restart)");
+    navidrome::cfg_ui_language.set(value);
 }
 
 - (IBAction)scrobbleToggled:(id)sender {
@@ -496,7 +534,7 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
 - (IBAction)testConnection:(id)sender {
     [self saveSettings];
     _testButton.enabled = NO;
-    _statusLabel.stringValue = @"Testing…";
+    _statusLabel.stringValue = NDTr("Testing…");
     _statusLabel.textColor = [NSColor secondaryLabelColor];
 
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
@@ -505,11 +543,11 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
         dispatch_async(dispatch_get_main_queue(), ^{
             self->_testButton.enabled = YES;
             if (ok) {
-                self->_statusLabel.stringValue = @"Connected!";
+                self->_statusLabel.stringValue = NDTr("Connected!");
                 self->_statusLabel.textColor = [NSColor systemGreenColor];
             } else {
                 self->_statusLabel.stringValue = [NSString stringWithFormat:@"%@",
-                    err.localizedDescription ?: @"Connection failed"];
+                    err.localizedDescription ?: NDTr("Connection failed")];
                 self->_statusLabel.textColor = [NSColor systemRedColor];
             }
         });
@@ -519,7 +557,7 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
 - (IBAction)rescanLibrary:(id)sender {
     _rescanButton.enabled = NO;
     _scanStatusLabel.textColor = [NSColor secondaryLabelColor];
-    _scanStatusLabel.stringValue = @"Starting scan…";
+    _scanStatusLabel.stringValue = NDTr("Starting scan…");
 
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         std::string err;
@@ -543,7 +581,7 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
 
 - (IBAction)copyDiagnostics:(id)sender {
     _diagButton.enabled = NO;
-    _diagStatusLabel.stringValue = @"Collecting…";
+    _diagStatusLabel.stringValue = NDTr("Collecting…");
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         std::string text;
         navidrome::dbg::runGuarded("UI", "copy diagnostics", [&] { text = navidrome::collectDiagnostics(); });
@@ -554,15 +592,15 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
             [pb clearContents];
             const BOOL ok = s.length > 0 && [pb setString:s forType:NSPasteboardTypeString];
             if (!ok) NAVIDROME_WARN("UI", "copy diagnostics: pasteboard write failed");
-            self->_diagStatusLabel.stringValue = ok ? @"Copied to the clipboard"
-                                                    : @"Couldn't copy the diagnostics";
+            self->_diagStatusLabel.stringValue = ok ? NDTr("Copied to the clipboard")
+                                                    : NDTr("Couldn't copy the diagnostics");
         });
     });
 }
 
 - (IBAction)showLogInFinder:(id)sender {
     const std::string path = navidrome::componentLogPath();
-    if (path.empty()) { _diagStatusLabel.stringValue = @"No log file yet"; return; }
+    if (path.empty()) { _diagStatusLabel.stringValue = NDTr("No log file yet"); return; }
     NSURL *url = [NSURL fileURLWithPath:[NSString stringWithUTF8String:path.c_str()]];
     if ([NSFileManager.defaultManager fileExistsAtPath:url.path])
         [NSWorkspace.sharedWorkspace activateFileViewerSelectingURLs:@[ url ]];

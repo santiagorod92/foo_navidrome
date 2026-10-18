@@ -3,6 +3,7 @@
 #include "Json.h"
 #include "SubsonicErrors.h"
 #include "SubsonicModels.h"
+#include "I18n.h"
 #include <algorithm>
 #include <cstdlib>
 #include <mutex>
@@ -277,7 +278,7 @@ inline std::string stripHtmlTags(const std::string& html) {
 
 inline std::string formatArtistBiography(const ArtistInfo& info) {
     std::string bio = stripHtmlTags(info.biography);
-    std::string text = bio.empty() ? "No biography available." : bio;
+    std::string text = bio.empty() ? std::string(tr("No biography available.")) : bio;
     if (!info.lastFmUrl.empty()) text += "\n\n" + info.lastFmUrl;
     return text;
 }

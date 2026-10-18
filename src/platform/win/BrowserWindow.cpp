@@ -28,6 +28,9 @@ static inline void dbgLog(const std::string& msg) { NAVIDROME_LOG("UI", msg); }
 
 using navidrome::win::u8ToWide;
 using navidrome::win::wToU8;
+using navidrome::win::trw;
+using navidrome::tr;
+using navidrome::trf;
 
 std::vector<BrowserWindow*> BrowserWindow::s_open;
 
@@ -48,7 +51,7 @@ BrowserWindow& BrowserWindow::get() {
 
 void BrowserWindow::show() {
     if (!IsWindow()) {
-        Create(nullptr, CWindow::rcDefault, L"Navidrome Browser",
+        Create(nullptr, CWindow::rcDefault, trw("Navidrome Browser").c_str(),
                WS_OVERLAPPEDWINDOW, 0);
         const navidrome::win::UiScale s(*this);
         SetWindowPos(nullptr, 0, 0, s(580), s(660),
@@ -81,7 +84,7 @@ LRESULT BrowserWindow::OnCreate(LPCREATESTRUCT) {
     m_search.Create(*this, CWindow::rcDefault, nullptr,
         WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL, 0, IDC_SEARCH);
     m_search.SetFont(hFont);
-    m_search.SetCueBannerText(L"Search artists, albums, songs\u2026");
+    m_search.SetCueBannerText(trw("Search artists, albums, songs…").c_str());
 
     m_tree.Create(*this, CWindow::rcDefault, nullptr,
         WS_CHILD | WS_VISIBLE | WS_BORDER | TVS_HASLINES |
@@ -91,15 +94,15 @@ LRESULT BrowserWindow::OnCreate(LPCREATESTRUCT) {
     ::SetWindowSubclass(m_tree, &BrowserWindow::TreeSubclassProc, 1,
                         reinterpret_cast<DWORD_PTR>(this));
 
-    m_addBtn.Create(*this, CWindow::rcDefault, L"Add to Playlist",
+    m_addBtn.Create(*this, CWindow::rcDefault, trw("Add to Playlist").c_str(),
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 0, IDC_ADD);
     m_addBtn.SetFont(hFont);
 
-    m_playBtn.Create(*this, CWindow::rcDefault, L"Play Now",
+    m_playBtn.Create(*this, CWindow::rcDefault, trw("Play Now").c_str(),
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 0, IDC_PLAY);
     m_playBtn.SetFont(hFont);
 
-    m_refreshBtn.Create(*this, CWindow::rcDefault, L"Refresh",
+    m_refreshBtn.Create(*this, CWindow::rcDefault, trw("Refresh").c_str(),
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 0, IDC_REFRESH);
     m_refreshBtn.SetFont(hFont);
 
@@ -236,7 +239,7 @@ void BrowserWindow::loadArtists() {
     m_isSearching = false;
     m_searchResultNodes.clear();
 
-    setStatus("Loading artists\u2026");
+    setStatus(tr("Loading artists…"));
     {
         TreeRebuild rebuild(*this);
         clearTree();
@@ -334,7 +337,7 @@ std::string BrowserWindow::radioStationURL(const std::string& stationId) {
 void BrowserWindow::populateRoot(LoadedPayload* payload) {
     if (!payload->error.empty()) {
         m_reloadNotice.clear();
-        setStatus("Error: " + payload->error); return;
+        setStatus(trf("Error: {0}", { payload->error })); return;
     }
     m_rootNodes = payload->nodes;
     m_treeLoadedAtMs = navidrome::browserNowMs();
@@ -349,7 +352,7 @@ void BrowserWindow::populateRoot(LoadedPayload* payload) {
 
 void BrowserWindow::populateSearchResults(LoadedPayload* payload) {
     if (!payload->error.empty()) {
-        setStatus("Search error: " + payload->error); return;
+        setStatus(trf("Search error: {0}", { payload->error })); return;
     }
     m_isSearching       = true;
     m_searchResultNodes = payload->nodes;
@@ -359,7 +362,7 @@ void BrowserWindow::populateSearchResults(LoadedPayload* payload) {
         clearTree();
         for (auto& n : m_searchResultNodes) insertNode(TVI_ROOT, n);
     }
-    setStatus(std::to_string(m_searchResultNodes.size()) + " songs found");
+    setStatus(trf("{0} songs found", { std::to_string(m_searchResultNodes.size()) }));
 }
 
 void BrowserWindow::restoreBrowseTree() {
@@ -401,7 +404,7 @@ void BrowserWindow::populateChildren(LoadedPayload* payload) {
     if (!payload->error.empty()) {
         auto errNode = std::make_shared<NavidromeNode>();
         errNode->type        = NavidromeNode::Error;
-        errNode->displayName = "Error: " + payload->error;
+        errNode->displayName = trf("Error: {0}", { payload->error });
         parent->children     = { errNode };
     }
 
@@ -484,7 +487,7 @@ LRESULT BrowserWindow::OnTreeExpanding(LPNMHDR pnmh) {
 
     auto loadNode = std::make_shared<NavidromeNode>();
     loadNode->type        = NavidromeNode::Loading;
-    loadNode->displayName = "Loading\u2026";
+    loadNode->displayName = tr("Loading…");
     insertNode(NodeItem(node), loadNode);
 
     std::thread([this, node]() {
@@ -610,11 +613,11 @@ void BrowserWindow::queueSelected(bool play, bool closeAfter, bool clearFirst) {
 
 void BrowserWindow::queueNodes(std::vector<std::shared_ptr<NavidromeNode>> selected,
                                bool play, bool closeAfter, bool clearFirst) {
-    if (selected.empty()) { setStatus("Select at least one item"); return; }
+    if (selected.empty()) { setStatus(tr("Select at least one item")); return; }
 
     NAVIDROME_LOG("UI", "queueNodes: " + std::to_string(selected.size()) +
                   " selected node(s), play=" + (play ? "1" : "0"));
-    setStatus("Loading tracks\u2026");
+    setStatus(tr("Loading tracks…"));
     std::thread([this, selected, play, closeAfter, clearFirst]() {
         std::string err;
         auto songs = navidrome::collectSelectionSongs(browserClient(), selected, &err);
@@ -629,7 +632,7 @@ void BrowserWindow::queueNodes(std::vector<std::shared_ptr<NavidromeNode>> selec
                 navidrome::queueProblemMessage(!songs.empty(), err, reload);
             if (reload) {
                 NAVIDROME_WARN("UI", "queueNodes: nothing to queue, reloading the browse tree");
-                m_reloadNotice = "Couldn't load tracks \u2014 list reloaded, select again";
+                m_reloadNotice = tr("Couldn't load tracks — list reloaded, select again");
                 m_search.SetWindowText(L"");
                 loadArtists();
             }
@@ -637,7 +640,7 @@ void BrowserWindow::queueNodes(std::vector<std::shared_ptr<NavidromeNode>> selec
             if (reload) return;
             if (songs.empty()) {
                 NAVIDROME_WARN("UI", "queueNodes: the selection resolved to no tracks");
-                setStatus("No tracks found \u2014 try Refresh");
+                setStatus(tr("No tracks found — try Refresh"));
                 return;
             }
             enqueueNodes(std::move(songs), play, clearFirst);
@@ -654,7 +657,7 @@ void BrowserWindow::OnPlaySimilar(UINT, int, HWND) {
     auto selected = selectedNodes();
     auto node = selected.empty() ? nullptr : selected.front();
     if (!node || !navidrome::isSimilarEligible(*node)) {
-        setStatus("Instant Mix needs an artist, album, or song");
+        setStatus(tr("Instant Mix needs an artist, album, or song"));
         return;
     }
     navidrome::startInstantMix(node);
@@ -664,7 +667,7 @@ void BrowserWindow::OnAlchemy(UINT, int, HWND) {
     dbgLog("OnAlchemy fired");
     std::string label;
     auto seeds = navidrome::audiomuse::seedsFromNodes(selectedNodes(), label);
-    if (seeds.empty()) { setStatus("Song Alchemy needs songs or artists"); return; }
+    if (seeds.empty()) { setStatus(tr("Song Alchemy needs songs or artists")); return; }
     navidrome::audioMuseAlchemy(std::move(seeds), std::move(label));
 }
 
@@ -673,11 +676,11 @@ void BrowserWindow::OnArtistInfo(UINT, int, HWND) {
     auto selected = selectedNodes();
     auto node = selected.empty() ? nullptr : selected.front();
     if (!node || node->type != navidrome::BrowserNode::Artist) {
-        setStatus("Artist Info needs an artist");
+        setStatus(tr("Artist Info needs an artist"));
         return;
     }
 
-    setStatus("Fetching artist info…");
+    setStatus(tr("Fetching artist info…"));
     std::string artistId   = node->id;
     std::wstring artistName = u8ToWide(node->displayName);
     std::thread([this, artistId, artistName]() {
@@ -686,7 +689,7 @@ void BrowserWindow::OnArtistInfo(UINT, int, HWND) {
         std::wstring text = u8ToWide(navidrome::formatArtistBiography(info));
         fb2k::inMainThread([this, artistName, text, err]() mutable {
             if (!IsWindow()) return;
-            if (!err.empty()) { setStatus("Error: " + err); return; }
+            if (!err.empty()) { setStatus(trf("Error: {0}", { err })); return; }
             setStatus("");
             MessageBoxW(text.c_str(), artistName.c_str(), MB_OK | MB_ICONINFORMATION);
         });
@@ -695,14 +698,14 @@ void BrowserWindow::OnArtistInfo(UINT, int, HWND) {
 
 void BrowserWindow::OnRandomMix(UINT, int, HWND) {
     dbgLog("OnRandomMix fired");
-    setStatus("Fetching random mix…");
+    setStatus(tr("Fetching random mix…"));
     std::thread([this]() {
         std::string err;
         auto nodes = navidrome::fetchRandomMix(browserClient(), 100, err);
         fb2k::inMainThread([this, nodes, err]() mutable {
             if (!IsWindow()) return;
-            if (!err.empty()) { setStatus("Error: " + err); return; }
-            if (nodes.empty()) { setStatus("No tracks found"); return; }
+            if (!err.empty()) { setStatus(trf("Error: {0}", { err })); return; }
+            if (nodes.empty()) { setStatus(tr("No tracks found")); return; }
             enqueueNodes(std::move(nodes), true, false);
         });
     }).detach();
@@ -747,25 +750,25 @@ void BrowserWindow::OnContextMenu(CWindow wnd, CPoint point) {
 
     CMenu menu;
     menu.CreatePopupMenu();
-    menu.AppendMenu(MF_STRING, IDC_PLAY, L"Play Now");
-    menu.AppendMenu(MF_STRING, IDC_ADD,  L"Add to Playlist");
-    menu.AppendMenu(MF_STRING, IDC_PLAY_SIMILAR, L"Instant Mix");
+    menu.AppendMenu(MF_STRING, IDC_PLAY, trw("Play Now").c_str());
+    menu.AppendMenu(MF_STRING, IDC_ADD,  trw("Add to Playlist").c_str());
+    menu.AppendMenu(MF_STRING, IDC_PLAY_SIMILAR, trw("Instant Mix").c_str());
     if (navidrome::audioMuseSettings().configured())
-        menu.AppendMenu(MF_STRING, IDC_ALCHEMY, L"Song Alchemy (AudioMuse-AI)");
-    menu.AppendMenu(MF_STRING, IDC_ARTIST_INFO,  L"Artist Info");
+        menu.AppendMenu(MF_STRING, IDC_ALCHEMY, trw("Song Alchemy (AudioMuse-AI)").c_str());
+    menu.AppendMenu(MF_STRING, IDC_ARTIST_INFO,  trw("Artist Info").c_str());
 
     menu.AppendMenu(MF_SEPARATOR);
-    menu.AppendMenu(MF_STRING, IDC_STAR,   L"Star");
-    menu.AppendMenu(MF_STRING, IDC_UNSTAR, L"Unstar");
-    menu.AppendMenu(MF_STRING, IDC_REMOVE_BOOKMARK, L"Remove Bookmark");
+    menu.AppendMenu(MF_STRING, IDC_STAR,   trw("Star").c_str());
+    menu.AppendMenu(MF_STRING, IDC_UNSTAR, trw("Unstar").c_str());
+    menu.AppendMenu(MF_STRING, IDC_REMOVE_BOOKMARK, trw("Remove Bookmark").c_str());
 
     CMenu rating;
     rating.CreatePopupMenu();
-    rating.AppendMenu(MF_STRING, IDC_RATE_0, L"None");
+    rating.AppendMenu(MF_STRING, IDC_RATE_0, trw("None").c_str());
     static const wchar_t* kStars[] = { L"★", L"★★", L"★★★", L"★★★★", L"★★★★★" };
     for (int i = 0; i < 5; ++i)
         rating.AppendMenu(MF_STRING, IDC_RATE_0 + 1 + i, kStars[i]);
-    menu.AppendMenu(MF_POPUP, reinterpret_cast<UINT_PTR>(rating.m_hMenu), L"Rating");
+    menu.AppendMenu(MF_POPUP, reinterpret_cast<UINT_PTR>(rating.m_hMenu), trw("Rating").c_str());
     rating.Detach();
 
     menu.AppendMenu(MF_SEPARATOR);
@@ -779,32 +782,32 @@ void BrowserWindow::OnContextMenu(CWindow wnd, CPoint point) {
     }
     if (shown == 0) {
         playlists.AppendMenu(MF_STRING | MF_GRAYED, static_cast<UINT_PTR>(0),
-            m_playlistsLoading ? L"Loading…" : L"No playlists on server");
+            m_playlistsLoading ? trw("Loading…").c_str() : trw("No playlists on server").c_str());
     }
     playlists.AppendMenu(MF_SEPARATOR);
-    playlists.AppendMenu(MF_STRING, IDC_NEW_PLAYLIST, L"New Playlist…");
+    playlists.AppendMenu(MF_STRING, IDC_NEW_PLAYLIST, trw("New Playlist…").c_str());
     menu.AppendMenu(MF_POPUP, reinterpret_cast<UINT_PTR>(playlists.m_hMenu),
-                    L"Add to Navidrome Playlist");
+                    trw("Add to Navidrome Playlist").c_str());
     playlists.Detach();
 
-    menu.AppendMenu(MF_STRING, IDC_REMOVE_FROM_PL,  L"Remove from Playlist");
-    menu.AppendMenu(MF_STRING, IDC_RENAME_PLAYLIST, L"Rename Playlist…");
-    menu.AppendMenu(MF_STRING, IDC_DELETE_PLAYLIST, L"Delete Playlist…");
+    menu.AppendMenu(MF_STRING, IDC_REMOVE_FROM_PL,  trw("Remove from Playlist").c_str());
+    menu.AppendMenu(MF_STRING, IDC_RENAME_PLAYLIST, trw("Rename Playlist…").c_str());
+    menu.AppendMenu(MF_STRING, IDC_DELETE_PLAYLIST, trw("Delete Playlist…").c_str());
 
     menu.AppendMenu(MF_SEPARATOR);
-    menu.AppendMenu(MF_STRING, IDC_NEW_RADIO,    L"New Radio Station…");
-    menu.AppendMenu(MF_STRING, IDC_EDIT_RADIO,   L"Edit Radio Station…");
-    menu.AppendMenu(MF_STRING, IDC_DELETE_RADIO, L"Delete Radio Station…");
+    menu.AppendMenu(MF_STRING, IDC_NEW_RADIO,    trw("New Radio Station…").c_str());
+    menu.AppendMenu(MF_STRING, IDC_EDIT_RADIO,   trw("Edit Radio Station…").c_str());
+    menu.AppendMenu(MF_STRING, IDC_DELETE_RADIO, trw("Delete Radio Station…").c_str());
 
     menu.AppendMenu(MF_SEPARATOR);
-    menu.AppendMenu(MF_STRING, IDC_SUBSCRIBE_PODCAST,   L"Subscribe to Podcast…");
-    menu.AppendMenu(MF_STRING, IDC_UNSUBSCRIBE_PODCAST, L"Unsubscribe from Podcast…");
+    menu.AppendMenu(MF_STRING, IDC_SUBSCRIBE_PODCAST,   trw("Subscribe to Podcast…").c_str());
+    menu.AppendMenu(MF_STRING, IDC_UNSUBSCRIBE_PODCAST, trw("Unsubscribe from Podcast…").c_str());
 
     menu.AppendMenu(MF_SEPARATOR);
     menu.AppendMenu(MF_STRING, IDC_SEND_PLAYLIST,
-                    L"Send Active Playlist to Navidrome");
-    menu.AppendMenu(MF_STRING, IDC_RANDOM_MIX, L"Random Mix");
-    menu.AppendMenu(MF_STRING, IDC_DOWNLOAD, L"Download Original Files…");
+                    trw("Send Active Playlist to Navidrome").c_str());
+    menu.AppendMenu(MF_STRING, IDC_RANDOM_MIX, trw("Random Mix").c_str());
+    menu.AppendMenu(MF_STRING, IDC_DOWNLOAD, trw("Download Original Files…").c_str());
 
     dbgLog("OnContextMenu: showing TrackPopupMenu");
     menu.TrackPopupMenu(TPM_LEFTALIGN | TPM_RIGHTBUTTON, point.x, point.y, *this);

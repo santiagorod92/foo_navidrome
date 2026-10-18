@@ -300,7 +300,7 @@ void LyricsWindow::OnContextMenu(CWindow, CPoint pt) {
     CMenu menu;
     menu.CreatePopupMenu();
     const bool canCopy = m_status == navidrome::LyricsPanelStatus::Showing;
-    menu.AppendMenu(MF_STRING | (canCopy ? 0 : MF_GRAYED), kCmdCopy, L"Copy lyrics");
+    menu.AppendMenu(MF_STRING | (canCopy ? 0 : MF_GRAYED), kCmdCopy, navidrome::win::trw("Copy lyrics").c_str());
     const UINT cmd = menu.TrackPopupMenu(TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY, pt.x, pt.y, *this);
     if (cmd == kCmdCopy) copyLyricsToClipboard();
 }

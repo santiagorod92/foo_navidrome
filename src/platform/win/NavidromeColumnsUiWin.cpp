@@ -39,11 +39,11 @@ private:
 class NavidromeBrowserCuiPanel : public uie::window {
 public:
     const GUID& get_extension_guid() const override { return guid_cui_panel_win; }
-    void get_name(pfc::string_base& out) const override { out = "Navidrome Browser"; }
+    void get_name(pfc::string_base& out) const override { out = navidrome::tr("Navidrome Browser"); }
     void get_category(pfc::string_base& out) const override { out = "Panels"; }
     bool get_short_name(pfc::string_base& out) const override { out = "Navidrome"; return true; }
     bool get_description(pfc::string_base& out) const override {
-        out = "Browse, search and play your Navidrome / Subsonic library.";
+        out = navidrome::tr("Browse, search and play your Navidrome / Subsonic library.");
         return true;
     }
     unsigned get_type() const override { return uie::type_panel; }

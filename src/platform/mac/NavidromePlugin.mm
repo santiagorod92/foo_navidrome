@@ -18,6 +18,7 @@
 #include "../../core/NavidromeSettings.h"
 #include <algorithm>
 #include <cstring>
+#import "MacI18n.h"
 
 namespace {
 
@@ -103,9 +104,9 @@ public:
         return fb2k::wrapNSObject([NavidromeLyricsController new]);
     }
     bool match_name(const char *name) override {
-        return matchesLayoutName(name, {"Navidrome Lyrics", "navidrome-lyrics"});
+        return matchesLayoutName(name, {"Navidrome Lyrics", "navidrome-lyrics", navidrome::tr("Navidrome Lyrics")});
     }
-    fb2k::stringRef get_name() override { return fb2k::makeString("Navidrome Lyrics"); }
+    fb2k::stringRef get_name() override { return fb2k::makeString(navidrome::tr("Navidrome Lyrics")); }
     GUID get_guid() override { return navidrome::guids::macUiElementLyrics; }
 };
 

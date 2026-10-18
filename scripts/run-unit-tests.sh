@@ -7,7 +7,9 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC=("$ROOT"/tests/*.cpp \
      "$ROOT/src/core/MediaEnrichmentLogic.cpp" \
      "$ROOT/src/core/NavidromeBrowserModel.cpp" \
-     "$ROOT/src/core/SubsonicCore.cpp")
+     "$ROOT/src/core/SubsonicCore.cpp" \
+     "$ROOT/src/core/I18n.cpp" \
+     "$ROOT/src/core/I18nSpanish.cpp")
 
 if [ "$MODE" = "auto" ]; then
   case "$(uname -s)" in
@@ -15,6 +17,8 @@ if [ "$MODE" = "auto" ]; then
     *)      MODE="win" ;;
   esac
 fi
+
+python3 "$ROOT/scripts/i18n-check.py"
 
 case "$MODE" in
   mac)

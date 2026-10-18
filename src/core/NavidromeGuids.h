@@ -49,5 +49,6 @@ inline constexpr GUID mainmenuAudioMusePlaylist = make(0x04, 0x12);
 inline constexpr GUID advVerboseLog             = make(0x05, 0x01);
 inline constexpr GUID mainmenuPlayQueueSave     = make(0x06, 0x01);
 inline constexpr GUID mainmenuPlayQueueRestore  = make(0x06, 0x02);
+inline constexpr GUID cfgUiLanguage             = make(0x08, 0x01);
 
 }

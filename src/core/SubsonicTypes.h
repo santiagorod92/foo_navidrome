@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "I18n.h"
 #include "SubsonicModels.h"
 #include "SubsonicErrors.h"
 #include "TrackUri.h"
@@ -61,13 +62,13 @@ struct StreamFormatOption { const char* label; const char* value; };
 
 inline const std::vector<StreamFormatOption>& streamFormatOptions() {
     static const std::vector<StreamFormatOption> k = {
-        { "Server default",            ""     },
-        { "Original (no transcoding)", "raw"  },
+        { N_("Server default"),            ""     },
+        { N_("Original (no transcoding)"), "raw"  },
         { "MP3",                       "mp3"  },
         { "Opus",                      "opus" },
         { "AAC",                       "aac"  },
-        { "FLAC (lossless)",           "flac" },
-        { "WAV (uncompressed)",        "wav"  },
+        { N_("FLAC (lossless)"),           "flac" },
+        { N_("WAV (uncompressed)"),        "wav"  },
     };
     return k;
 }
@@ -80,18 +81,18 @@ inline const std::vector<int>& maxBitrateOptions() {
 constexpr int kScanPollIntervalMs = 1500;
 
 inline std::string scanProgressText(long long count) {
-    return "Scanning… " + std::to_string(count) + " processed";
+    return trf("Scanning… {0} processed", { std::to_string(count) });
 }
 
 inline std::string scanCompleteText(long long count) {
-    return "Scan complete — " + std::to_string(count) + " items";
+    return trf("Scan complete — {0} items", { std::to_string(count) });
 }
 
 inline std::string scanFailedText(const std::string& error) {
-    return "Scan failed: " + (error.empty() ? std::string("unknown error") : error);
+    return trf("Scan failed: {0}", { error.empty() ? std::string(tr("unknown error")) : error });
 }
 
-constexpr const char* kPrefsAuthorLine = "Author: Santiago Rodriguez";
+constexpr const char* kPrefsAuthorLine = N_("Author: Santiago Rodriguez");
 constexpr const char* kSourceCodeUrl   = "https://github.com/santiagorod92/foo_navidrome";
 
 inline std::string effectiveStreamSuffix(const std::string& format,
@@ -154,8 +155,8 @@ inline std::string effectiveSalt(const std::string& salt) {
     return salt.empty() ? std::string(kDefaultSalt) : salt;
 }
 
-constexpr const char* kAuthRejectedMessage =
-    "Navidrome: the server rejected the configured credentials — check Preferences › Tools › Navidrome";
+constexpr const char* kAuthRejectedMessage = N_(
+    "Navidrome: the server rejected the configured credentials — check Preferences › Tools › Navidrome");
 
 struct ScrobbleTracker {
     struct NewTrackActions {
@@ -244,16 +245,15 @@ inline std::string describeSessionEnv(const SessionEnv& e) {
 }
 
 inline std::string ratingRefreshSummary(std::size_t ok, std::size_t failed, std::size_t ungrouped) {
-    std::string msg = "Navidrome: refreshed ratings from " + std::to_string(ok) + " album(s)";
-    if (failed > 0)    msg += ", " + std::to_string(failed) + " album(s) failed";
-    if (ungrouped > 0) msg += ", " + std::to_string(ungrouped) +
-        " entry/entries skipped (no album id, added by an older version)";
+    std::string msg = trf("Navidrome: refreshed ratings from {0} album(s)", { std::to_string(ok) });
+    if (failed > 0)    msg += trf(", {0} album(s) failed", { std::to_string(failed) });
+    if (ungrouped > 0) msg += trf(", {0} entry/entries skipped (no album id, added by an older version)",
+                                  { std::to_string(ungrouped) });
     return msg;
 }
 
 inline std::string ratingRefreshNoAlbumIdsMessage(std::size_t entries) {
-    return "Navidrome: " + std::to_string(entries) +
-        " playlist entry/entries carry no album id (added by an older version)"
-        " — open their album in the browser to refresh them";
+    return trf("Navidrome: {0} playlist entry/entries carry no album id (added by an older version)"
+               " — open their album in the browser to refresh them", { std::to_string(entries) });
 }
 }

@@ -80,7 +80,7 @@ void runWithProgress(const char* title, std::string what, FetchFn fetch, DoneFn 
     cb->m_on_done = [state, done, titleStr](threaded_process_callback::ctx_t, bool aborted) {
         if (aborted) { NAVIDROME_LOG("AudioMuse", titleStr + ": aborted"); return; }
         if (state->nodes.empty()) {
-            navidrome::reportError(titleStr.c_str(), state->error.empty() ? "No playable songs found." : state->error);
+            navidrome::reportError(titleStr.c_str(), state->error.empty() ? std::string(navidrome::tr("No playable songs found.")) : state->error);
             return;
         }
         done(std::move(state->nodes));
@@ -105,10 +105,10 @@ std::vector<navidrome::BrowserNodePtr> resolveWithProgress(
         for (auto& n : one) out.push_back(std::move(n));
     }
     if (missing > 0)
-        console::printf("Navidrome: AudioMuse-AI: %u of %u songs not found on the Navidrome server",
-                        (unsigned)missing, (unsigned)tracks.size());
+        console::print(navidrome::trf("Navidrome: AudioMuse-AI: {0} of {1} songs not found on the Navidrome server",
+                                      { std::to_string(missing), std::to_string(tracks.size()) }).c_str());
     if (out.empty() && err.empty() && !tracks.empty())
-        err = "None of the songs AudioMuse-AI returned exist on the Navidrome server.";
+        err = navidrome::tr("None of the songs AudioMuse-AI returned exist on the Navidrome server.");
     return out;
 }
 
@@ -116,12 +116,12 @@ void runAudioMuse(navidrome::audiomuse::Kind kind, std::string subject,
                   std::function<std::vector<navidrome::audiomuse::Track>(std::string&)> query) {
     namespace am = navidrome::audiomuse;
     if (!navidrome::audioMuseSettings().configured()) {
-        navidrome::reportError("AudioMuse-AI", "Set the AudioMuse-AI server URL first:\n"
-                    "Preferences > Tools > Navidrome > AudioMuse-AI.");
+        navidrome::reportError("AudioMuse-AI", navidrome::tr("Set the AudioMuse-AI server URL first:\n"
+                    "Preferences > Tools > Navidrome > AudioMuse-AI."));
         return;
     }
     const std::string name = am::playlistName(kind, subject);
-    runWithProgress(am::kindName(kind), am::kindName(kind) + std::string(": ") + subject,
+    runWithProgress(navidrome::tr(am::kindName(kind)), navidrome::tr(am::kindName(kind)) + std::string(": ") + subject,
         [query](threaded_process_status& status, abort_callback& abort, std::string& err) {
             auto tracks = query(err);
             abort.check();
@@ -138,7 +138,7 @@ void runAudioMuse(navidrome::audiomuse::Kind kind, std::string subject,
 void navidrome::audioMuseTextSearchPrompt() {
     static std::string last;
     std::string q = last;
-    if (!promptForText("AudioMuse-AI Text Search", "Describe the music (e.g. \"calm piano with rain\"):", q))
+    if (!promptForText(tr("AudioMuse-AI Text Search"), tr("Describe the music (e.g. \"calm piano with rain\"):"), q))
         return;
     if (q.empty()) return;
     last = q;
@@ -150,7 +150,7 @@ void navidrome::audioMuseTextSearchPrompt() {
 void navidrome::audioMuseInstantPlaylistPrompt() {
     static std::string last;
     std::string q = last;
-    if (!promptForText("AudioMuse-AI Instant Playlist", "Ask for a playlist (e.g. \"90s road trip rock\"):", q))
+    if (!promptForText(tr("AudioMuse-AI Instant Playlist"), tr("Ask for a playlist (e.g. \"90s road trip rock\"):"), q))
         return;
     if (q.empty()) return;
     last = q;
@@ -167,7 +167,7 @@ void navidrome::audioMuseAlchemy(std::vector<audiomuse::AlchemySeed> seeds, std:
 
 namespace {
 
-constexpr const char* kInstantMixPlaylist = "Instant Mix";
+constexpr const char* kInstantMixPlaylist = navidrome::N_("Instant Mix");
 
 void playInstantMix(metadb_handle_ptr seed, const std::vector<navidrome::BrowserNodePtr>& similar) {
     auto pm = playlist_manager::get();
@@ -179,13 +179,13 @@ void playInstantMix(metadb_handle_ptr seed, const std::vector<navidrome::Browser
     const bool seedPlaying = seed.is_valid() && pc->is_playing() &&
                              pc->get_now_playing(playing) && playing == seed;
 
-    t_size pl = pm->find_playlist(kInstantMixPlaylist);
+    t_size pl = pm->find_playlist(navidrome::tr(kInstantMixPlaylist));
     t_size playingPl = pfc_infinite, playingIdx = pfc_infinite;
     const bool playingFromMix = pl != pfc_infinite &&
         pm->get_playing_item_location(&playingPl, &playingIdx) && playingPl == pl;
 
     if (pl == pfc_infinite) {
-        pl = pm->create_playlist(kInstantMixPlaylist, pfc_infinite, pfc_infinite);
+        pl = pm->create_playlist(navidrome::tr(kInstantMixPlaylist), pfc_infinite, pfc_infinite);
         if (pl == pfc_infinite) return;
     }
 
@@ -248,7 +248,7 @@ void runInstantMix(metadb_handle_ptr seed, std::string seedId, navidrome::Browse
                    std::string title) {
     const int count = navidrome::audiomuse::clampCount(static_cast<int>(navidrome::cfg_audiomuse_count.get()));
     NAVIDROME_LOG("UI", "Instant Mix: seed=" + seedId + " count=" + std::to_string(count));
-    runWithProgress("Instant Mix", "Instant Mix: " + title,
+    runWithProgress(navidrome::tr("Instant Mix"), std::string(navidrome::tr("Instant Mix")) + ": " + title,
         [seedId, seedType, count](threaded_process_status& status, abort_callback& abort, std::string& err) {
             auto nodes = navidrome::fetchSimilarSongs(navidrome::libraryClient(), seedId, count, err);
             abort.check();
@@ -300,7 +300,7 @@ void startAlchemy(metadb_handle_list_cref data) {
         seeds.push_back(std::move(s));
     }
     if (seeds.empty()) return;
-    if (seeds.size() > 1) label += " + " + std::to_string(seeds.size() - 1) + " more";
+    if (seeds.size() > 1) label += navidrome::trf(" + {0} more", { std::to_string(seeds.size() - 1) });
     navidrome::audioMuseAlchemy(std::move(seeds), std::move(label));
 }
 
@@ -313,13 +313,13 @@ public:
     unsigned get_num_items() override { return 2; }
 
     void get_item_name(unsigned index, pfc::string_base& out) override {
-        out = index == kItemInstantMix ? "Instant Mix" : "Song Alchemy (AudioMuse-AI)";
+        out = navidrome::tr(index == kItemInstantMix ? "Instant Mix" : "Song Alchemy (AudioMuse-AI)");
     }
 
     bool get_item_description(unsigned index, pfc::string_base& out) override {
         out = index == kItemInstantMix
-            ? "Inserts songs similar to this track after it and plays them."
-            : "Blends the selected tracks into a new AudioMuse-AI playlist.";
+            ? navidrome::tr("Inserts songs similar to this track after it and plays them.")
+            : navidrome::tr("Blends the selected tracks into a new AudioMuse-AI playlist.");
         return true;
     }
 
@@ -363,13 +363,13 @@ public:
         throw pfc::exception_invalid_params();
     }
     void get_name(t_uint32 i, pfc::string_base& out) override {
-        if (i == 0) { out = "Text Search..."; return; }
-        if (i == 1) { out = "Instant Playlist..."; return; }
+        if (i == 0) { out = navidrome::tr("Text Search..."); return; }
+        if (i == 1) { out = navidrome::tr("Instant Playlist..."); return; }
         throw pfc::exception_invalid_params();
     }
     bool get_description(t_uint32 i, pfc::string_base& out) override {
-        if (i == 0) { out = "Find songs on Navidrome that sound like a description (AudioMuse-AI CLAP search)"; return true; }
-        if (i == 1) { out = "Have AudioMuse-AI's assistant build a playlist from a request"; return true; }
+        if (i == 0) { out = navidrome::tr("Find songs on Navidrome that sound like a description (AudioMuse-AI CLAP search)"); return true; }
+        if (i == 1) { out = navidrome::tr("Have AudioMuse-AI's assistant build a playlist from a request"); return true; }
         return false;
     }
     GUID get_parent() override { return navidrome::guids::mainmenuAudioMuseGroup; }

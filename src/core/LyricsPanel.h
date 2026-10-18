@@ -32,12 +32,12 @@ inline LyricsPanelStatus lyricsPanelStatusForResult(const Lyrics& lyrics, const 
 
 inline const char* lyricsPanelMessage(LyricsPanelStatus status) {
     switch (status) {
-        case LyricsPanelStatus::NothingPlaying: return "Nothing playing";
-        case LyricsPanelStatus::NotNavidrome:   return "Lyrics are shown for Navidrome tracks";
-        case LyricsPanelStatus::NotConfigured:  return "Navidrome server not configured";
-        case LyricsPanelStatus::Loading:        return "Loading lyrics…";
-        case LyricsPanelStatus::Failed:         return "Couldn't load lyrics (see console log)";
-        case LyricsPanelStatus::NoLyrics:       return "No lyrics on the server for this track";
+        case LyricsPanelStatus::NothingPlaying: return tr("Nothing playing");
+        case LyricsPanelStatus::NotNavidrome:   return tr("Lyrics are shown for Navidrome tracks");
+        case LyricsPanelStatus::NotConfigured:  return tr("Navidrome server not configured");
+        case LyricsPanelStatus::Loading:        return tr("Loading lyrics…");
+        case LyricsPanelStatus::Failed:         return tr("Couldn't load lyrics (see console log)");
+        case LyricsPanelStatus::NoLyrics:       return tr("No lyrics on the server for this track");
         case LyricsPanelStatus::Showing:        return "";
     }
     return "";

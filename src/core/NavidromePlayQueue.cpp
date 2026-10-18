@@ -36,7 +36,7 @@
 
 namespace {
 
-constexpr const char* kPlayQueuePlaylist = "Navidrome Play Queue";
+constexpr const char* kPlayQueuePlaylist = navidrome::N_("Navidrome Play Queue");
 
 void runPlayQueueTask(const char* title, std::function<std::string(abort_callback&)> work,
                       std::function<void()> done) {
@@ -44,7 +44,7 @@ void runPlayQueueTask(const char* title, std::function<std::string(abort_callbac
     auto state = std::make_shared<State>();
     auto cb = threaded_process_callback_lambda::create();
     cb->m_run = [state, work](threaded_process_status& status, abort_callback& abort) {
-        status.set_item("Contacting the Navidrome server...");
+        status.set_item(navidrome::tr("Contacting the Navidrome server..."));
         try {
             state->error = work(abort);
         } catch (const exception_aborted&) {
@@ -71,7 +71,7 @@ void runPlayQueueTask(const char* title, std::function<std::string(abort_callbac
 
 void savePlayQueueToServer() {
     if (!navidrome::libraryCore().isConfigured()) {
-        navidrome::reportError("Save Play Queue", "Set up the Navidrome server first: Preferences > Tools > Navidrome.");
+        navidrome::reportError(navidrome::tr("Save Play Queue"), navidrome::tr("Set up the Navidrome server first: Preferences > Tools > Navidrome."));
         return;
     }
     auto pm = playlist_manager::get();
@@ -82,7 +82,7 @@ void savePlayQueueToServer() {
         position = pc->playback_get_position();
     } else {
         pl = pm->get_active_playlist();
-        if (pl == pfc_infinite) { navidrome::reportError("Save Play Queue", "No playlist is active."); return; }
+        if (pl == pfc_infinite) { navidrome::reportError(navidrome::tr("Save Play Queue"), navidrome::tr("No playlist is active.")); return; }
         current = pm->playlist_get_focus_item(pl);
     }
     metadb_handle_list items;
@@ -94,68 +94,52 @@ void savePlayQueueToServer() {
     const navidrome::PlayQueueSavePlan plan = navidrome::planPlayQueueSave(
         paths, current == pfc_infinite ? navidrome::kNoCurrentTrack : current, position);
     if (plan.songIds.empty()) {
-        navidrome::reportError("Save Play Queue", "The playlist has no Navidrome tracks to save.");
+        navidrome::reportError(navidrome::tr("Save Play Queue"), navidrome::tr("The playlist has no Navidrome tracks to save."));
         return;
     }
     NAVIDROME_LOG("PlayQueue", "save: " + std::to_string(plan.songIds.size()) + " ids, current=" +
                   plan.currentId + " positionMs=" + std::to_string(static_cast<long long>(plan.positionMs)) +
                   " truncated=" + std::to_string(plan.truncated) +
                   " foreign=" + std::to_string(plan.skippedForeign));
-    runPlayQueueTask("Save Play Queue",
+    runPlayQueueTask(navidrome::tr("Save Play Queue"),
         [plan](abort_callback&) {
             std::string err;
             if (navidrome::libraryClient().savePlayQueue(plan.songIds, plan.currentId, plan.positionMs, err))
                 return std::string();
-            return err.empty() ? std::string("The server rejected the play queue.") : err;
+            return err.empty() ? std::string(navidrome::tr("The server rejected the play queue.")) : err;
         },
         [plan]() {
             const std::string msg = navidrome::playQueueSaveSummary(plan);
             console::printf("Navidrome: %s", msg.c_str());
-#ifdef __APPLE__
-            fb2k::popup_toast::ptr toast;
-            if (fb2k::popup_toast::tryGet(toast)) {
-                toast->show_toast(msg.c_str(), {});
-                NAVIDROME_LOG("PlayQueue", "confirmation: toast");
-                return;
-            }
-#endif
-            popup_message_v3::query_t q;
-            q.title      = "Save Play Queue";
-            q.msg        = msg.c_str();
-            q.buttons    = popup_message_v3::buttonOK;
-            q.defButton  = popup_message_v3::buttonOK;
-            q.icon       = popup_message_v3::iconInformation;
-            q.wndParent  = core_api::get_main_window();
-            q.show();
-            NAVIDROME_LOG("PlayQueue", "confirmation: dialog");
+            navidrome::showConfirmation(navidrome::tr("Save Play Queue"), msg);
         });
 }
 
 void restorePlayQueueFromServer() {
     if (!navidrome::libraryCore().isConfigured()) {
-        navidrome::reportError("Restore Play Queue", "Set up the Navidrome server first: Preferences > Tools > Navidrome.");
+        navidrome::reportError(navidrome::tr("Restore Play Queue"), navidrome::tr("Set up the Navidrome server first: Preferences > Tools > Navidrome."));
         return;
     }
     auto plan = std::make_shared<navidrome::PlayQueueRestorePlan>();
     auto changedBy = std::make_shared<std::string>();
-    runPlayQueueTask("Restore Play Queue",
+    runPlayQueueTask(navidrome::tr("Restore Play Queue"),
         [plan, changedBy](abort_callback& abort) {
             navidrome::PlayQueue queue;
             std::string err;
             if (!navidrome::libraryClient().getPlayQueue(queue, err))
-                return err.empty() ? std::string("Could not read the play queue.") : err;
+                return err.empty() ? std::string(navidrome::tr("Could not read the play queue.")) : err;
             abort.check();
             *plan = navidrome::planPlayQueueRestore(queue);
             *changedBy = queue.changedBy;
-            if (plan->nodes.empty()) return std::string("The server has no saved play queue.");
+            if (plan->nodes.empty()) return std::string(navidrome::tr("The server has no saved play queue."));
             return std::string();
         },
         [plan, changedBy]() {
             const metadb_handle_list tracks = navidrome::makeTrackHandles(plan->nodes, nullptr);
             if (tracks.get_count() == 0) return;
             auto pm = playlist_manager::get();
-            t_size pl = pm->find_playlist(kPlayQueuePlaylist);
-            if (pl == pfc_infinite) pl = pm->create_playlist(kPlayQueuePlaylist, pfc_infinite, pfc_infinite);
+            t_size pl = pm->find_playlist(navidrome::tr(kPlayQueuePlaylist));
+            if (pl == pfc_infinite) pl = pm->create_playlist(navidrome::tr(kPlayQueuePlaylist), pfc_infinite, pfc_infinite);
             if (pl == pfc_infinite) return;
             pm->playlist_clear(pl);
             pm->playlist_add_items(pl, tracks, pfc::bit_array_false());
@@ -177,13 +161,13 @@ public:
         throw pfc::exception_invalid_params();
     }
     void get_name(t_uint32 i, pfc::string_base& out) override {
-        if (i == 0) { out = "Save Play Queue to Navidrome"; return; }
-        if (i == 1) { out = "Restore Play Queue from Navidrome"; return; }
+        if (i == 0) { out = navidrome::tr("Save Play Queue to Navidrome"); return; }
+        if (i == 1) { out = navidrome::tr("Restore Play Queue from Navidrome"); return; }
         throw pfc::exception_invalid_params();
     }
     bool get_description(t_uint32 i, pfc::string_base& out) override {
-        if (i == 0) { out = "Save the playing (or active) playlist and position as your Navidrome play queue"; return true; }
-        if (i == 1) { out = "Load your Navidrome play queue, saved by any Subsonic client, and resume it"; return true; }
+        if (i == 0) { out = navidrome::tr("Save the playing (or active) playlist and position as your Navidrome play queue"); return true; }
+        if (i == 1) { out = navidrome::tr("Load your Navidrome play queue, saved by any Subsonic client, and resume it"); return true; }
         return false;
     }
     GUID get_parent() override { return mainmenu_groups::file; }

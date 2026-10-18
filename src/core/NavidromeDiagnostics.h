@@ -30,6 +30,7 @@ struct DiagnosticsInfo {
     std::size_t libraryCount = 0;
     bool        audioMuse = false;
     bool        verboseLogging = false;
+    std::string uiLanguage;
 
     std::vector<std::string> logLines;
 };
@@ -103,7 +104,8 @@ inline std::string buildDiagnostics(const DiagnosticsInfo& d) {
     out += "- Library filter: " + (d.libraryFilter ? std::to_string(d.libraryCount) + " selected"
                                                    : std::string("off")) +
            ", AudioMuse-AI: " + (d.audioMuse ? "configured" : "not configured") + "\n";
-    out += "- Verbose logging: " + yesNo(d.verboseLogging) + "\n";
+    out += "- Verbose logging: " + yesNo(d.verboseLogging) +
+           ", UI language: " + (d.uiLanguage.empty() ? std::string("en") : d.uiLanguage) + "\n";
 
     out += "\n<details><summary>Recent log (" + std::to_string(d.logLines.size()) +
            " lines)</summary>\n\n```\n";

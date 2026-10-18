@@ -33,12 +33,13 @@ namespace {
         auto ctx = navidrome::SubsonicClientWin::get().snapshot();
         std::string err = navidrome::EsLyricBridge::installOrUpdate(ctx);
         if (!err.empty())
-            console::print(("ESLyric bridge error: " + err).c_str());
+            console::print(navidrome::trf("ESLyric bridge error: {0}", { err }).c_str());
     }
 }
 
 using navidrome::win::u8ToWide;
 using navidrome::win::wToU8;
+using navidrome::win::trw;
 
 class NavidromeHeadersWindow : public CWindowImpl<NavidromeHeadersWindow> {
 public:
@@ -48,7 +49,7 @@ public:
 
     void show() {
         if (!IsWindow()) {
-            Create(nullptr, CWindow::rcDefault, L"Navidrome \u2014 Custom HTTP Headers",
+            Create(nullptr, CWindow::rcDefault, trw("Navidrome — Custom HTTP Headers").c_str(),
                    WS_OVERLAPPEDWINDOW, 0);
             const navidrome::win::UiScale s(*this);
             SetWindowPos(nullptr, 0, 0, s(520), s(360),
@@ -83,7 +84,7 @@ private:
         auto setFont = [&](HWND h) { navidrome::win::setFont(h, f); };
 
         HWND hint = CreateWindowW(L"STATIC",
-            L"One header per line, as  Name: Value  (e.g. for a Cloudflare Zero Trust tunnel).",
+            trw("One header per line, as  Name: Value  (e.g. for a Cloudflare Zero Trust tunnel).").c_str(),
             WS_CHILD | WS_VISIBLE, 0, 0, 10, 10, *this,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_HINT)), nullptr, nullptr);
         setFont(hint);
@@ -99,9 +100,9 @@ private:
                 reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), nullptr, nullptr);
             setFont(b);
         };
-        mkBtn(IDC_CF,     L"Cloudflare headers");
-        mkBtn(IDC_SAVE,   L"Save");
-        mkBtn(IDC_CANCEL, L"Cancel");
+        mkBtn(IDC_CF,     trw("Cloudflare headers").c_str());
+        mkBtn(IDC_SAVE,   trw("Save").c_str());
+        mkBtn(IDC_CANCEL, trw("Cancel").c_str());
         m_darkMode.AddDialogWithControls(*this);
         return 0;
     }
@@ -196,6 +197,7 @@ public:
         CheckDlgButton(IDC_SCROBBLE, BST_CHECKED);
         m_format.SetCurSel(0);
         m_bitrate.SetCurSel(0);
+        m_language.SetCurSel(0);
         m_changed = true; notifyCb();
     }
 
@@ -215,6 +217,7 @@ public:
         COMMAND_HANDLER_EX(IDC_SCROBBLE, BN_CLICKED, OnChanged)
         COMMAND_HANDLER_EX(IDC_FORMAT,  CBN_SELCHANGE, OnChanged)
         COMMAND_HANDLER_EX(IDC_BITRATE, CBN_SELCHANGE, OnChanged)
+        COMMAND_HANDLER_EX(IDC_LANGUAGE, CBN_SELCHANGE, OnChanged)
         COMMAND_HANDLER_EX(IDC_RESCAN, BN_CLICKED, OnRescan)
         COMMAND_HANDLER_EX(IDC_DIAG, BN_CLICKED, OnCopyDiagnostics)
         COMMAND_HANDLER_EX(IDC_LOGDIR, BN_CLICKED, OnOpenLogFolder)
@@ -247,7 +250,7 @@ private:
     enum { IDC_URL=1001, IDC_USER=1002, IDC_PASS=1003, IDC_TEST=1004, IDC_STATUS=1005,
            IDC_HEADERS=1006, IDC_SCROBBLE=1007, IDC_FORMAT=1008, IDC_BITRATE=1009,
            IDC_RESCAN=1010, IDC_SCAN_STATUS=1011, IDC_DIAG=1012, IDC_LOGDIR=1013,
-           IDC_DIAG_STATUS=1014 };
+           IDC_DIAG_STATUS=1014, IDC_LANGUAGE=1015 };
 
     static constexpr UINT WM_TEST_RESULT = WM_USER + 200;
     static constexpr UINT WM_SCAN_STATUS = WM_USER + 201;
@@ -271,39 +274,47 @@ private:
             return h;
         };
 
-        HWND lblUrl  = make(L"STATIC", L"Server URL:",  0);
-        HWND lblUser = make(L"STATIC", L"Username:",    0);
-        HWND lblPass = make(L"STATIC", L"Password:",    0);
-        HWND lblFmt  = make(L"STATIC", L"Stream as:",   0);
-        HWND lblRate = make(L"STATIC", L"Max bitrate:", 0);
+        HWND lblUrl  = make(L"STATIC", trw("Server URL:").c_str(),  0);
+        HWND lblUser = make(L"STATIC", trw("Username:").c_str(),    0);
+        HWND lblPass = make(L"STATIC", trw("Password:").c_str(),    0);
+        HWND lblFmt  = make(L"STATIC", trw("Stream as:").c_str(),   0);
+        HWND lblRate = make(L"STATIC", trw("Max bitrate:").c_str(), 0);
+        HWND lblLang = make(L"STATIC", trw("Language:").c_str(), 0);
 
         const DWORD editSty = WS_BORDER|WS_TABSTOP|ES_AUTOHSCROLL;
         HWND url  = make(L"EDIT", L"", editSty, IDC_URL);
         HWND user = make(L"EDIT", L"", editSty, IDC_USER);
         HWND pass = make(L"EDIT", L"", editSty|ES_PASSWORD, IDC_PASS);
 
-        HWND test   = make(L"BUTTON", L"Test Connection", WS_TABSTOP|BS_PUSHBUTTON, IDC_TEST);
+        HWND test   = make(L"BUTTON", trw("Test Connection").c_str(), WS_TABSTOP|BS_PUSHBUTTON, IDC_TEST);
         HWND status = make(L"STATIC", L"", SS_LEFT|SS_ENDELLIPSIS, IDC_STATUS);
-        HWND hdr    = make(L"BUTTON", L"Custom Headers…", WS_TABSTOP|BS_PUSHBUTTON, IDC_HEADERS);
-        HWND scr    = make(L"BUTTON", L"Report plays to Navidrome (scrobbling)",
+        HWND hdr    = make(L"BUTTON", trw("Custom Headers…").c_str(), WS_TABSTOP|BS_PUSHBUTTON, IDC_HEADERS);
+        HWND scr    = make(L"BUTTON", trw("Report plays to Navidrome (scrobbling)").c_str(),
                            WS_TABSTOP|BS_AUTOCHECKBOX, IDC_SCROBBLE);
 
         m_format.Create(*this, CWindow::rcDefault, nullptr,
             WS_CHILD|WS_VISIBLE|WS_TABSTOP|WS_VSCROLL|CBS_DROPDOWNLIST, 0, IDC_FORMAT);
         m_format.SetFont(f);
         for (const auto& opt : navidrome::streamFormatOptions())
-            m_format.AddString(pfc::stringcvt::string_wide_from_utf8(opt.label));
+            m_format.AddString(trw(opt.label).c_str());
 
         m_bitrate.Create(*this, CWindow::rcDefault, nullptr,
             WS_CHILD|WS_VISIBLE|WS_TABSTOP|WS_VSCROLL|CBS_DROPDOWNLIST, 0, IDC_BITRATE);
         m_bitrate.SetFont(f);
         for (int kbps : navidrome::maxBitrateOptions()) {
             m_bitrate.AddString(kbps == 0
-                ? L"Unlimited"
+                ? trw("Unlimited").c_str()
                 : (std::to_wstring(kbps) + L" kbps").c_str());
         }
 
-        HWND rescan = make(L"BUTTON", L"Rescan", WS_TABSTOP|BS_PUSHBUTTON, IDC_RESCAN);
+        m_language.Create(*this, CWindow::rcDefault, nullptr,
+            WS_CHILD|WS_VISIBLE|WS_TABSTOP|WS_VSCROLL|CBS_DROPDOWNLIST, 0, IDC_LANGUAGE);
+        m_language.SetFont(f);
+        for (const auto& opt : navidrome::i18n::languageOptions())
+            m_language.AddString(trw(opt.label).c_str());
+        HWND langHint = make(L"STATIC", trw("Restart foobar2000 to apply.").c_str(), SS_LEFT|SS_NOPREFIX);
+
+        HWND rescan = make(L"BUTTON", trw("Rescan").c_str(), WS_TABSTOP|BS_PUSHBUTTON, IDC_RESCAN);
         HWND scanSt = make(L"STATIC", L"", SS_LEFT|SS_ENDELLIPSIS, IDC_SCAN_STATUS);
 
         LOGFONTW lf{};
@@ -316,12 +327,12 @@ private:
             HWND line = make(L"STATIC", L"", SS_ETCHEDHORZ);
             return std::make_pair(t, line);
         };
-        const auto connSection    = makeSection(L"Navidrome Server Connection");
-        const auto librarySection = makeSection(L"Rescan Navidrome Library");
-        const auto logsSection    = makeSection(L"Logs and Troubleshooting");
+        const auto connSection    = makeSection(trw("Navidrome Server Connection").c_str());
+        const auto librarySection = makeSection(trw("Rescan Navidrome Library").c_str());
+        const auto logsSection    = makeSection(trw("Logs and Troubleshooting").c_str());
 
-        HWND diag    = make(L"BUTTON", L"Copy Diagnostics", WS_TABSTOP|BS_PUSHBUTTON, IDC_DIAG);
-        HWND logDir  = make(L"BUTTON", L"Open Log Folder", WS_TABSTOP|BS_PUSHBUTTON, IDC_LOGDIR);
+        HWND diag    = make(L"BUTTON", trw("Copy Diagnostics").c_str(), WS_TABSTOP|BS_PUSHBUTTON, IDC_DIAG);
+        HWND logDir  = make(L"BUTTON", trw("Open Log Folder").c_str(), WS_TABSTOP|BS_PUSHBUTTON, IDC_LOGDIR);
         HWND diagSt  = make(L"STATIC", L"", SS_LEFT|SS_ENDELLIPSIS, IDC_DIAG_STATUS);
 
         const int lineH = lineHeight(*this, f);
@@ -329,7 +340,7 @@ private:
         const int step  = rowH + s(8);
         const int pad = s(8), gap = s(8);
         int labelW = 0;
-        for (HWND l : { lblUrl, lblUser, lblPass, lblFmt, lblRate })
+        for (HWND l : { lblUrl, lblUser, lblPass, lblFmt, lblRate, lblLang })
             labelW = (std::max)(labelW, textWidth(l));
         const int x = pad + labelW + gap;
         const int fieldW = s(300), statusW = s(240);
@@ -362,6 +373,8 @@ private:
         place(scr, x, y, fitWidth(scr, s, 24), rowH);         y += step;
         label(lblFmt, y);   place(m_format,  x, y, s(240), s(220));  y += step;
         label(lblRate, y);  place(m_bitrate, x, y, s(240), s(220));  y += step;
+        label(lblLang, y);  place(m_language, x, y, s(240), s(220));  y += rowH + s(4);
+        place(langHint, x, y, textWidth(langHint) + s(4), lineH);       y += lineH + s(8);
         y += s(6);
         section(librarySection, y);                           y += step;
         buttonWithStatus(rescan, scanSt, y);                  y += step + s(6);
@@ -374,7 +387,7 @@ private:
             place(diagSt, x + diagW + gap + logW + gap, y + (rowH - lineH) / 2, statusW, lineH);
         }
 
-        m_credit[0] = make(L"STATIC", pfc::stringcvt::string_wide_from_utf8(navidrome::kPrefsAuthorLine), SS_LEFT|SS_NOPREFIX);
+        m_credit[0] = make(L"STATIC", trw(navidrome::kPrefsAuthorLine).c_str(), SS_LEFT|SS_NOPREFIX);
         m_credit[1] = make(L"STATIC", pfc::stringcvt::string_wide_from_utf8(navidrome::kSourceCodeUrl), SS_LEFT|SS_NOPREFIX);
         m_minCreditY = y + step + s(4);
 
@@ -404,6 +417,8 @@ private:
         for (std::size_t i = 0; i < bitrates.size(); ++i)
             if (bitrates[i] == bitrate) { bitrateIndex = static_cast<int>(i); break; }
         m_bitrate.SetCurSel(bitrateIndex);
+
+        m_language.SetCurSel(navidrome::i18n::languageOptionIndex(navidrome::cfg_ui_language.get().c_str()));
     }
 
     void saveSettings() {
@@ -426,6 +441,14 @@ private:
         int bi = m_bitrate.GetCurSel();
         if (bi >= 0 && static_cast<std::size_t>(bi) < bitrates.size())
             navidrome::cfg_max_bitrate.set(bitrates[bi]);
+
+        const auto& langs = navidrome::i18n::languageOptions();
+        const int li = m_language.GetCurSel();
+        if (li >= 0 && static_cast<std::size_t>(li) < langs.size()) {
+            if (navidrome::cfg_ui_language.get() != langs[li].value)
+                NAVIDROME_NOTE("Env", std::string("UI language set to \"") + langs[li].value + "\" (applies after restart)");
+            navidrome::cfg_ui_language.set(langs[li].value);
+        }
     }
 
     void OnChanged(UINT, int, HWND) { m_changed = true; notifyCb(); }
@@ -433,7 +456,7 @@ private:
 
     void OnTest(UINT, int, HWND) {
         saveSettings();
-        SetDlgItemText(IDC_STATUS, L"Testing\u2026");
+        SetDlgItemText(IDC_STATUS, trw("Testing…").c_str());
         std::thread([this]() {
           navidrome::dbg::runGuarded("UI", "connection test", [&]{
             std::string err;
@@ -447,15 +470,15 @@ private:
     LRESULT OnTestResult(UINT, WPARAM wParam, LPARAM lParam) {
         bool ok = wParam != 0;
         auto* errStr = reinterpret_cast<std::string*>(lParam);
-        SetDlgItemText(IDC_STATUS, ok ? L"Connected!" :
-            pfc::stringcvt::string_wide_from_utf8(errStr ? errStr->c_str() : "Failed"));
+        SetDlgItemText(IDC_STATUS, ok ? trw("Connected!").c_str() :
+            pfc::stringcvt::string_wide_from_utf8(errStr ? errStr->c_str() : navidrome::tr("Failed")));
         delete errStr;
         return 0;
     }
 
     void OnCopyDiagnostics(UINT, int, HWND) {
         ::EnableWindow(GetDlgItem(IDC_DIAG), FALSE);
-        SetDlgItemText(IDC_DIAG_STATUS, L"Collecting\u2026");
+        SetDlgItemText(IDC_DIAG_STATUS, trw("Collecting…").c_str());
         const HWND page = m_hWnd;
         std::thread([page]() {
           navidrome::dbg::runGuarded("UI", "copy diagnostics", [&]{
@@ -470,8 +493,8 @@ private:
         ::EnableWindow(GetDlgItem(IDC_DIAG), TRUE);
         const bool ok = text && copyToClipboard(pfc::stringcvt::string_wide_from_utf8(text->c_str()).get_ptr());
         if (!ok) NAVIDROME_WARN("UI", "copy diagnostics: clipboard unavailable");
-        SetDlgItemText(IDC_DIAG_STATUS, ok ? L"Copied to the clipboard"
-                                           : L"Couldn't open the clipboard");
+        SetDlgItemText(IDC_DIAG_STATUS, ok ? trw("Copied to the clipboard").c_str()
+                                           : trw("Couldn't open the clipboard").c_str());
         return 0;
     }
 
@@ -495,7 +518,7 @@ private:
 
     void OnOpenLogFolder(UINT, int, HWND) {
         const std::string path = navidrome::componentLogPath();
-        if (path.empty()) { SetDlgItemText(IDC_DIAG_STATUS, L"No log file yet"); return; }
+        if (path.empty()) { SetDlgItemText(IDC_DIAG_STATUS, trw("No log file yet").c_str()); return; }
         const std::wstring wpath = pfc::stringcvt::string_wide_from_utf8(path.c_str()).get_ptr();
         std::wstring args;
         if (::GetFileAttributesW(wpath.c_str()) != INVALID_FILE_ATTRIBUTES) {
@@ -509,7 +532,7 @@ private:
 
     void OnRescan(UINT, int, HWND) {
         ::EnableWindow(GetDlgItem(IDC_RESCAN), FALSE);
-        SetDlgItemText(IDC_SCAN_STATUS, L"Starting scan…");
+        SetDlgItemText(IDC_SCAN_STATUS, trw("Starting scan…").c_str());
 
         std::thread([this]() {
           navidrome::dbg::runGuarded("UI", "library rescan poll", [&]{
@@ -535,7 +558,7 @@ private:
         return 0;
     }
 
-    CComboBox m_format, m_bitrate;
+    CComboBox m_format, m_bitrate, m_language;
     HWND m_credit[2] = {};
     CFont m_sectionFont;
     int  m_minCreditY = 0;
@@ -611,7 +634,7 @@ class NavidromeInitQuit : public initquit {
 public:
     void on_init() override {
         if (!navidrome::EsLyricBridge::isEsLyricInstalled()) {
-            console::print("ESLyric not detected (playback unaffected)");
+            console::print(navidrome::tr("ESLyric not detected (playback unaffected)"));
             return;
         }
         refreshEsLyricBridge();

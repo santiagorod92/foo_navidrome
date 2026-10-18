@@ -1,6 +1,8 @@
 #pragma once
 #include <windows.h>
+#include <initializer_list>
 #include <string>
+#include "../../core/I18n.h"
 
 namespace navidrome::win {
 
@@ -11,6 +13,12 @@ inline std::wstring u8ToWide(const std::string& s) {
     ::MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, &w[0], n);
     if (!w.empty() && w.back() == 0) w.pop_back();
     return w;
+}
+
+inline std::wstring trw(const char* english) { return u8ToWide(navidrome::tr(english)); }
+
+inline std::wstring trfw(const char* english, std::initializer_list<std::string> args) {
+    return u8ToWide(navidrome::trf(english, args));
 }
 
 inline std::string wToU8(const std::wstring& w) {

@@ -1,4 +1,4 @@
-.PHONY: help test test-clean mac-test mac-test-clean \
+.PHONY: help test test-clean mac-test mac-test-clean i18n-check i18n-missing \
 	win-build win-build-x86 win-build-release-log win-build-patch win-build-minor win-build-major win-build-launch win-install win-test win-logs win-ui-smoke win-ui ui-compare \
 	mac-syntax mac-build mac-build-patch mac-build-minor mac-build-major mac-build-no-install mac-install mac-release mac-ci-build mac-logs \
 	win-setup-toolchain-mac win-build-mac \
@@ -20,6 +20,8 @@ help:
 	@echo "  mac-test              native clang++ build/run of the SAME test suite (macOS)"
 	@echo "  mac-test-clean        same, forcing a clean recompile"
 	@echo "  mac-syntax            compile-check the shared SDK glue + macOS .mm sources against the SDK, no Xcode needed (ARGS=files)"
+	@echo "  i18n-check            every tr()/NDTr()/trw() string has a Spanish entry (also run by both test targets)"
+	@echo "  i18n-missing          print the UI strings that still lack a Spanish translation"
 	@echo ""
 	@echo "  win-build             cross-compile Windows x64 component locally (win-build-local.sh, no version bump)"
 	@echo "  win-build-x86         cross-compile the 32-bit (x86) DLL -> build-win-x86/ + _win-x86.fb2k-component"
@@ -108,6 +110,12 @@ mac-test:
 
 mac-syntax:
 	./scripts/mac-syntax-check.sh $(ARGS)
+
+i18n-check:
+	python3 scripts/i18n-check.py
+
+i18n-missing:
+	python3 scripts/i18n-check.py --missing
 
 mac-test-clean:
 	rm -rf $(BUILD_MAC)/tests

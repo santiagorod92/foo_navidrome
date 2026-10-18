@@ -18,6 +18,7 @@
 #include "../../core/NavidromeSettings.h"
 #include <algorithm>
 #include <cstring>
+#import "MacI18n.h"
 
 @interface NavidromeBrowserSectionsPrefsController : NSViewController
 @end
@@ -35,7 +36,7 @@
 - (void)loadView {
     NSView *root = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 480, 400)];
 
-    NSTextField *heading = [NSTextField labelWithString:@"Show these sections in the browser tree:"];
+    NSTextField *heading = [NSTextField labelWithString:NDTr("Show these sections in the browser tree:")];
 
     NSStackView *stack = [NSStackView stackViewWithViews:@[ heading ]];
     stack.orientation = NSUserInterfaceLayoutOrientationVertical;
@@ -47,7 +48,7 @@
         navidrome::parseHiddenCategories(navidrome::cfg_browser_hidden_categories.get().c_str());
     NSInteger tag = 0;
     for (const auto &c : navidrome::browserCategories()) {
-        NSButton *box = [NSButton checkboxWithTitle:@(c.title)
+        NSButton *box = [NSButton checkboxWithTitle:NDTr(c.title)
                                              target:self
                                              action:@selector(sectionToggled:)];
         box.tag = tag++;
@@ -60,7 +61,7 @@
     [stack setCustomSpacing:10 afterView:heading];
 
     NSTextField *note = [NSTextField labelWithString:
-        @"Artists (and libraries, on a multi-library server) are always shown."];
+        NDTr("Artists (and libraries, on a multi-library server) are always shown.")];
     note.textColor = [NSColor secondaryLabelColor];
     note.font = [NSFont systemFontOfSize:11];
     [stack addView:note inGravity:NSStackViewGravityTop];
@@ -100,7 +101,7 @@ public:
     service_ptr instantiate() override {
         return fb2k::wrapNSObject([NavidromeBrowserSectionsPrefsController new]);
     }
-    const char *get_name() override { return "Browser Sections"; }
+    const char *get_name() override { return navidrome::tr("Browser Sections"); }
     GUID get_guid() override { return navidrome::guids::sectionsPrefsPage; }
     GUID get_parent_guid() override { return navidrome::guids::prefsPage; }
 };

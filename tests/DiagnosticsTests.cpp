@@ -127,6 +127,10 @@ TEST_CASE(testDiagnosticsText) {
     check(contains(text, "custom headers: set") && contains(text, "Recent log (1 lines)"),
           "custom headers are reported as set/none only; the log tail is included");
 
+    check(contains(text, "UI language: en"), "the UI language defaults to en");
+    d.uiLanguage = "es";
+    check(contains(navidrome::buildDiagnostics(d), "UI language: es"), "the UI language is reported");
+
     d.serverReached = false;
     d.serverError   = "Could not connect to https://music.example.com";
     check(contains(navidrome::buildDiagnostics(d), "unreachable (Could not connect to https://<server>)"),

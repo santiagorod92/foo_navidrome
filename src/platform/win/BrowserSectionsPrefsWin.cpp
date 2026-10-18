@@ -10,6 +10,9 @@
 #include <vector>
 
 using navidrome::win::u8ToWide;
+using navidrome::win::trw;
+using navidrome::tr;
+using navidrome::trf;
 
 namespace {
 
@@ -77,14 +80,14 @@ private:
             navidrome::parseHiddenCategories(navidrome::cfg_browser_hidden_categories.get().c_str());
         m_saved = navidrome::joinHiddenCategories(hidden);
 
-        m_heading = CreateWindowW(L"STATIC", L"Show these sections in the browser tree:",
+        m_heading = CreateWindowW(L"STATIC", trw("Show these sections in the browser tree:").c_str(),
             WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, *this,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_HEADING)), nullptr, nullptr);
         navidrome::win::setFont(m_heading, f);
 
         int id = IDC_FIRST;
         for (const auto& c : navidrome::browserCategories()) {
-            HWND b = CreateWindowW(L"BUTTON", u8ToWide(c.title).c_str(),
+            HWND b = CreateWindowW(L"BUTTON", trw(c.title).c_str(),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
                 0, 0, 0, 0, *this, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id++)), nullptr, nullptr);
             navidrome::win::setFont(b, f);
@@ -94,7 +97,7 @@ private:
         }
 
         m_note = CreateWindowW(L"STATIC",
-            L"Artists (and libraries, on a multi-library server) are always shown.",
+            trw("Artists (and libraries, on a multi-library server) are always shown.").c_str(),
             WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, *this,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_NOTE)), nullptr, nullptr);
         navidrome::win::setFont(m_note, f);
@@ -137,7 +140,7 @@ public:
         inst->Create(parent);
         return inst;
     }
-    const char* get_name() override { return "Browser Sections"; }
+    const char* get_name() override { return tr("Browser Sections"); }
     GUID        get_guid() override {
         return navidrome::guids::sectionsPrefsPage;
     }

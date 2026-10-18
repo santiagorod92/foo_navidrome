@@ -15,4 +15,6 @@ void playFrom(t_size playlist, t_size first);
 
 void reportError(const char* title, const std::string& msg);
 
+void showConfirmation(const char* title, const std::string& msg);
+
 }

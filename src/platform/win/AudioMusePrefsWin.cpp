@@ -5,6 +5,8 @@
 #include "../../core/NavidromeGuids.h"
 #include <string>
 
+using navidrome::win::trw;
+
 class AudioMusePrefsInstance : public CWindowImpl<AudioMusePrefsInstance>,
                                public preferences_page_instance {
 public:
@@ -67,19 +69,19 @@ private:
             return h;
         };
         HWND intro = make(L"STATIC",
-            L"AudioMuse-AI analyses your Navidrome library for Text Search, Instant "
-            L"Playlist and Song Alchemy (File › AudioMuse-AI, track context menu).", SS_LEFT);
+            trw("AudioMuse-AI analyses your Navidrome library for Text Search, Instant "
+                "Playlist and Song Alchemy (File › AudioMuse-AI, track context menu).").c_str(), SS_LEFT);
         const DWORD editSty = WS_BORDER|WS_TABSTOP|ES_AUTOHSCROLL;
         const std::pair<HWND, HWND> rows[] = {
-            { make(L"STATIC", L"Server URL:",  0), make(L"EDIT", L"", editSty, IDC_AM_URL) },
-            { make(L"STATIC", L"API token:",   0), make(L"EDIT", L"", editSty|ES_PASSWORD, IDC_AM_TOKEN) },
-            { make(L"STATIC", L"Server name:", 0), make(L"EDIT", L"", editSty, IDC_AM_SERVER) },
-            { make(L"STATIC", L"Tracks:",      0), make(L"EDIT", L"", editSty|ES_NUMBER, IDC_AM_COUNT) },
+            { make(L"STATIC", trw("Server URL:").c_str(),  0), make(L"EDIT", L"", editSty, IDC_AM_URL) },
+            { make(L"STATIC", trw("API token:").c_str(),   0), make(L"EDIT", L"", editSty|ES_PASSWORD, IDC_AM_TOKEN) },
+            { make(L"STATIC", trw("Server name:").c_str(), 0), make(L"EDIT", L"", editSty, IDC_AM_SERVER) },
+            { make(L"STATIC", trw("Tracks:").c_str(),      0), make(L"EDIT", L"", editSty|ES_NUMBER, IDC_AM_COUNT) },
         };
         HWND help = make(L"STATIC",
-            L"e.g. http://audiomuse:8000. Token only if AudioMuse-AI has auth on; "
-            L"server name only if it serves several media servers. \"Tracks\" also "
-            L"sizes Instant Mix, which works without AudioMuse-AI settings.", SS_LEFT);
+            trw("e.g. http://audiomuse:8000. Token only if AudioMuse-AI has auth on; "
+                "server name only if it serves several media servers. \"Tracks\" also "
+                "sizes Instant Mix, which works without AudioMuse-AI settings.").c_str(), SS_LEFT);
 
         const int lineH = lineHeight(*this, f);
         const int rowH  = (std::max)(s(22), lineH + s(8));

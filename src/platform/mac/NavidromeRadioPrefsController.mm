@@ -18,6 +18,7 @@
 #include "../../core/NavidromeSettings.h"
 #include <algorithm>
 #include <cstring>
+#import "MacI18n.h"
 
 @interface NavidromeRadioPrefsController : NSViewController <NSTableViewDataSource, NSTableViewDelegate>
 @end
@@ -48,32 +49,32 @@
     _tableView.usesAlternatingRowBackgroundColors = YES;
 
     NSTableColumn *nameCol = [[NSTableColumn alloc] initWithIdentifier:@"name"];
-    nameCol.title = @"Name";
+    nameCol.title = NDTr("Name");
     nameCol.width = 140;
     [_tableView addTableColumn:nameCol];
 
     NSTableColumn *urlCol = [[NSTableColumn alloc] initWithIdentifier:@"streamUrl"];
-    urlCol.title = @"Stream URL";
+    urlCol.title = NDTr("Stream URL");
     urlCol.width = 220;
     [_tableView addTableColumn:urlCol];
 
     NSTableColumn *homeCol = [[NSTableColumn alloc] initWithIdentifier:@"homePageUrl"];
-    homeCol.title = @"Home Page";
+    homeCol.title = NDTr("Home Page");
     homeCol.width = 140;
     [_tableView addTableColumn:homeCol];
 
     scroll.documentView = _tableView;
     [root addSubview:scroll];
 
-    _newButton = [NSButton buttonWithTitle:@"New…" target:self action:@selector(newStation:)];
+    _newButton = [NSButton buttonWithTitle:NDTr("New…") target:self action:@selector(newStation:)];
     _newButton.translatesAutoresizingMaskIntoConstraints = NO;
     [root addSubview:_newButton];
 
-    _editButton = [NSButton buttonWithTitle:@"Edit…" target:self action:@selector(editStation:)];
+    _editButton = [NSButton buttonWithTitle:NDTr("Edit…") target:self action:@selector(editStation:)];
     _editButton.translatesAutoresizingMaskIntoConstraints = NO;
     [root addSubview:_editButton];
 
-    _deleteButton = [NSButton buttonWithTitle:@"Delete…" target:self action:@selector(deleteStation:)];
+    _deleteButton = [NSButton buttonWithTitle:NDTr("Delete…") target:self action:@selector(deleteStation:)];
     _deleteButton.translatesAutoresizingMaskIntoConstraints = NO;
     [root addSubview:_deleteButton];
 
@@ -116,23 +117,22 @@
 
 - (void)refresh {
     if (!SubsonicClient.sharedClient.isConfigured) {
-        _statusLabel.stringValue = @"Not configured";
+        _statusLabel.stringValue = NDTr("Not configured");
         return;
     }
-    _statusLabel.stringValue = @"Loading…";
+    _statusLabel.stringValue = NDTr("Loading…");
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         NSError *err = nil;
         NSArray<SubsonicRadioStation *> *stations =
             [SubsonicClient.sharedClient getRadioStationsWithError:&err];
         dispatch_async(dispatch_get_main_queue(), ^{
             if (err || !stations) {
-                self->_statusLabel.stringValue = [NSString stringWithFormat:@"Failed: %@",
-                    err.localizedDescription ?: @"unknown error"];
+                self->_statusLabel.stringValue = NDTrf("Failed: {0}", { NDStd(err.localizedDescription ?: NDTr("unknown error")) });
                 return;
             }
             self->_stations = stations;
             [self->_tableView reloadData];
-            self->_statusLabel.stringValue = stations.count == 0 ? @"No radio stations" : @"";
+            self->_statusLabel.stringValue = stations.count == 0 ? NDTr("No radio stations") : @"";
         });
     });
 }
@@ -155,14 +155,14 @@
 
 - (IBAction)newStation:(id)sender {
     NSString *name = nil, *streamUrl = nil, *homePageUrl = nil;
-    if (![self promptForRadioStationWithTitle:@"New Radio Station"
+    if (![self promptForRadioStationWithTitle:NDTr("New Radio Station")
                                           name:&name streamURL:&streamUrl homePageURL:&homePageUrl])
         return;
     if (name.length == 0 || streamUrl.length == 0) {
-        _statusLabel.stringValue = @"Name and stream URL are required";
+        _statusLabel.stringValue = NDTr("Name and stream URL are required");
         return;
     }
-    _statusLabel.stringValue = @"Creating…";
+    _statusLabel.stringValue = NDTr("Creating…");
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         NSError *err = nil;
         NSString *result = [SubsonicClient.sharedClient createRadioStationWithStreamURL:streamUrl
@@ -174,8 +174,7 @@
                                  "\": " + std::string(err.localizedDescription.UTF8String ?: "unknown error"));
         dispatch_async(dispatch_get_main_queue(), ^{
             if (result) [self refresh];
-            else self->_statusLabel.stringValue = [NSString stringWithFormat:@"Failed: %@",
-                err.localizedDescription ?: @"unknown error"];
+            else self->_statusLabel.stringValue = NDTrf("Failed: {0}", { NDStd(err.localizedDescription ?: NDTr("unknown error")) });
         });
     });
 }
@@ -183,23 +182,23 @@
 - (IBAction)editStation:(id)sender {
     NSInteger row = _tableView.selectedRow;
     if (row < 0 || row >= (NSInteger)_stations.count) {
-        _statusLabel.stringValue = @"Select a station";
+        _statusLabel.stringValue = NDTr("Select a station");
         return;
     }
     SubsonicRadioStation *current = _stations[row];
     NSString *name = nil, *streamUrl = nil, *homePageUrl = nil;
-    if (![self promptForRadioStationWithTitle:@"Edit Radio Station"
+    if (![self promptForRadioStationWithTitle:NDTr("Edit Radio Station")
                                    initialName:current.name ?: @""
                               initialStreamURL:current.streamUrl ?: @""
                             initialHomePageURL:current.homePageUrl ?: @""
                                           name:&name streamURL:&streamUrl homePageURL:&homePageUrl])
         return;
     if (name.length == 0 || streamUrl.length == 0) {
-        _statusLabel.stringValue = @"Name and stream URL are required";
+        _statusLabel.stringValue = NDTr("Name and stream URL are required");
         return;
     }
     NSString *stationId = current.stationId;
-    _statusLabel.stringValue = @"Updating…";
+    _statusLabel.stringValue = NDTr("Updating…");
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         NSError *err = nil;
         BOOL ok = [SubsonicClient.sharedClient updateRadioStation:stationId
@@ -212,8 +211,7 @@
                                  ": " + std::string(err.localizedDescription.UTF8String ?: "unknown error"));
         dispatch_async(dispatch_get_main_queue(), ^{
             if (ok) [self refresh];
-            else self->_statusLabel.stringValue = [NSString stringWithFormat:@"Failed: %@",
-                err.localizedDescription ?: @"unknown error"];
+            else self->_statusLabel.stringValue = NDTrf("Failed: {0}", { NDStd(err.localizedDescription ?: NDTr("unknown error")) });
         });
     });
 }
@@ -221,21 +219,21 @@
 - (IBAction)deleteStation:(id)sender {
     NSInteger row = _tableView.selectedRow;
     if (row < 0 || row >= (NSInteger)_stations.count) {
-        _statusLabel.stringValue = @"Select a station";
+        _statusLabel.stringValue = NDTr("Select a station");
         return;
     }
     SubsonicRadioStation *current = _stations[row];
 
     NSAlert *confirm = [[NSAlert alloc] init];
-    confirm.messageText = [NSString stringWithFormat:@"Delete “%@” from the server?", current.name];
-    confirm.informativeText = @"The station is removed for every client.";
+    confirm.messageText = NDTrf("Delete “{0}” from the server?", { NDStd(current.name) });
+    confirm.informativeText = NDTr("The station is removed for every client.");
     confirm.alertStyle = NSAlertStyleWarning;
-    [confirm addButtonWithTitle:@"Delete"];
-    [confirm addButtonWithTitle:@"Cancel"];
+    [confirm addButtonWithTitle:NDTr("Delete")];
+    [confirm addButtonWithTitle:NDTr("Cancel")];
     if ([confirm runModal] != NSAlertFirstButtonReturn) return;
 
     NSString *stationId = current.stationId;
-    _statusLabel.stringValue = @"Deleting…";
+    _statusLabel.stringValue = NDTr("Deleting…");
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         NSError *err = nil;
         BOOL ok = [SubsonicClient.sharedClient deleteRadioStation:stationId error:&err];
@@ -244,8 +242,7 @@
                                  ": " + std::string(err.localizedDescription.UTF8String ?: "unknown error"));
         dispatch_async(dispatch_get_main_queue(), ^{
             if (ok) [self refresh];
-            else self->_statusLabel.stringValue = [NSString stringWithFormat:@"Failed: %@",
-                err.localizedDescription ?: @"unknown error"];
+            else self->_statusLabel.stringValue = NDTrf("Failed: {0}", { NDStd(err.localizedDescription ?: NDTr("unknown error")) });
         });
     });
 }
@@ -272,22 +269,22 @@
                             homePageURL:(NSString **)outHomePageURL {
     NSAlert *alert = [[NSAlert alloc] init];
     alert.messageText = title;
-    alert.informativeText = @"Name and stream URL are required. Home page URL is optional.";
-    [alert addButtonWithTitle:@"OK"];
-    [alert addButtonWithTitle:@"Cancel"];
+    alert.informativeText = NDTr("Name and stream URL are required. Home page URL is optional.");
+    [alert addButtonWithTitle:NDTr("OK")];
+    [alert addButtonWithTitle:NDTr("Cancel")];
 
     CGFloat fieldWidth = 260, rowHeight = 24, rowGap = 6, labelHeight = 16;
     NSView *container = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, fieldWidth, 3 * (rowHeight + labelHeight + rowGap))];
 
-    NSTextField *nameLabel = [NSTextField labelWithString:@"Name:"];
+    NSTextField *nameLabel = [NSTextField labelWithString:NDTr("Name:")];
     NSTextField *nameField = [[NSTextField alloc] init];
     nameField.stringValue = initialName ?: @"";
 
-    NSTextField *urlLabel = [NSTextField labelWithString:@"Stream URL:"];
+    NSTextField *urlLabel = [NSTextField labelWithString:NDTr("Stream URL:")];
     NSTextField *urlField = [[NSTextField alloc] init];
     urlField.stringValue = initialStreamURL ?: @"";
 
-    NSTextField *homeLabel = [NSTextField labelWithString:@"Home page URL (optional):"];
+    NSTextField *homeLabel = [NSTextField labelWithString:NDTr("Home page URL (optional):")];
     NSTextField *homeField = [[NSTextField alloc] init];
     homeField.stringValue = initialHomePageURL ?: @"";
 
@@ -329,7 +326,7 @@ public:
     service_ptr instantiate() override {
         return fb2k::wrapNSObject([NavidromeRadioPrefsController new]);
     }
-    const char *get_name() override { return "Radio Stations"; }
+    const char *get_name() override { return navidrome::tr("Radio Stations"); }
     GUID get_guid() override { return navidrome::guids::radioPrefsPage; }
     GUID get_parent_guid() override { return navidrome::guids::prefsPage; }
 };

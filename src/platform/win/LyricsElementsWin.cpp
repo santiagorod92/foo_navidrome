@@ -8,8 +8,8 @@
 
 namespace {
 
-constexpr const char* kLyricsName = "Navidrome Lyrics";
-constexpr const char* kLyricsDescription = "Lyrics of the playing Navidrome track, with the current line highlighted.";
+constexpr const char* kLyricsName = navidrome::N_("Navidrome Lyrics");
+constexpr const char* kLyricsDescription = navidrome::N_("Lyrics of the playing Navidrome track, with the current line highlighted.");
 
 class LyricsHost : public CWindowImpl<LyricsHost> {
 public:
@@ -54,8 +54,8 @@ public:
 
     static GUID g_get_guid() { return navidrome::guids::winUiElementLyrics; }
     static GUID g_get_subclass() { return ui_element_subclass_playback_information; }
-    static void g_get_name(pfc::string_base& out) { out = kLyricsName; }
-    static const char* g_get_description() { return kLyricsDescription; }
+    static void g_get_name(pfc::string_base& out) { out = navidrome::tr(kLyricsName); }
+    static const char* g_get_description() { return navidrome::tr(kLyricsDescription); }
     static ui_element_config::ptr g_get_default_configuration() {
         return ui_element_config::g_create_empty(g_get_guid());
     }
@@ -75,10 +75,10 @@ FB2K_SERVICE_FACTORY(NavidromeLyricsElementFactory);
 class NavidromeLyricsCuiPanel : public uie::window {
 public:
     const GUID& get_extension_guid() const override { return navidrome::guids::winColumnsUiLyrics; }
-    void get_name(pfc::string_base& out) const override { out = kLyricsName; }
+    void get_name(pfc::string_base& out) const override { out = navidrome::tr(kLyricsName); }
     void get_category(pfc::string_base& out) const override { out = "Panels"; }
-    bool get_short_name(pfc::string_base& out) const override { out = "Lyrics"; return true; }
-    bool get_description(pfc::string_base& out) const override { out = kLyricsDescription; return true; }
+    bool get_short_name(pfc::string_base& out) const override { out = navidrome::tr("Lyrics"); return true; }
+    bool get_description(pfc::string_base& out) const override { out = navidrome::tr(kLyricsDescription); return true; }
     unsigned get_type() const override { return uie::type_panel; }
     bool is_available(const uie::window_host_ptr&) const override { return true; }
 

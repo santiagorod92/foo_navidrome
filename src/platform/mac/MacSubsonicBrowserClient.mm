@@ -28,6 +28,13 @@ std::unique_ptr<navidrome::IBrowserClient> navidrome::makeMacBrowserClient() {
 
 navidrome::SubsonicCore& navidrome::libraryCore() { return [SubsonicClient.sharedClient core]; }
 
+std::string navidrome::systemLanguageCode() {
+    @autoreleasepool {
+        NSString *lang = NSLocale.preferredLanguages.firstObject;
+        return lang ? std::string(lang.UTF8String) : std::string();
+    }
+}
+
 navidrome::IBrowserClient& navidrome::libraryClient() {
     static navidrome::CoreBrowserClient inst([SubsonicClient.sharedClient core], hiddenCategories);
     return inst;

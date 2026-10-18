@@ -14,6 +14,9 @@
 
 using navidrome::win::u8ToWide;
 using navidrome::win::wToU8;
+using navidrome::win::trw;
+using navidrome::tr;
+using navidrome::trf;
 
 namespace {
 
@@ -80,7 +83,7 @@ private:
         m_savedIds = m_selected =
             navidrome::parseMusicFolderIds(navidrome::cfg_library_ids.get().c_str());
 
-        m_enable = CreateWindowW(L"BUTTON", L"Only include selected libraries",
+        m_enable = CreateWindowW(L"BUTTON", trw("Only include selected libraries").c_str(),
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
             0, 0, 0, 0, *this, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_ENABLE)), nullptr, nullptr);
         navidrome::win::setFont(m_enable, f);
@@ -90,7 +93,7 @@ private:
             WS_CHILD | WS_VISIBLE | WS_BORDER | LVS_REPORT | LVS_SINGLESEL | WS_TABSTOP | LVS_NOSORTHEADER,
             WS_EX_CLIENTEDGE, IDC_LIST);
         m_list.SetExtendedListViewStyle(LVS_EX_CHECKBOXES | LVS_EX_FULLROWSELECT);
-        m_list.InsertColumn(0, L"Library", LVCFMT_LEFT, s(320));
+        m_list.InsertColumn(0, trw("Library").c_str(), LVCFMT_LEFT, s(320));
         m_list.SetFont(f);
 
         m_status = CreateWindowW(L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_ENDELLIPSIS,
@@ -122,8 +125,8 @@ private:
     }
 
     void refresh() {
-        if (!navidrome::SubsonicClientWin::get().isConfigured()) { setStatus("Not configured"); return; }
-        setStatus("Loading…");
+        if (!navidrome::SubsonicClientWin::get().isConfigured()) { setStatus(tr("Not configured")); return; }
+        setStatus(tr("Loading…"));
         std::thread([this]() {
             std::string err;
             auto folders = navidrome::SubsonicClientWin::get().getMusicFolders(err);
@@ -137,12 +140,12 @@ private:
 
     LRESULT OnFoldersLoaded(UINT, WPARAM wParam, LPARAM) {
         auto* folders = reinterpret_cast<std::vector<navidrome::MusicFolder>*>(wParam);
-        if (!folders) { setStatus("Failed to load libraries"); return 0; }
+        if (!folders) { setStatus(tr("Failed to load libraries")); return 0; }
         m_folders = std::move(*folders);
         delete folders;
         setChecksFromSelected();
         setStatus(m_folders.size() < 2
-            ? "This server reports a single library — nothing to filter."
+            ? tr("This server reports a single library — nothing to filter.")
             : "");
         applyEnabledState();
         return 0;
@@ -210,7 +213,7 @@ public:
         inst->Create(parent);
         return inst;
     }
-    const char* get_name() override { return "Libraries"; }
+    const char* get_name() override { return tr("Libraries"); }
     GUID        get_guid() override {
         return navidrome::guids::librariesPrefsPage;
     }
