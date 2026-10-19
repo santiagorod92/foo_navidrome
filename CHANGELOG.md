@@ -1,3 +1,11 @@
+## [1.31.1](https://github.com/santiagorod92/foo_navidrome/compare/v1.31.0...v1.31.1) (2026-10-19)
+
+
+### Bug Fixes
+
+* **browser:** **Play Now** in the Navidrome Browser plays what you picked ([#40](https://github.com/santiagorod92/foo_navidrome/issues/40)). With *Playback › Playback follows cursor* off, it used to restart the track that was playing (or the last one played) instead of the selection, and only added the selection to the end of the playlist. Now Play Now (button, right-click menu), double-click, Enter and Random Mix replace the active playlist with the selection and start from its first track, whatever *Playback follows cursor* is set to. **Add to Playlist** still appends without touching playback. The same fix applies to *File › Restore Play Queue from Navidrome* and the AudioMuse-AI playlists, which started playback the same way.
+
+
 ## [1.30.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.29.0...v1.30.0) (2026-10-18)
 
 
