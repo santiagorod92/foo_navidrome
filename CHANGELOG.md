@@ -1,3 +1,11 @@
+## [1.31.2](https://github.com/santiagorod92/foo_navidrome/compare/v1.31.1...v1.31.2) (2026-10-19)
+
+
+### Bug Fixes
+
+* **browser:** **All Songs** queues your library in album order ([#37](https://github.com/santiagorod92/foo_navidrome/issues/37)). Add to Playlist / Play Now on the *All Songs* node used to queue tracks in whatever order the server returned them, so an album's tracks came out shuffled (and with several libraries, one library after the other). They're now sorted by album artist, year and album, then disc and track number, the same order the *Decades* section uses. Re-add *All Songs* to get the new order; playlists you already built keep theirs.
+
+
 ## [1.31.1](https://github.com/santiagorod92/foo_navidrome/compare/v1.31.0...v1.31.1) (2026-10-19)
 
 
