@@ -12,7 +12,7 @@ A [foobar2000](https://www.foobar2000.org/) component that lets you browse and s
 ## Features
 
 - Browse your entire music library: Artists → Albums → Songs
-- **All Songs** at the top of the tree — Add to Playlist / Play Now (or double-click) queues your whole library in one go. It doesn't expand in the tree (tens of thousands of rows would freeze it); the songs are fetched in pages of 500 via `search3.view`, honouring the library filter
+- **All Songs** at the top of the tree — Add to Playlist / Play Now (or double-click) queues your whole library in one go. It doesn't expand in the tree (tens of thousands of rows would freeze it); the songs are fetched in pages of 500 via `search3.view`, honouring the library filter, and queued in album order (album artist, year, album, then disc and track number)
 - **Multi-select** on both platforms: Ctrl+click to add/remove rows, Shift+click (or Shift+arrows) for a range, then Add / Play / any right-click action applies to all of them. Tracks that two selected rows share (an artist and one of its albums) are queued once
 - **Smart lists** at the top of the tree: ★ Starred, Recently Added, Most Played, Recently Played, Random Albums, 🔀 **Random Mix** (a fresh batch of random tracks), **Genres**, and your **server-side playlists**
 - **Decades**: expand it for one entry per decade your library spans (2020s, 2010s, … down to your oldest album); expand a decade for every album released in it, band by band (sorted by artist, then year), shown as *Artist — Album* with the year. Add / Play on a decade queues all of it. Albums without a year aren't listed; the library filter applies

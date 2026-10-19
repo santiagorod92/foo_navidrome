@@ -75,6 +75,20 @@ TEST_CASE(testDecadeHelpers) {
     check(al[0].name == "Let There Be Rock" && al[1].name == "Powerage" &&
           al[2].name == "Wish You Were Here" && al[3].name == "Animals",
           "decade albums sort by artist (case-insensitive), then year");
+
+    std::vector<navidrome::Song> so(6);
+    so[0].id = "b2"; so[0].artist = "Pink Floyd"; so[0].album = "Animals"; so[0].albumId = "an"; so[0].year = 1977; so[0].track = 2;
+    so[1].id = "a1"; so[1].artist = "AC/DC"; so[1].album = "Powerage"; so[1].albumId = "pw"; so[1].year = 1978; so[1].track = 1;
+    so[2].id = "b1"; so[2].artist = "Pink Floyd"; so[2].album = "Animals"; so[2].albumId = "an"; so[2].year = 1977; so[2].track = 1;
+    so[3].id = "d2t1"; so[3].artist = "Guest"; so[3].tags.albumArtist = "ac/dc"; so[3].album = "Live"; so[3].albumId = "lv";
+    so[3].year = 1992; so[3].tags.discNumber = 2; so[3].track = 1;
+    so[4].id = "d1t9"; so[4].artist = "AC/DC"; so[4].album = "Live"; so[4].albumId = "lv"; so[4].year = 1992;
+    so[4].tags.discNumber = 1; so[4].track = 9;
+    so[5].id = "a0"; so[5].artist = "AC/DC"; so[5].album = "Let There Be Rock"; so[5].albumId = "lt"; so[5].year = 1977; so[5].track = 3;
+    navidrome::sortAllSongs(so);
+    check(so[0].id == "a0" && so[1].id == "a1" && so[2].id == "d1t9" && so[3].id == "d2t1" &&
+          so[4].id == "b1" && so[5].id == "b2",
+          "All Songs sort by album artist, year, album, disc and track");
 }
 
 TEST_CASE(testBrowserModel) {
