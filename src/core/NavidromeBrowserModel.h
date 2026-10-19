@@ -273,6 +273,36 @@ inline void sortDecadeAlbums(std::vector<Album>& albums) {
     });
 }
 
+inline void sortAllSongs(std::vector<Song>& songs) {
+    auto lower = [](std::string s) {
+        for (auto& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return s;
+    };
+    struct Key { std::string artist, album, title; size_t index; };
+    std::vector<Key> keys;
+    keys.reserve(songs.size());
+    for (size_t i = 0; i < songs.size(); ++i) {
+        const Song& s = songs[i];
+        keys.push_back({ lower(s.tags.albumArtist.empty() ? s.artist : s.tags.albumArtist),
+                         lower(s.album), lower(s.title), i });
+    }
+    std::stable_sort(keys.begin(), keys.end(), [&](const Key& ka, const Key& kb) {
+        const Song& a = songs[ka.index];
+        const Song& b = songs[kb.index];
+        if (ka.artist != kb.artist) return ka.artist < kb.artist;
+        if (a.year != b.year) return a.year < b.year;
+        if (ka.album != kb.album) return ka.album < kb.album;
+        if (a.albumId != b.albumId) return a.albumId < b.albumId;
+        if (a.tags.discNumber != b.tags.discNumber) return a.tags.discNumber < b.tags.discNumber;
+        if (a.track != b.track) return a.track < b.track;
+        return ka.title < kb.title;
+    });
+    std::vector<Song> sorted;
+    sorted.reserve(songs.size());
+    for (const auto& k : keys) sorted.push_back(std::move(songs[k.index]));
+    songs = std::move(sorted);
+}
+
 struct CategoryEntry {
     BrowserNode::CategoryKind kind;
     const char* title;

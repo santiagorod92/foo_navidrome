@@ -125,9 +125,12 @@ std::vector<BrowserNodePtr> fetchChildren(IBrowserClient& client,
                 case BrowserNode::CatArtistTopSongs:
                     for (const auto& s : client.getTopSongs(node.subtitle, 50, outError)) addSong(s);
                     break;
-                case BrowserNode::CatAllSongs:
-                    for (const auto& s : client.getAllSongs(outError)) addSong(s);
+                case BrowserNode::CatAllSongs: {
+                    auto songs = client.getAllSongs(outError);
+                    sortAllSongs(songs);
+                    for (const auto& s : songs) addSong(s);
                     break;
+                }
                 case BrowserNode::CatDecades: {
                     auto ends = client.getAlbumsByYear(1, 9999, 1, outError);
                     if (!outError.empty()) break;

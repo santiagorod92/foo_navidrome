@@ -211,8 +211,8 @@ TEST_CASE(testBrowserFetchDispatch) {
         FakeBrowserClient fc; std::string err;
         auto out = navidrome::fetchChildren(fc, cat(BrowserNode::CatAllSongs), err);
         check(fc.calls.size() == 1 && fc.calls[0] == "getAllSongs" && out.size() == 2 &&
-              out[0]->type == BrowserNode::Song && out[1]->id == "all2",
-              "the All Songs category yields every song via one getAllSongs call");
+              out[0]->type == BrowserNode::Song && out[0]->id == "all1" && out[1]->id == "all2",
+              "the All Songs category yields every song via one getAllSongs call, in album order");
 
         FakeBrowserClient fc2;
         std::vector<navidrome::BrowserNodePtr> songs;
