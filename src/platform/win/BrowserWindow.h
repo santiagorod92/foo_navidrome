@@ -189,11 +189,11 @@ private:
     void    applyStarred(bool starred);
     std::string labelFor(const std::shared_ptr<NavidromeNode>& node) const;
     void    refreshLabel(const std::shared_ptr<NavidromeNode>& node);
-    void    enqueueNodes(std::vector<std::shared_ptr<NavidromeNode>> songs, bool play, bool clearFirst = false);
+    void    enqueueNodes(std::vector<std::shared_ptr<NavidromeNode>> songs, bool play);
     std::vector<std::shared_ptr<NavidromeNode>> selectedNodes();
-    void    queueSelected(bool play, bool closeAfter, bool clearFirst = false);
+    void    queueSelected(bool play, bool closeAfter);
     void    queueNodes(std::vector<std::shared_ptr<NavidromeNode>> nodes,
-                       bool play, bool closeAfter, bool clearFirst = false);
+                       bool play, bool closeAfter);
 
     static LRESULT CALLBACK TreeSubclassProc(HWND, UINT, WPARAM, LPARAM,
                                              UINT_PTR, DWORD_PTR);
