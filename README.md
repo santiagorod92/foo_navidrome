@@ -574,7 +574,7 @@ Windows on ARM runs emulated.
 | `make win11-arm-up` / `-down` | Start / stop the VM only; it runs under launchd, so closing the terminal doesn't stop it |
 | `make win11-arm-ssh` / `-logs` / `-status` / `-shot` | Shell in the guest (tester/tester), QEMU log, state, screenshot |
 | `make win11-arm-reset` | Delete the Windows disk; the next start installs again |
-| `make win11-arm-provision` | One-time after the install: your ssh key and foobar2000 (ARM build) in the guest |
+| `make win11-arm-provision` | One-time after the install: your ssh key and foobar2000 (ARM build) in the guest. `FB2K_ARCH=x86` also installs a portable 32-bit foobar2000 in `C:\fb2k-x86` (profile copied from the ARM one) for x86 builds; with the same `FB2K_ARCH=x86`, `fb2k`, `seed` and `scripts/win11-arm.sh deploy <x86 dll>` use it |
 | `make win11-arm-seed` | Copy this Mac's foo_navidrome settings (server, account) into the guest; a server on your LAN is relayed through the Mac |
 | `make win11-arm-deploy` | Build the DLL and install it in the guest's foobar2000, then restart it |
 | `make win11-arm-fb2k ARGS='start\|stop\|cmd <menu command>'` / `win11-arm-log` | Drive foobar2000 in the guest's desktop session / read its `foo_navidrome.log` |

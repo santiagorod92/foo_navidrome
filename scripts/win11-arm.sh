@@ -20,13 +20,18 @@ once, by prepare, to download Windows and build its unattended setup.
            unattended (~20-30 min). Runs prepare first when its files are missing
   open     open the screen in the browser once it answers (http://127.0.0.1:8006)
   provision  one-time, after the install: put your ssh key in the guest and
-           install foobar2000 (ARM build, FB2K_VERSION) silently
+           install foobar2000 (ARM build, FB2K_VERSION) silently. FB2K_ARCH=x86
+           installs the 32-bit build too, portable in C:\fb2k-x86 (its own profile,
+           seeded from the ARM one), for x86 DLLs (run the ARM provision first)
   deploy   copy build-win-mac/foo_navidrome.dll (or DLL) into the guest profile's
-           user-components-arm64ec/<DLL name> and restart foobar2000 in the
-           desktop session (foo_ui_panels deploys its own DLL the same way)
-  fb2k     start|stop|cmd <menu command> foobar2000 in the guest's desktop session;
-           fb2k log [LINES] [REGEX] prints the end of the guest's $COMPONENT.log
-           (COMPONENT, default foo_navidrome)
+           user-components-arm64ec/<DLL name> (FB2K_ARCH=x86: the portable
+           install's user-components/<DLL name>) and restart foobar2000 in the
+           desktop session (foo_ui_panels deploys its own DLL the same way). An x64
+           DLL loads in the ARM build too (ARM64EC loads x64 code)
+  fb2k     start|stop|cmd <menu command> foobar2000 (FB2K_ARCH's install) in the
+           guest's desktop session; stop closes every running foobar2000, of either
+           build; fb2k log [LINES] [REGEX] prints the end of the guest's
+           $COMPONENT.log (COMPONENT, default foo_navidrome)
   seed     copy foo_navidrome's settings (server, account, language, prefetch)
            from SEED_CONFIG (default: this Mac's foobar2000 profile) into the guest.
            A server on a private address is relayed: macOS doesn't let QEMU
@@ -37,8 +42,8 @@ once, by prepare, to download Windows and build its unattended setup.
   run      run EXE [ARGS] in the guest (copied to the guest's temp folder), with
            its output and exit code
   push     push SRC DEST: copy a local file or folder to DEST (a path under the
-           guest user's home, e.g. AppData/Local/Temp); a folder of the same
-           name already there is replaced
+           guest user's home, e.g. AppData/Local/Temp, or an absolute C:/... path);
+           a folder of the same name already there is replaced
   ssh      ssh into the guest as tester/tester (port 2223)
   shot     save the VM screen to FILE (default build/ui-test/win11-arm-<time>.png)
   logs     follow the VM's serial/QEMU log
@@ -48,6 +53,7 @@ once, by prepare, to download Windows and build its unattended setup.
 
 Env: WIN11_ARM_DIR (default ~/.local/share/foo_navidrome-win11-arm), WIN11_ARM_CPUS (6),
      WIN11_ARM_MEMORY (6G), WIN11_ARM_DISK (64G), FB2K_VERSION (2.26.1),
+     FB2K_ARCH (arm64ec | x86: which foobar2000 install deploy/fb2k/cfg/seed use),
      SEED_CONFIG (~/Library/foobar2000-v2/config.sqlite). Files go in and out with scp over ssh.
 USAGE
 }
@@ -232,33 +238,63 @@ in_session() {
   gps "\$a=New-ScheduledTaskAction -Execute '$1'$arg; \$p=New-ScheduledTaskPrincipal -UserId tester -LogonType Interactive; Register-ScheduledTask -TaskName fbnd-gui -Action \$a -Principal \$p -Force | Out-Null; Start-ScheduledTask -TaskName fbnd-gui; Start-Sleep 2; Unregister-ScheduledTask -TaskName fbnd-gui -Confirm:\$false"
 }
 
-FB2K_EXE='C:\Program Files\foobar2000\foobar2000.exe'
+FB2K_ARCH="${FB2K_ARCH:-arm64ec}"
+FB2K_X86_DIR='C:\fb2k-x86'
+case "$FB2K_ARCH" in
+  arm64ec)
+    FB2K_EXE='C:\Program Files\foobar2000\foobar2000.exe'
+    FB2K_PROFILE='$env:APPDATA\foobar2000-v2'
+    FB2K_PROFILE_SCP='AppData/Roaming/foobar2000-v2'
+    FB2K_COMPONENTS=user-components-arm64ec
+    FB2K_INSTALLER="foobar2000-arm64ec_v$FB2K_VERSION.exe"
+    FB2K_FIREWALL=fbnd-foobar2000
+    ;;
+  x86)
+    FB2K_EXE="$FB2K_X86_DIR\foobar2000.exe"
+    FB2K_PROFILE="$FB2K_X86_DIR\profile"
+    FB2K_PROFILE_SCP='C:/fb2k-x86/profile'
+    FB2K_COMPONENTS=user-components
+    FB2K_INSTALLER="foobar2000_v$FB2K_VERSION.exe"
+    FB2K_FIREWALL=fbnd-foobar2000-x86
+    ;;
+  *) echo "FB2K_ARCH must be arm64ec or x86, not $FB2K_ARCH" >&2; exit 2 ;;
+esac
 
 fb2k() {
   case "${1:-start}" in
     start) in_session "$FB2K_EXE" "${2:-}" ;;
     stop)
-      [ -n "$(gps "Get-Process foobar2000 -ErrorAction SilentlyContinue")" ] || return 0
-      in_session "$FB2K_EXE" "/exit"
+      local running exe
+      running="$(gps "(Get-Process foobar2000 -ErrorAction SilentlyContinue).Path | Sort-Object -Unique" | tr -d '\r')"
+      [ -n "$running" ] || return 0
+      while IFS= read -r exe; do
+        [ -n "$exe" ] && in_session "$exe" "/exit" </dev/null
+      done <<<"$running"
       gps "for (\$i=0; \$i -lt 20 -and (Get-Process foobar2000 -ErrorAction SilentlyContinue); \$i++) { Start-Sleep 1 }; Stop-Process -Name foobar2000 -ErrorAction SilentlyContinue; exit 0"
       ;;
     cmd)   shift; in_session "$FB2K_EXE" "/command:\"$*\"" ;;
-    log)   gps "Get-Content -Tail ${2:-40} \$env:APPDATA\\foobar2000-v2\\${COMPONENT:-foo_navidrome}.log | Where-Object { \$_ -match '${3:-.}' }" ;;
+    log)   gps "Get-Content -Tail ${2:-40} $FB2K_PROFILE\\${COMPONENT:-foo_navidrome}.log | Where-Object { \$_ -match '${3:-.}' }" ;;
     *) usage; exit 2 ;;
   esac
 }
 
 provision() {
   install_key
-  gps "if (-not (Get-NetFirewallRule -Name fbnd-foobar2000 -ErrorAction SilentlyContinue)) { New-NetFirewallRule -Name fbnd-foobar2000 -DisplayName foobar2000 -Program '$FB2K_EXE' -Action Allow -Profile Any | Out-Null }"
-  if gps "Test-Path '$FB2K_EXE'" | grep True >/dev/null; then echo "foobar2000 already installed"; return; fi
-  local exe="foobar2000-arm64ec_v$FB2K_VERSION.exe"
+  gps "if (-not (Get-NetFirewallRule -Name $FB2K_FIREWALL -ErrorAction SilentlyContinue)) { New-NetFirewallRule -Name $FB2K_FIREWALL -DisplayName 'foobar2000 ($FB2K_ARCH)' -Program '$FB2K_EXE' -Action Allow -Profile Any | Out-Null }"
+  if gps "Test-Path '$FB2K_EXE'" | grep True >/dev/null; then echo "foobar2000 ($FB2K_ARCH) already installed"; return; fi
+  local exe="$FB2K_INSTALLER" args="'/S'"
+  [ "$FB2K_ARCH" = x86 ] && args="'/S','/D=$FB2K_X86_DIR'"
   [ -f "$DIR/$exe" ] || curl -fL -o "$DIR/$exe" "https://www.foobar2000.org/downloads/$exe"
-  echo "==> installing foobar2000 $FB2K_VERSION (ARM) in the guest"
+  echo "==> installing foobar2000 $FB2K_VERSION ($FB2K_ARCH) in the guest"
   gscp "$DIR/$exe" "tester@127.0.0.1:$exe"
-  gps "Start-Process -Wait -FilePath .\\$exe -ArgumentList '/S'; Remove-Item .\\$exe"
+  gps "Start-Process -Wait -FilePath .\\$exe -ArgumentList $args; for (\$i=0; \$i -lt 60 -and -not (Test-Path '$FB2K_EXE'); \$i++) { Start-Sleep 1 }; Start-Sleep 2; Remove-Item .\\$exe -ErrorAction SilentlyContinue"
   gps "Test-Path '$FB2K_EXE'" | grep True >/dev/null || { echo "foobar2000 install failed" >&2; exit 1; }
-  echo "foobar2000 installed"
+  if [ "$FB2K_ARCH" = x86 ]; then
+    fb2k stop
+    gps "New-Item -ItemType File -Force '$FB2K_X86_DIR\\portable_mode_enabled' | Out-Null; New-Item -ItemType Directory -Force '$FB2K_PROFILE' | Out-Null; if (Test-Path \$env:APPDATA\\foobar2000-v2) { Get-ChildItem \$env:APPDATA\\foobar2000-v2 | Where-Object { \$_.Name -notlike 'user-components*' -and \$_.Name -ne 'crash reports' } | Copy-Item -Recurse -Force -Destination '$FB2K_PROFILE' }"
+    echo "portable profile in $FB2K_PROFILE (seeded from the ARM install's profile)"
+  fi
+  echo "foobar2000 ($FB2K_ARCH) installed"
 }
 
 deploy() {
@@ -266,13 +302,13 @@ deploy() {
   [ -f "$dll" ] || { echo "no $dll (make win-build-mac)" >&2; exit 1; }
   local name; name="$(basename "$dll" .dll)"
   fb2k stop
-  gps "New-Item -ItemType Directory -Force \$env:APPDATA\\foobar2000-v2\\user-components-arm64ec\\$name | Out-Null"
-  gscp "$dll" "tester@127.0.0.1:AppData/Roaming/foobar2000-v2/user-components-arm64ec/$name/$name.dll"
+  gps "New-Item -ItemType Directory -Force $FB2K_PROFILE\\$FB2K_COMPONENTS\\$name | Out-Null"
+  gscp "$dll" "tester@127.0.0.1:$FB2K_PROFILE_SCP/$FB2K_COMPONENTS/$name/$name.dll"
   fb2k start
-  echo "deployed $(basename "$dll"), foobar2000 started"
+  echo "deployed $(basename "$dll") ($FB2K_ARCH), foobar2000 started"
 }
 
-GUEST_CONFIG="AppData/Roaming/foobar2000-v2/config.sqlite"
+GUEST_CONFIG="$FB2K_PROFILE_SCP/config.sqlite"
 
 guest_hosts() {
   local lan; lan="$(lan_server)"
@@ -325,7 +361,9 @@ case "${1:-}" in
     ;;
   push)
     shift; src="${1:?usage: push SRC DEST}"; dest="${2:?usage: push SRC DEST}"
-    gps "Remove-Item -Recurse -Force \"\$HOME\\${dest//\//\\}\\$(basename "$src")\" -ErrorAction SilentlyContinue; New-Item -ItemType Directory -Force \"\$HOME\\${dest//\//\\}\" | Out-Null"
+    gdest="\$HOME\\${dest//\//\\}"
+    case "$dest" in [A-Za-z]:*) gdest="${dest//\//\\}" ;; esac
+    gps "Remove-Item -Recurse -Force \"$gdest\\$(basename "$src")\" -ErrorAction SilentlyContinue; New-Item -ItemType Directory -Force \"$gdest\" | Out-Null"
     gscp -r "$src" "tester@127.0.0.1:$dest/"
     ;;
   ssh)     shift; exec ssh -p "$SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null tester@127.0.0.1 "$@" ;;

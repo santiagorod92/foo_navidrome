@@ -181,6 +181,10 @@ holds only what's true for both; anything repo-specific stays in the repo's own 
   points at `../foo_navidrome/scripts/win11-arm.sh` (`WIN11_ARM=`). `deploy <dll>` installs into
   `user-components-arm64ec/<dll name>`, `push` copies a folder in, `COMPONENT=` picks the log
   `fb2k log` reads, `make win11-arm-test` runs each repo's unit tests in the guest.
+- **All three Windows builds run in that one VM:** ARM64EC natively, x64 in the same ARM
+  foobar2000 (an ARM64EC process loads x64 DLLs), x86 in a portable 32-bit foobar2000 at
+  `C:\fb2k-x86` (`FB2K_ARCH=x86`, foo_ui_panels: `ARCH=x86`; `provision` installs it once and
+  seeds its profile from the ARM one). `fb2k stop` closes whichever build is running.
 - **UI tests:** both repos drive the real foobar2000 with one script,
   `scripts/ui-test.sh <wine|win11|mac> <scenario>`: each scenario is written once over a small
   per-platform driver and asserts on the component log, the process and crash reports.
