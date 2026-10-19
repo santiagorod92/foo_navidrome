@@ -566,13 +566,6 @@ NSNotificationName const NavidromeBrowserSectionsDidChangeNotification =
 - (void)addNodesToPlaylist:(NSArray<NavidromeNode *> *)nodes
                       play:(BOOL)play
              closeWhenDone:(BOOL)closeWhenDone {
-    [self addNodesToPlaylist:nodes play:play closeWhenDone:closeWhenDone clearFirst:NO];
-}
-
-- (void)addNodesToPlaylist:(NSArray<NavidromeNode *> *)nodes
-                      play:(BOOL)play
-             closeWhenDone:(BOOL)closeWhenDone
-                clearFirst:(BOOL)clearFirst {
     if (nodes.count == 0) {
         _statusLabel.stringValue = NDTr("Select at least one item first");
         return;
@@ -584,7 +577,7 @@ NSNotificationName const NavidromeBrowserSectionsDidChangeNotification =
     for (NavidromeNode *n in nodes)
         if (n.type != NavidromeNodeTypeSong) { allSongs = NO; break; }
     if (allSongs) {
-        [self enqueueNodes:nodes play:play clearFirst:clearFirst];
+        [self enqueueNodes:nodes play:play];
         if (closeWhenDone) [self closeStandaloneWindow];
         return;
     }
@@ -615,7 +608,7 @@ NSNotificationName const NavidromeBrowserSectionsDidChangeNotification =
                 NAVIDROME_WARN("UI", "addNodesToPlaylist: the selection resolved to no tracks");
                 self->_statusLabel.stringValue = NDTr("No tracks found — try Refresh");
             } else {
-                [self enqueueNodes:songs play:play clearFirst:clearFirst];
+                [self enqueueNodes:songs play:play];
                 if (closeWhenDone) [self closeStandaloneWindow];
             }
         });
@@ -623,7 +616,7 @@ NSNotificationName const NavidromeBrowserSectionsDidChangeNotification =
 }
 
 - (void)commitSelectionFromKeyboard {
-    [self addNodesToPlaylist:[self selectedNodes] play:YES closeWhenDone:YES clearFirst:YES];
+    [self addNodesToPlaylist:[self selectedNodes] play:YES closeWhenDone:YES];
 }
 
 - (void)closeStandaloneWindow {
@@ -679,12 +672,6 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
 }
 
 - (void)enqueueNodes:(NSArray<NavidromeNode *> *)songNodes play:(BOOL)play {
-    [self enqueueNodes:songNodes play:play clearFirst:NO];
-}
-
-- (void)enqueueNodes:(NSArray<NavidromeNode *> *)songNodes
-                play:(BOOL)play
-          clearFirst:(BOOL)clearFirst {
     __unsafe_unretained NavidromeBrowserController *weakSelf = self;
     std::vector<navidrome::BrowserNodePtr> nodes;
     nodes.reserve(songNodes.count);
@@ -693,7 +680,7 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
 
     std::string status;
     navidrome::enqueueBrowserNodes(
-        nodes, play, clearFirst,
+        nodes, play, play,
         [weakSelf](const std::string &radioId) -> std::string {
             NSString *url = [weakSelf radioStationForId:@(radioId.c_str())].streamUrl;
             return url ? std::string(url.UTF8String) : std::string();
@@ -787,7 +774,7 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
                 self->_statusLabel.stringValue = NDTr("No tracks found");
                 return;
             }
-            [self enqueueNodes:songNodes play:YES clearFirst:NO];
+            [self enqueueNodes:songNodes play:YES];
         });
     });
 }

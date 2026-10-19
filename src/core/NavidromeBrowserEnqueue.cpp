@@ -81,6 +81,9 @@ void navidrome::playFrom(t_size pl, t_size first) {
     pm->set_active_playlist(pl);
     pm->set_playing_playlist(pl);
     pm->playlist_set_focus_item(pl, first);
+    if (pm->playlist_execute_default_action(pl, first)) return;
+    NAVIDROME_WARN("Playlist", "playFrom: default action refused on playlist " + std::to_string(pl) +
+                   " item " + std::to_string(first) + ", starting playback instead");
     playback_control::get()->start(playback_control::track_command_play);
 }
 

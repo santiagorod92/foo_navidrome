@@ -635,10 +635,10 @@ void BrowserWindow::OnTimer(UINT_PTR id) {
 }
 
 void BrowserWindow::enqueueNodes(std::vector<std::shared_ptr<NavidromeNode>> songs,
-                                 bool play, bool clearFirst) {
+                                 bool play) {
     std::string status;
     navidrome::enqueueBrowserNodes(
-        songs, play, clearFirst,
+        songs, play, play,
         [this](const std::string& id) { return radioStationURL(id); },
         status);
     setStatus(status);

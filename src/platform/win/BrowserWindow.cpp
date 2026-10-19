@@ -667,22 +667,22 @@ LRESULT BrowserWindow::OnTreeSelChanged(LPNMHDR pnmh) {
     return 0;
 }
 
-void BrowserWindow::queueSelected(bool play, bool closeAfter, bool clearFirst) {
-    queueNodes(selectedNodes(), play, closeAfter, clearFirst);
+void BrowserWindow::queueSelected(bool play, bool closeAfter) {
+    queueNodes(selectedNodes(), play, closeAfter);
 }
 
 void BrowserWindow::queueNodes(std::vector<std::shared_ptr<NavidromeNode>> selected,
-                               bool play, bool closeAfter, bool clearFirst) {
+                               bool play, bool closeAfter) {
     if (selected.empty()) { setStatus(tr("Select at least one item")); return; }
 
     NAVIDROME_LOG("UI", "queueNodes: " + std::to_string(selected.size()) +
                   " selected node(s), play=" + (play ? "1" : "0"));
     setStatus(tr("Loading tracks…"));
-    std::thread([this, selected, play, closeAfter, clearFirst]() {
+    std::thread([this, selected, play, closeAfter]() {
         std::string err;
         auto songs = navidrome::collectSelectionSongs(browserClient(), selected, &err);
         if (!err.empty()) NAVIDROME_WARN("UI", "queueNodes: " + err);
-        fb2k::inMainThread([this, songs, err, play, closeAfter, clearFirst]() mutable {
+        fb2k::inMainThread([this, songs, err, play, closeAfter]() mutable {
             if (!IsWindow()) return;
             const bool stale = navidrome::browserTreeIsStale(m_treeLoadedAtMs,
                                                              navidrome::browserNowMs());
@@ -703,7 +703,7 @@ void BrowserWindow::queueNodes(std::vector<std::shared_ptr<NavidromeNode>> selec
                 setStatus(tr("No tracks found — try Refresh"));
                 return;
             }
-            enqueueNodes(std::move(songs), play, clearFirst);
+            enqueueNodes(std::move(songs), play);
             if (closeAfter && !m_embedded && IsWindow()) ShowWindow(SW_HIDE);
         });
     }).detach();
@@ -766,13 +766,13 @@ void BrowserWindow::OnRandomMix(UINT, int, HWND) {
             if (!IsWindow()) return;
             if (!err.empty()) { setStatus(trf("Error: {0}", { err })); return; }
             if (nodes.empty()) { setStatus(tr("No tracks found")); return; }
-            enqueueNodes(std::move(nodes), true, false);
+            enqueueNodes(std::move(nodes), true);
         });
     }).detach();
 }
 
 LRESULT BrowserWindow::OnTreeReturn(LPNMHDR) {
-    queueSelected(true, true, true);
+    queueSelected(true, true);
     return 0;
 }
 
