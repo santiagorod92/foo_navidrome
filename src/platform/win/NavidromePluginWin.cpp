@@ -9,6 +9,7 @@
 #include "../../core/NavidromeGuids.h"
 #include "../../core/NavidromeSettings.h"
 #include "../../core/NavidromeLibraryPlatform.h"
+#include "BrowserPrompts.h"
 #include "EsLyricBridge.h"
 #include "WinUi.h"
 #include <SDK/cfg_var.h>
@@ -35,6 +36,13 @@ namespace {
         if (!err.empty())
             console::print(navidrome::trf("ESLyric bridge error: {0}", { err }).c_str());
     }
+}
+
+void navidrome::serverSettingsChanged() {
+    navidrome::CoverCache::instance().clear();
+    navidrome::SubsonicClientWin::get().refreshMusicFolders();
+    refreshEsLyricBridge();
+    BrowserWindow::reloadAllOpen();
 }
 
 using navidrome::win::u8ToWide;
@@ -209,6 +217,9 @@ public:
         MESSAGE_HANDLER_EX(WM_TEST_RESULT, OnTestResult)
         MESSAGE_HANDLER_EX(WM_SCAN_STATUS, OnScanStatus)
         MESSAGE_HANDLER_EX(WM_DIAG_READY, OnDiagReady)
+        COMMAND_HANDLER_EX(IDC_PROFILE, CBN_SELCHANGE, OnProfileSelected)
+        COMMAND_HANDLER_EX(IDC_PROFILE_ADD, BN_CLICKED, OnProfileAdd)
+        COMMAND_HANDLER_EX(IDC_PROFILE_REMOVE, BN_CLICKED, OnProfileRemove)
         COMMAND_HANDLER_EX(IDC_URL,  EN_CHANGE, OnChanged)
         COMMAND_HANDLER_EX(IDC_USER, EN_CHANGE, OnChanged)
         COMMAND_HANDLER_EX(IDC_PASS, EN_CHANGE, OnChanged)
@@ -250,7 +261,8 @@ private:
     enum { IDC_URL=1001, IDC_USER=1002, IDC_PASS=1003, IDC_TEST=1004, IDC_STATUS=1005,
            IDC_HEADERS=1006, IDC_SCROBBLE=1007, IDC_FORMAT=1008, IDC_BITRATE=1009,
            IDC_RESCAN=1010, IDC_SCAN_STATUS=1011, IDC_DIAG=1012, IDC_LOGDIR=1013,
-           IDC_DIAG_STATUS=1014, IDC_LANGUAGE=1015 };
+           IDC_DIAG_STATUS=1014, IDC_LANGUAGE=1015, IDC_PROFILE=1016, IDC_PROFILE_ADD=1017,
+           IDC_PROFILE_REMOVE=1018 };
 
     static constexpr UINT WM_TEST_RESULT = WM_USER + 200;
     static constexpr UINT WM_SCAN_STATUS = WM_USER + 201;
@@ -274,6 +286,7 @@ private:
             return h;
         };
 
+        HWND lblProf = make(L"STATIC", trw("Server:").c_str(),      0);
         HWND lblUrl  = make(L"STATIC", trw("Server URL:").c_str(),  0);
         HWND lblUser = make(L"STATIC", trw("Username:").c_str(),    0);
         HWND lblPass = make(L"STATIC", trw("Password:").c_str(),    0);
@@ -285,6 +298,12 @@ private:
         HWND url  = make(L"EDIT", L"", editSty, IDC_URL);
         HWND user = make(L"EDIT", L"", editSty, IDC_USER);
         HWND pass = make(L"EDIT", L"", editSty|ES_PASSWORD, IDC_PASS);
+
+        m_profile.Create(*this, CWindow::rcDefault, nullptr,
+            WS_CHILD|WS_VISIBLE|WS_TABSTOP|WS_VSCROLL|CBS_DROPDOWNLIST, 0, IDC_PROFILE);
+        m_profile.SetFont(f);
+        HWND profAdd = make(L"BUTTON", trw("Add…").c_str(), WS_TABSTOP|BS_PUSHBUTTON, IDC_PROFILE_ADD);
+        HWND profDel = make(L"BUTTON", trw("Remove").c_str(), WS_TABSTOP|BS_PUSHBUTTON, IDC_PROFILE_REMOVE);
 
         HWND test   = make(L"BUTTON", trw("Test Connection").c_str(), WS_TABSTOP|BS_PUSHBUTTON, IDC_TEST);
         HWND status = make(L"STATIC", L"", SS_LEFT|SS_ENDELLIPSIS, IDC_STATUS);
@@ -340,7 +359,7 @@ private:
         const int step  = rowH + s(8);
         const int pad = s(8), gap = s(8);
         int labelW = 0;
-        for (HWND l : { lblUrl, lblUser, lblPass, lblFmt, lblRate, lblLang })
+        for (HWND l : { lblProf, lblUrl, lblUser, lblPass, lblFmt, lblRate, lblLang })
             labelW = (std::max)(labelW, textWidth(l));
         const int x = pad + labelW + gap;
         const int fieldW = s(300), statusW = s(240);
@@ -365,6 +384,12 @@ private:
 
         int y = s(10);
         section(connSection, y);                              y += step;
+        label(lblProf, y);  place(m_profile, x, y, s(200), s(220));
+        {
+            const int addW = fitWidth(profAdd, s, 24, 70), delW = fitWidth(profDel, s, 24, 70);
+            place(profAdd, x + s(200) + gap, y, addW, rowH);
+            place(profDel, x + s(200) + gap + addW + gap, y, delW, rowH);
+        }                                                     y += step;
         label(lblUrl, y);   place(url,  x, y, fieldW, rowH);  y += step;
         label(lblUser, y);  place(user, x, y, fieldW, rowH);  y += step;
         label(lblPass, y);  place(pass, x, y, fieldW, rowH);  y += step;
@@ -392,11 +417,77 @@ private:
         m_minCreditY = y + step + s(4);
 
         loadSettings();
+        loadProfiles();
         m_darkMode.AddDialogWithControls(*this);
         return 0;
     }
 
     void OnHeaders(UINT, int, HWND) { NavidromeHeadersWindow::get().show(); }
+
+    void loadProfiles() {
+        const navidrome::ServerProfileState state = navidrome::currentServerProfiles();
+        m_profile.ResetContent();
+        int active = 0;
+        for (std::size_t i = 0; i < state.profiles.size(); ++i) {
+            m_profile.AddString(u8ToWide(state.profiles[i].name).c_str());
+            if (state.profiles[i].name == state.active) active = static_cast<int>(i);
+        }
+        m_profile.SetCurSel(active);
+        ::EnableWindow(GetDlgItem(IDC_PROFILE_REMOVE), state.profiles.size() > 1);
+    }
+
+    void commitPendingChanges() {
+        if (m_changed) apply();
+    }
+
+    void reloadFields() {
+        loadSettings();
+        m_changed = false;
+        notifyCb();
+    }
+
+    void OnProfileSelected(UINT, int, HWND) {
+        const int sel = m_profile.GetCurSel();
+        if (sel < 0) return;
+        const int len = m_profile.GetLBTextLen(sel);
+        std::wstring name(static_cast<std::size_t>(len) + 1, L'\0');
+        m_profile.GetLBText(sel, &name[0]);
+        name.resize(static_cast<std::size_t>(len));
+        commitPendingChanges();
+        if (navidrome::selectServerProfile(wToU8(name))) {
+            reloadFields();
+            SetDlgItemText(IDC_STATUS, L"");
+        }
+        loadProfiles();
+    }
+
+    void OnProfileAdd(UINT, int, HWND) {
+        std::wstring name;
+        if (!navidrome::win::promptText(*this, trw("Add Server").c_str(),
+                                        trw("Name of the new server:").c_str(), L"", name) ||
+            name.empty())
+            return;
+        commitPendingChanges();
+        navidrome::addNewServerProfile(wToU8(name));
+        reloadFields();
+        loadProfiles();
+        SetDlgItemText(IDC_STATUS, L"");
+        ::SetFocus(GetDlgItem(IDC_URL));
+    }
+
+    void OnProfileRemove(UINT, int, HWND) {
+        const navidrome::ServerProfileState state = navidrome::currentServerProfiles();
+        if (state.profiles.size() < 2) return;
+        const std::wstring prompt = navidrome::win::trfw("Remove the server \"{0}\" and its saved login?",
+                                                         { state.active });
+        if (MessageBoxW(prompt.c_str(), trw("Remove server").c_str(),
+                        MB_ICONWARNING | MB_YESNO | MB_DEFBUTTON2) != IDYES)
+            return;
+        commitPendingChanges();
+        if (navidrome::removeCurrentServerProfile()) reloadFields();
+        loadProfiles();
+        SetDlgItemText(IDC_STATUS, L"");
+    }
 
     void loadSettings() {
         SetDlgItemText(IDC_URL,  pfc::stringcvt::string_wide_from_utf8(navidrome::cfg_server_url.get().c_str()));
@@ -558,7 +649,7 @@ private:
         return 0;
     }
 
-    CComboBox m_format, m_bitrate, m_language;
+    CComboBox m_format, m_bitrate, m_language, m_profile;
     HWND m_credit[2] = {};
     CFont m_sectionFont;
     int  m_minCreditY = 0;

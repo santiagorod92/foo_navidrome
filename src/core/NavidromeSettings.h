@@ -1,6 +1,8 @@
 #pragma once
 
 #include <SDK/cfg_var.h>
+#include "ServerProfiles.h"
+#include <string>
 
 namespace navidrome {
 
@@ -16,5 +18,12 @@ extern cfg_var_modern::cfg_bool cfg_library_filter;
 extern cfg_string cfg_library_ids;
 extern cfg_string cfg_browser_hidden_categories;
 extern cfg_string cfg_ui_language;
+extern cfg_string cfg_server_profiles;
+extern cfg_string cfg_active_server_profile;
+
+ServerProfileState currentServerProfiles();
+bool selectServerProfile(const std::string& name);
+std::string addNewServerProfile(const std::string& wantedName);
+bool removeCurrentServerProfile();
 
 }
