@@ -137,6 +137,11 @@ struct ScanStatus {
     long long count = 0;
 };
 
+struct PendingScrobble {
+    std::string  id;
+    std::int64_t timeMs = 0;
+};
+
 struct SearchResults {
     std::vector<Artist> artists;
     std::vector<Album>  albums;

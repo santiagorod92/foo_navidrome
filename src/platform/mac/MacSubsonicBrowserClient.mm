@@ -1,5 +1,6 @@
 #import "MacSubsonicBrowserClient.h"
 #import "SubsonicClient.h"
+#import "NavidromeBrowserController.h"
 #include "../../core/NavidromeLibraryPlatform.h"
 #include "../../core/CoreBrowserClient.h"
 #include "../../core/NavidromeDebugLog.h"
@@ -33,6 +34,12 @@ std::string navidrome::systemLanguageCode() {
         NSString *lang = NSLocale.preferredLanguages.firstObject;
         return lang ? std::string(lang.UTF8String) : std::string();
     }
+}
+
+void navidrome::serverSettingsChanged() {
+    [SubsonicClient.sharedClient refreshMusicFolders];
+    [NSNotificationCenter.defaultCenter postNotificationName:NavidromeBrowserSectionsDidChangeNotification
+                                                      object:nil];
 }
 
 navidrome::IBrowserClient& navidrome::libraryClient() {

@@ -1,3 +1,21 @@
+## [1.33.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.32.0...v1.33.0) (2026-10-23)
+
+
+### Features
+
+* **browser:** search finds **artists and albums**, not just songs. Results in the Navidrome Browser's search field now come in three groups, **Artists (N)**, **Albums (N)** and **Songs (N)**, already expanded. An artist or album found there expands like it does in the tree (with *Top Songs* and *Similar Artists* under an artist), albums read *Artist — Album* with their year, and Add to Playlist / Play Now on a group queues everything in it. The status line counts all three ("9 artists, 20 albums, 50 songs found"). In Spanish the groups read *Artistas*, *Álbumes* and *Canciones*.
+* **scrobble:** plays that couldn't be reported are **no longer lost**. When the server can't be reached (it's down, the connection dropped, or you're playing an offline copy), the play is saved in `foo_navidrome-scrobbles.tsv` in the foobar2000 profile and sent with the time it was heard once the server answers again: at the next start, or when the next track reports "now playing". Up to 2000 plays are kept, oldest dropped first. A wrong password or server address keeps them too, so fixing the login sends them. The console says how many were sent. Nothing to set up: it follows *Report plays to Navidrome (scrobbling)*.
+* **settings:** **several Navidrome servers**. *Preferences › Tools › Navidrome* has a new **Server:** list with **Add…** and **Remove**: each server keeps its own URL, username, password, custom headers and library selection, and picking one in the list switches to it (open browsers reload). The server you already had shows up under its host name, so nothing needs re-entering. Tracks in your playlists don't record which server they came from: they play from the selected server, so tracks from another server play again once you switch back to it.
+
+
+## [1.32.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.31.2...v1.32.0) (2026-10-23)
+
+
+### Features
+
+* **macOS:** [foo_component_updater_mac](https://github.com/alies-dev/foo_component_updater_mac) can update foo_navidrome straight from its GitHub releases ([#44](https://github.com/santiagorod92/foo_navidrome/issues/44)). The component now names its release source in its `Info.plist`, which the updater trusts over the foobar2000.org catalog. foobar2000 itself ignores it. It works from this release on.
+
+
 ## [1.31.2](https://github.com/santiagorod92/foo_navidrome/compare/v1.31.1...v1.31.2) (2026-10-19)
 
 

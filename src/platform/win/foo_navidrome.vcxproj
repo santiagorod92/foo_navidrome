@@ -214,6 +214,8 @@
     <ClInclude Include="..\..\core\NavidromeSettings.h" />
     <ClInclude Include="..\..\core\NavidromeOfflineCache.h" />
     <ClInclude Include="..\..\core\OfflineCache.h" />
+    <ClInclude Include="..\..\core\ScrobbleQueue.h" />
+    <ClInclude Include="..\..\core\ServerProfiles.h" />
     <ClInclude Include="..\..\core\I18n.h" />
     <ClInclude Include="..\..\core\NavidromeSdkGlue.h" />
     <ClInclude Include="SubsonicClientWin.h" />

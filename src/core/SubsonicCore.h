@@ -123,6 +123,7 @@ public:
                               std::string& outError);
 
     bool scrobble(const std::string& songId, bool submission, std::string& outError);
+    bool submitScrobbles(const std::vector<PendingScrobble>& items, std::string& outError);
 
     std::string authParams() const;
     std::string buildURL(const std::string& endpoint, const std::string& extra = "") const;

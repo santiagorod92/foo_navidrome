@@ -34,6 +34,9 @@ typedef NS_ENUM(NSInteger, NavidromeCategoryKind) {
     NavidromeCategoryAllSongs,
     NavidromeCategoryDecades,
     NavidromeCategoryDecade,
+    NavidromeCategorySearchArtists,
+    NavidromeCategorySearchAlbums,
+    NavidromeCategorySearchSongs,
 };
 
 @interface NavidromeNode : NSObject

@@ -8,14 +8,20 @@ namespace navidrome {
 
 void syncBrowserNodesToPlaylists(const std::vector<BrowserNodePtr>& nodes) {
     std::vector<RatingUpdate> updates;
-    for (const auto& n : nodes) {
-        if (!n || n->type != BrowserNode::Song || n->id.empty()) continue;
-        RatingUpdate u;
-        u.songId  = n->id;
-        u.rating  = n->rating;
-        u.starred = n->starred;
-        updates.push_back(std::move(u));
-    }
+    std::function<void(const std::vector<BrowserNodePtr>&)> walk =
+        [&](const std::vector<BrowserNodePtr>& list) {
+            for (const auto& n : list) {
+                if (!n) continue;
+                if (n->childrenLoaded) walk(n->children);
+                if (n->type != BrowserNode::Song || n->id.empty()) continue;
+                RatingUpdate u;
+                u.songId  = n->id;
+                u.rating  = n->rating;
+                u.starred = n->starred;
+                updates.push_back(std::move(u));
+            }
+        };
+    walk(nodes);
     syncRatingsToPlaylists(std::move(updates));
 }
 
@@ -151,7 +157,7 @@ std::vector<BrowserNodePtr> fetchChildren(IBrowserClient& client,
                     if (start <= 0) break;
                     auto albums = client.getAlbumsByYear(start, start + 9, 0, outError);
                     sortDecadeAlbums(albums);
-                    for (const auto& a : albums) out.push_back(makeDecadeAlbumNode(a));
+                    for (const auto& a : albums) out.push_back(makeCrossArtistAlbumNode(a));
                     break;
                 }
                 case BrowserNode::CatArtistSimilarArtists: {
@@ -315,13 +321,58 @@ std::vector<BrowserNodePtr> fetchRandomMix(IBrowserClient& client, int count,
     return songsToNodes(client.getRandomSongs(count, outError));
 }
 
-std::vector<BrowserNodePtr> searchSongNodes(IBrowserClient& client, const std::string& query,
-                                            std::string& outError) {
+namespace {
+
+BrowserNodePtr searchGroupNode(BrowserNode::CategoryKind kind, const char* title,
+                               std::vector<BrowserNodePtr> children) {
+    auto n = std::make_shared<BrowserNode>();
+    n->type           = BrowserNode::Category;
+    n->category       = kind;
+    n->displayName    = trf(title, { std::to_string(children.size()) });
+    n->children       = std::move(children);
+    n->childrenLoaded = true;
+    return n;
+}
+
+std::size_t groupSize(const std::vector<BrowserNodePtr>& groups, BrowserNode::CategoryKind kind) {
+    for (const auto& g : groups)
+        if (g && g->type == BrowserNode::Category && g->category == kind) return g->children.size();
+    return 0;
+}
+
+}
+
+std::vector<BrowserNodePtr> searchNodes(IBrowserClient& client, const std::string& query,
+                                        std::string& outError) {
     outError.clear();
     if (!isSearchQuery(query)) return {};
     SearchResults r = client.search(query, outError);
     if (!r.songs.empty() || !r.artists.empty() || !r.albums.empty()) outError.clear();
-    return songsToNodes(r.songs);
+
+    std::vector<BrowserNodePtr> groups;
+    if (!r.artists.empty()) {
+        std::vector<BrowserNodePtr> artists;
+        for (const auto& a : r.artists) artists.push_back(makeArtistNode(a));
+        groups.push_back(searchGroupNode(BrowserNode::CatSearchArtists, N_("Artists ({0})"),
+                                         std::move(artists)));
+    }
+    if (!r.albums.empty()) {
+        std::vector<BrowserNodePtr> albums;
+        for (const auto& a : r.albums) albums.push_back(makeCrossArtistAlbumNode(a));
+        groups.push_back(searchGroupNode(BrowserNode::CatSearchAlbums, N_("Albums ({0})"),
+                                         std::move(albums)));
+    }
+    if (!r.songs.empty())
+        groups.push_back(searchGroupNode(BrowserNode::CatSearchSongs, N_("Songs ({0})"),
+                                         songsToNodes(r.songs)));
+    return groups;
+}
+
+std::string searchSummary(const std::vector<BrowserNodePtr>& groups) {
+    return trf("{0} artists, {1} albums, {2} songs found",
+               { std::to_string(groupSize(groups, BrowserNode::CatSearchArtists)),
+                 std::to_string(groupSize(groups, BrowserNode::CatSearchAlbums)),
+                 std::to_string(groupSize(groups, BrowserNode::CatSearchSongs)) });
 }
 
 bool listLibraryAlbums(IBrowserClient& client, const std::function<bool()>& aborted,

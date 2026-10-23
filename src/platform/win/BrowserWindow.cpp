@@ -420,9 +420,13 @@ void BrowserWindow::populateSearchResults(LoadedPayload* payload) {
         NAVIDROME_TIMER("UI", "populateSearchResults " + std::to_string(m_searchResultNodes.size()) + " rows");
         TreeRebuild rebuild(*this);
         clearTree();
-        for (auto& n : m_searchResultNodes) insertNode(TVI_ROOT, n);
+        for (auto& group : m_searchResultNodes) {
+            HTREEITEM hGroup = insertNode(TVI_ROOT, group);
+            for (auto& n : group->children) insertNode(hGroup, n);
+            m_tree.Expand(hGroup, TVE_EXPAND);
+        }
     }
-    setStatus(trf("{0} songs found", { std::to_string(m_searchResultNodes.size()) }));
+    setStatus(navidrome::searchSummary(m_searchResultNodes));
 }
 
 void BrowserWindow::restoreBrowseTree() {

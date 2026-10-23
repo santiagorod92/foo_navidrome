@@ -626,7 +626,7 @@ void BrowserWindow::OnTimer(UINT_PTR id) {
     std::uint64_t generation = m_searchGeneration;
     std::thread([this, query, generation]() {
         auto* payload = new LoadedPayload{};
-        payload->nodes      = navidrome::searchSongNodes(navidrome::libraryClient(), query, payload->error);
+        payload->nodes      = navidrome::searchNodes(navidrome::libraryClient(), query, payload->error);
         payload->generation = generation;
         syncBrowserNodesToPlaylists(payload->nodes);
         if (!PostMessage(WM_NAVIDROME_SEARCH, reinterpret_cast<WPARAM>(payload), 0))

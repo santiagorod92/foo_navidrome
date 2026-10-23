@@ -36,6 +36,9 @@ struct BrowserNode {
         CatAllSongs,
         CatDecades,
         CatDecade,
+        CatSearchArtists,
+        CatSearchAlbums,
+        CatSearchSongs,
     };
 
     Type         type       = Loading;
@@ -252,7 +255,7 @@ inline BrowserNodePtr makeDecadeNode(int startYear) {
     return n;
 }
 
-inline BrowserNodePtr makeDecadeAlbumNode(const Album& a) {
+inline BrowserNodePtr makeCrossArtistAlbumNode(const Album& a) {
     auto n = makeAlbumNode(a);
     if (!a.artist.empty()) n->displayName = a.artist + " \u2014 " + a.name;
     n->subtitle.clear();
@@ -627,8 +630,10 @@ constexpr std::size_t kMinSearchQueryLength = 2;
 
 inline bool isSearchQuery(const std::string& query) { return query.size() >= kMinSearchQueryLength; }
 
-std::vector<BrowserNodePtr> searchSongNodes(IBrowserClient& client, const std::string& query,
-                                            std::string& outError);
+std::vector<BrowserNodePtr> searchNodes(IBrowserClient& client, const std::string& query,
+                                        std::string& outError);
+
+std::string searchSummary(const std::vector<BrowserNodePtr>& groups);
 
 bool listLibraryAlbums(IBrowserClient& client, const std::function<bool()>& aborted,
                        const std::function<void(const Album&)>& onAlbum, std::string& outError);

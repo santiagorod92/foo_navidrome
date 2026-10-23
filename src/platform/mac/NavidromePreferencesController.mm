@@ -138,6 +138,9 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
 @end
 
 @interface NavidromePreferencesController ()
+@property (nonatomic, strong) NSPopUpButton      *profilePopup;
+@property (nonatomic, strong) NSButton           *profileAddButton;
+@property (nonatomic, strong) NSButton           *profileRemoveButton;
 @property (nonatomic, strong) NSTextField        *serverField;
 @property (nonatomic, strong) NSTextField        *usernameField;
 @property (nonatomic, strong) NSSecureTextField  *passwordField;
@@ -189,6 +192,7 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
         return f;
     };
 
+    NSTextField *lProfile  = makeLabel(NDTr("Server:"));
     NSTextField *lServer   = makeLabel(NDTr("Server URL:"));
     NSTextField *lUser     = makeLabel(NDTr("Username:"));
     NSTextField *lPassword = makeLabel(NDTr("Password:"));
@@ -196,6 +200,24 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
     _serverField   = makeField(@"http://localhost:4533/");
     _usernameField = makeField(@"admin");
     _passwordField = makeSecure(@"••••••");
+
+    _profilePopup = [[NSPopUpButton alloc] init];
+    _profilePopup.translatesAutoresizingMaskIntoConstraints = NO;
+    _profilePopup.target = self;
+    _profilePopup.action = @selector(profileSelected:);
+    [root addSubview:_profilePopup];
+
+    _profileAddButton = [NSButton buttonWithTitle:NDTr("Add…")
+                                           target:self
+                                           action:@selector(addProfile:)];
+    _profileAddButton.translatesAutoresizingMaskIntoConstraints = NO;
+    [root addSubview:_profileAddButton];
+
+    _profileRemoveButton = [NSButton buttonWithTitle:NDTr("Remove")
+                                              target:self
+                                              action:@selector(removeProfile:)];
+    _profileRemoveButton.translatesAutoresizingMaskIntoConstraints = NO;
+    [root addSubview:_profileRemoveButton];
 
     _testButton = [NSButton buttonWithTitle:NDTr("Test Connection")
                                      target:self
@@ -349,11 +371,24 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
         [connLine.leadingAnchor constraintEqualToAnchor:connSection.trailingAnchor constant:8],
         [connLine.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-pad],
 
+        [lProfile.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:pad],
+        [lProfile.widthAnchor constraintEqualToConstant:labelW],
+        [lProfile.centerYAnchor constraintEqualToAnchor:_profilePopup.centerYAnchor],
+
+        [_profilePopup.topAnchor constraintEqualToAnchor:connSection.bottomAnchor constant:vGap],
+        [_profilePopup.leadingAnchor constraintEqualToAnchor:lProfile.trailingAnchor constant:8],
+        [_profilePopup.widthAnchor constraintGreaterThanOrEqualToConstant:180],
+        [_profileAddButton.centerYAnchor constraintEqualToAnchor:_profilePopup.centerYAnchor],
+        [_profileAddButton.leadingAnchor constraintEqualToAnchor:_profilePopup.trailingAnchor constant:8],
+        [_profileRemoveButton.centerYAnchor constraintEqualToAnchor:_profilePopup.centerYAnchor],
+        [_profileRemoveButton.leadingAnchor constraintEqualToAnchor:_profileAddButton.trailingAnchor constant:4],
+        [_profileRemoveButton.trailingAnchor constraintLessThanOrEqualToAnchor:root.trailingAnchor constant:-pad],
+
         [lServer.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:pad],
         [lServer.widthAnchor constraintEqualToConstant:labelW],
         [lServer.centerYAnchor constraintEqualToAnchor:_serverField.centerYAnchor],
 
-        [_serverField.topAnchor constraintEqualToAnchor:connSection.bottomAnchor constant:vGap],
+        [_serverField.topAnchor constraintEqualToAnchor:_profilePopup.bottomAnchor constant:vGap],
         [_serverField.leadingAnchor constraintEqualToAnchor:lServer.trailingAnchor constant:8],
         [_serverField.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-pad],
         [_serverField.heightAnchor constraintEqualToConstant:fieldH],
@@ -469,6 +504,52 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
 - (void)viewDidLoad {
     [super viewDidLoad];
     [self loadSettings];
+    [self loadProfiles];
+}
+
+- (void)loadProfiles {
+    const navidrome::ServerProfileState state = navidrome::currentServerProfiles();
+    [_profilePopup removeAllItems];
+    for (const auto &p : state.profiles)
+        [_profilePopup addItemWithTitle:@(p.name.c_str())];
+    [_profilePopup selectItemWithTitle:@(state.active.c_str())];
+    _profileRemoveButton.enabled = state.profiles.size() > 1;
+}
+
+- (void)serverProfileChanged {
+    [self loadSettings];
+    [self loadProfiles];
+    _statusLabel.stringValue = @"";
+}
+
+- (IBAction)profileSelected:(id)sender {
+    NSString *title = _profilePopup.titleOfSelectedItem;
+    if (!title) return;
+    if (navidrome::selectServerProfile(NDStd(title))) [self serverProfileChanged];
+    else [self loadProfiles];
+}
+
+- (IBAction)addProfile:(id)sender {
+    std::string name;
+    if (!navidrome::promptForText(navidrome::tr("Add Server"), navidrome::tr("Name of the new server:"), name) ||
+        name.empty())
+        return;
+    navidrome::addNewServerProfile(name);
+    [self serverProfileChanged];
+    [self.view.window makeFirstResponder:_serverField];
+}
+
+- (IBAction)removeProfile:(id)sender {
+    const navidrome::ServerProfileState state = navidrome::currentServerProfiles();
+    if (state.profiles.size() < 2) return;
+    NSAlert *confirm = [[NSAlert alloc] init];
+    confirm.messageText = NDTrf("Remove the server “{0}” and its saved login?", { state.active });
+    confirm.alertStyle = NSAlertStyleWarning;
+    [confirm addButtonWithTitle:NDTr("Remove")];
+    [confirm addButtonWithTitle:NDTr("Cancel")];
+    if ([confirm runModal] != NSAlertFirstButtonReturn) return;
+    navidrome::removeCurrentServerProfile();
+    [self serverProfileChanged];
 }
 
 - (void)loadSettings {
