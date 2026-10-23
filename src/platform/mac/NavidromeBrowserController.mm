@@ -67,7 +67,10 @@ navidrome::IBrowserClient& NBCBrowserClient() {
     n.infoText    = c.infoText.empty()   ? nil : @(c.infoText.c_str());
     n.tags        = c.tags;
     n.childrenLoaded = c.childrenLoaded;
-    n.children    = [NSMutableArray array];
+    n.children    = [NSMutableArray arrayWithCapacity:c.children.size()];
+    if (c.childrenLoaded)
+        for (const auto &child : c.children)
+            if (child) [n.children addObject:[NavidromeNode wrapCoreNode:*child]];
     return n;
 }
 
@@ -522,7 +525,7 @@ NSNotificationName const NavidromeBrowserSectionsDidChangeNotification =
 
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         std::string err;
-        auto nodes = navidrome::searchSongNodes(NBCBrowserClient(), queryUtf8, err);
+        auto nodes = navidrome::searchNodes(NBCBrowserClient(), queryUtf8, err);
         navidrome::syncBrowserNodesToPlaylists(nodes);
         dispatch_async(dispatch_get_main_queue(), ^{
             if (generation != self->_searchGeneration) return;
@@ -539,9 +542,11 @@ NSNotificationName const NavidromeBrowserSectionsDidChangeNotification =
             for (const auto &n : nodes)
                 [self->_filteredNodes addObject:[NavidromeNode wrapCoreNode:*n]];
 
-            self->_statusLabel.stringValue = NDTrf("{0} songs found", { std::to_string(nodes.size()) });
+            self->_statusLabel.stringValue = @(navidrome::searchSummary(nodes).c_str());
 
             [self->_outlineView reloadData];
+            for (NavidromeNode *group in self->_filteredNodes)
+                [self->_outlineView expandItem:group];
         });
     });
 }

@@ -38,7 +38,7 @@ A [foobar2000](https://www.foobar2000.org/) component that lets you browse and s
 - **Artist Info** from the right-click menu on an artist row — shows the last.fm biography and a link to the full page (`getArtistInfo2.view`)
 - Every artist has **Top Songs** and **Similar Artists** child nodes, so you can browse an artist's most popular tracks or jump straight to related artists without leaving the tree (`getTopSongs.view`, `getArtistInfo2.view`)
 - Double-click a song to play it immediately (replaces the active playlist, like Play Now)
-- Live search across artists, albums and songs — results update as you type (debounced, no per-keystroke server hammering). Clear it with the **×** beside the field or **Esc** to get the full tree back
+- Live search across artists, albums and songs — results update as you type (debounced, no per-keystroke server hammering), grouped under **Artists**, **Albums** and **Songs**: an artist or album found there expands like it does in the tree, and Play Now / Add to Playlist on a group queues everything in it. Clear it with the **×** beside the field or **Esc** to get the full tree back
 - **Rescan** button (*Rescan Navidrome Library* section of Preferences › Tools › Navidrome) — triggers a server-side scan and shows live progress, for when files were added/removed server-side and you don't want to wait for Navidrome's own scan schedule
 - Album artwork displayed in Now Playing and playlists (fetched from Navidrome)
 - Credentials saved in foobar2000's config (persistent across restarts)

@@ -369,32 +369,83 @@ TEST_CASE(testBrowserFetchDispatch) {
               navidrome::g_lastRatingSync[0].rating == 4 &&
               navidrome::g_lastRatingSync[0].starred,
               "syncBrowserNodesToPlaylists forwards only id-bearing Song nodes");
+
+        FakeBrowserClient fc;
+        navidrome::Song s3; s3.id = "s3";
+        fc.searchSongs = { s3 };
+        std::string err;
+        navidrome::g_lastRatingSync.clear();
+        navidrome::syncBrowserNodesToPlaylists(navidrome::searchNodes(fc, "abc", err));
+        check(navidrome::g_lastRatingSync.size() == 1 && navidrome::g_lastRatingSync[0].songId == "s3",
+              "syncBrowserNodesToPlaylists reaches the songs inside a loaded search group");
     }
 }
 
-TEST_CASE(testSearchSongNodes) {
+TEST_CASE(testSearchNodes) {
     {
         FakeBrowserClient fc;
         navidrome::Song s; s.id = "s1"; s.title = "Thunderstruck"; s.artist = "AC/DC";
         fc.searchSongs = { s };
         std::string err;
-        check(navidrome::searchSongNodes(fc, "t", err).empty() && fc.calls.empty(),
+        check(navidrome::searchNodes(fc, "t", err).empty() && fc.calls.empty(),
               "a one-character query sends no search");
-        auto nodes = navidrome::searchSongNodes(fc, "th", err);
-        check(err.empty() && nodes.size() == 1 && nodes[0]->id == "s1" &&
-              nodes[0]->displayName == "Thunderstruck",
-              "search results become song nodes titled by the song title alone");
+        auto groups = navidrome::searchNodes(fc, "th", err);
+        check(err.empty() && groups.size() == 1 &&
+              groups[0]->category == navidrome::BrowserNode::CatSearchSongs &&
+              groups[0]->displayName == "Songs (1)" && groups[0]->childrenLoaded,
+              "only non-empty groups are returned, already loaded and titled with their count");
+        check(groups[0]->children.size() == 1 && groups[0]->children[0]->id == "s1" &&
+              groups[0]->children[0]->displayName == "Thunderstruck",
+              "song results are song nodes titled by the song title alone");
+    }
+    {
+        FakeBrowserClient fc;
+        navidrome::Artist ar; ar.id = "ar1"; ar.name = "AC/DC";
+        navidrome::Album al; al.id = "al1"; al.name = "Back in Black"; al.artist = "AC/DC"; al.year = 1980;
+        navidrome::Song s; s.id = "s1"; s.title = "Hells Bells";
+        fc.searchArtists = { ar };
+        fc.searchAlbums = { al, al };
+        fc.searchSongs = { s };
+        std::string err;
+        auto groups = navidrome::searchNodes(fc, "acdc", err);
+        check(groups.size() == 3 &&
+              groups[0]->category == navidrome::BrowserNode::CatSearchArtists &&
+              groups[1]->category == navidrome::BrowserNode::CatSearchAlbums &&
+              groups[2]->category == navidrome::BrowserNode::CatSearchSongs,
+              "groups come artists, albums, songs");
+        check(groups[0]->children[0]->type == navidrome::BrowserNode::Artist &&
+              groups[0]->children[0]->id == "ar1" && !groups[0]->children[0]->childrenLoaded,
+              "an artist result is a regular, lazily expanded artist node");
+        check(groups[1]->children[0]->type == navidrome::BrowserNode::Album &&
+              groups[1]->children[0]->displayName == "AC/DC \u2014 Back in Black" &&
+              groups[1]->children[0]->infoText == "1980",
+              "an album result names its artist, since the list spans artists");
+        check(navidrome::searchSummary(groups) == "1 artists, 2 albums, 1 songs found",
+              "the summary counts every group");
+        check(!navidrome::isLeaf(*groups[0]), "a search group expands");
     }
     {
         FakeBrowserClient fc;
         fc.searchError = "boom";
         std::string err;
-        check(navidrome::searchSongNodes(fc, "abc", err).empty() && err == "boom",
+        check(navidrome::searchNodes(fc, "abc", err).empty() && err == "boom",
               "an empty search with a server error reports the error");
         navidrome::Song s; s.id = "s2";
         fc.searchSongs = { s };
-        check(navidrome::searchSongNodes(fc, "abc", err).size() == 1 && err.empty(),
+        check(navidrome::searchNodes(fc, "abc", err).size() == 1 && err.empty(),
               "a partial answer with an error keeps the rows and drops the error");
+    }
+    {
+        FakeBrowserClient fc;
+        navidrome::Song s1; s1.id = "s1";
+        navidrome::Song s2; s2.id = "s2";
+        fc.searchSongs = { s1, s2 };
+        std::string err;
+        auto groups = navidrome::searchNodes(fc, "abc", err);
+        std::vector<navidrome::BrowserNodePtr> out;
+        navidrome::collectSongsDeep(fc, groups[0], out, &err);
+        check(out.size() == 2 && fc.calls.size() == 1,
+              "playing a search group queues its loaded songs with no further request");
     }
 }
 

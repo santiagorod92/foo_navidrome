@@ -56,14 +56,14 @@ TEST_CASE(testDecadeHelpers) {
           "a decade node is an expandable category keyed by its first year");
 
     navidrome::Album a; a.id = "al1"; a.name = "Highway to Hell"; a.artist = "AC/DC"; a.year = 1979;
-    auto n = navidrome::makeDecadeAlbumNode(a);
+    auto n = navidrome::makeCrossArtistAlbumNode(a);
     check(n->type == BrowserNode::Album && n->id == "al1" &&
           n->displayName == "AC/DC \u2014 Highway to Hell" && n->subtitle.empty() && n->infoText == "1979",
           "a decade album row names the artist and shows the year");
     check(navidrome::singleColumnLabel(*n) == "AC/DC \u2014 Highway to Hell  1979",
           "the single-column (Windows) label carries artist, album and year");
     navidrome::Album noYear; noYear.id = "al2"; noYear.name = "Untitled";
-    auto u = navidrome::makeDecadeAlbumNode(noYear);
+    auto u = navidrome::makeCrossArtistAlbumNode(noYear);
     check(u->displayName == "Untitled" && u->infoText.empty(), "no artist and no year leave the name alone");
 
     std::vector<navidrome::Album> al(4);
