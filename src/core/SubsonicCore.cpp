@@ -1040,4 +1040,17 @@ bool SubsonicCore::scrobble(const std::string& songId, bool submission, std::str
     if (body.empty()) return false;
     return !checkResponse(body, outError).isNull();
 }
+
+bool SubsonicCore::submitScrobbles(const std::vector<PendingScrobble>& items, std::string& outError) {
+    std::string params;
+    for (const auto& p : items) {
+        if (p.id.empty()) continue;
+        params += "id=" + enc(p.id) + "&time=" + std::to_string(p.timeMs) + "&";
+    }
+    if (params.empty()) return true;
+    params += "submission=true";
+    std::string body = httpGet(buildURL("scrobble.view", params), outError);
+    if (body.empty()) return false;
+    return !checkResponse(body, outError).isNull();
+}
 }

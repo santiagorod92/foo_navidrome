@@ -302,6 +302,8 @@ const std::vector<std::pair<const char*, const char*>>& spanishTable() {
           "Navidrome: la pista actual no es de Navidrome" },
         { "Navidrome: failed to save bookmark: {0}",
           "Navidrome: no se pudo guardar el marcador: {0}" },
+        { "Navidrome: submitted {0} scrobble(s) saved while the server couldn't be reached",
+          "Navidrome: se enviaron {0} scrobble(s) guardados mientras no se podía contactar al servidor" },
         { "Navidrome: no track is currently playing",
           "Navidrome: no se está reproduciendo ninguna pista" },
         { "Navidrome: refreshed ratings from {0} album(s)",

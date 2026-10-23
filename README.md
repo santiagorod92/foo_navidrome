@@ -16,7 +16,7 @@ A [foobar2000](https://www.foobar2000.org/) component that lets you browse and s
 - **Multi-select** on both platforms: Ctrl+click to add/remove rows, Shift+click (or Shift+arrows) for a range, then Add / Play / any right-click action applies to all of them. Tracks that two selected rows share (an artist and one of its albums) are queued once
 - **Smart lists** at the top of the tree: ★ Starred, Recently Added, Most Played, Recently Played, Random Albums, 🔀 **Random Mix** (a fresh batch of random tracks), **Genres**, and your **server-side playlists**
 - **Decades**: expand it for one entry per decade your library spans (2020s, 2010s, … down to your oldest album); expand a decade for every album released in it, band by band (sorted by artist, then year), shown as *Artist — Album* with the year. Add / Play on a decade queues all of it. Albums without a year aren't listed; the library filter applies
-- **Scrobbling**: plays are reported back to Navidrome, so play counts, "Recently Played" and any Last.fm / ListenBrainz relay the server has configured stay in sync (toggle in Preferences)
+- **Scrobbling**: plays are reported back to Navidrome, so play counts, "Recently Played" and any Last.fm / ListenBrainz relay the server has configured stay in sync (toggle in Preferences). A play that can't be reported because the server is unreachable is kept and sent, with its original time, once the server answers again
 - **Favorites and ratings** from the right-click menu — Star / Unstar and a 0-5 star rating, stored per-user on the server so they show up in the web UI and on your phone, and available in the playlist as `%navidrome_rating%` / `%navidrome_starred%` for a custom column. Also available straight from **the playlist's own right-click menu** (rate/star a track without going back to the browser), and kept in sync in already-added playlist entries — see [Showing ratings in the playlist](#showing-ratings-in-the-playlist)
 - **Manage server playlists** from the right-click menu — add the selection to any existing playlist or a **New Playlist…**, remove tracks, rename, delete. Changes land on the server, so they show up everywhere
 - **Send Active Playlist to Navidrome** from the right-click menu — uploads the active foobar2000 playlist under the same name
@@ -355,7 +355,11 @@ stored on the server.
 Plays are reported to the server as you listen (`scrobble.view`): "now playing"
 when a track starts, then a play once half of it — or four minutes, whichever
 comes first — has been heard. Turn it off with **Report plays to Navidrome
-(scrobbling)** in *Preferences › Tools › Navidrome*.
+(scrobbling)** in *Preferences › Tools › Navidrome*. When the server can't be
+reached, the play is saved in `foo_navidrome-scrobbles.tsv` in the foobar2000
+profile (up to 2000 plays, oldest dropped first) and sent with the time it was
+heard once the server answers again: at the next start, or when the next track
+reports "now playing".
 
 Tracks land in the playlist as `navidrome://track/<id>?...` URIs. The component resolves these to the current HTTP stream when playback starts, so your playlists keep working if you change credentials or move the server.
 
@@ -385,8 +389,8 @@ parts:
   1024) caps this part; the oldest files go first, and the two newest are always
   kept. Turning prefetch off empties it at the next start.
 
-Playback, ratings and scrobbling still need the server: an offline track plays,
-but its play report is lost while the server is unreachable. *Copy Diagnostics*
+Ratings still need the server. Plays of an offline track are reported once the
+server is reachable again (see scrobbling above). *Copy Diagnostics*
 reports how many files each part holds and their size.
 
 #### Language
