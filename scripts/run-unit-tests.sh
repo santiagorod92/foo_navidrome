@@ -10,7 +10,7 @@ SRC=("$ROOT"/tests/*.cpp \
      "$ROOT/src/core/SubsonicCore.cpp" \
      "$ROOT/src/core/OfflineCache.cpp" \
      "$ROOT/src/core/I18n.cpp" \
-     "$ROOT/src/core/I18nSpanish.cpp")
+     "$ROOT/src/core/I18nTable.cpp")
 
 if [ "$MODE" = "auto" ]; then
   case "$(uname -s)" in

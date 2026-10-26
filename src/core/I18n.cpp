@@ -14,32 +14,39 @@ constexpr int kUnresolved = -1;
 std::atomic<int>      g_language{ kUnresolved };
 std::atomic<Resolver> g_resolver{ nullptr };
 
-const std::unordered_map<std::string_view, const char*>& spanishMap() {
+const std::unordered_map<std::string_view, const Translation*>& translationMap() {
     static const auto map = [] {
-        std::unordered_map<std::string_view, const char*> m;
-        for (const auto& [en, es] : spanishTable()) m.emplace(en, es);
+        std::unordered_map<std::string_view, const Translation*> m;
+        for (const auto& row : translationTable()) m.emplace(row.english, &row);
         return m;
     }();
     return map;
 }
 
+const LanguageInfo* findLanguage(std::string_view code) {
+    for (const auto& info : kLanguages)
+        if (code == info.code) return &info;
+    return nullptr;
+}
+
 }
 
 Language parseLanguageCode(const std::string& code) {
-    if (code.size() >= 2 && std::tolower(static_cast<unsigned char>(code[0])) == 'e'
-        && std::tolower(static_cast<unsigned char>(code[1])) == 's'
-        && (code.size() == 2 || code[2] == '-' || code[2] == '_' || code[2] == '.'))
-        return Language::Spanish;
-    return Language::English;
+    std::string primary;
+    for (char c : code) {
+        if (c == '-' || c == '_' || c == '.' || c == '@') break;
+        primary.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+    }
+    const LanguageInfo* info = findLanguage(primary);
+    return info ? info->lang : Language::English;
 }
 
 const char* languageCode(Language lang) {
-    return lang == Language::Spanish ? "es" : "en";
+    return kLanguages[static_cast<std::size_t>(lang)].code;
 }
 
 Language resolveLanguage(const std::string& setting, const std::string& systemCode) {
-    if (setting == "en") return Language::English;
-    if (setting == "es") return Language::Spanish;
+    if (const LanguageInfo* info = findLanguage(setting)) return info->lang;
     return parseLanguageCode(systemCode);
 }
 
@@ -57,12 +64,16 @@ Language language() {
     return static_cast<Language>(lang);
 }
 
-const char* tr(const char* english) {
-    if (!english || language() == Language::English) return english;
-    const auto& map = spanishMap();
+const char* translate(const char* english, Language lang) {
+    if (!english || lang == Language::English) return english;
+    const auto& map = translationMap();
     const auto it = map.find(english);
-    return it == map.end() ? english : it->second;
+    if (it == map.end()) return english;
+    const char* text = it->second->text[static_cast<std::size_t>(lang) - 1];
+    return text && *text ? text : english;
 }
+
+const char* tr(const char* english) { return translate(english, language()); }
 
 std::string tr(const std::string& english) { return tr(english.c_str()); }
 
@@ -85,11 +96,11 @@ std::string substitute(const std::string& pattern, std::initializer_list<std::st
 }
 
 const std::vector<LanguageOption>& languageOptions() {
-    static const std::vector<LanguageOption> k = {
-        { N_("Automatic (system language)"), "" },
-        { "English",                     "en" },
-        { "Español",                     "es" },
-    };
+    static const std::vector<LanguageOption> k = [] {
+        std::vector<LanguageOption> v{ { N_("Automatic (system language)"), "" } };
+        for (const auto& info : kLanguages) v.push_back({ info.nativeName, info.code });
+        return v;
+    }();
     return k;
 }
 

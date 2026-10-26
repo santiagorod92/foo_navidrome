@@ -20,8 +20,8 @@ help:
 	@echo "  mac-test              native clang++ build/run of the SAME test suite (macOS)"
 	@echo "  mac-test-clean        same, forcing a clean recompile"
 	@echo "  mac-syntax            compile-check the shared SDK glue + macOS .mm sources against the SDK, no Xcode needed (ARGS=files)"
-	@echo "  i18n-check            every tr()/NDTr()/trw() string has a Spanish entry (also run by both test targets)"
-	@echo "  i18n-missing          print the UI strings that still lack a Spanish translation"
+	@echo "  i18n-check            every tr()/NDTr()/trw() string is translated into every language (also run by both test targets)"
+	@echo "  i18n-missing          print the UI strings missing a translation (ARGS=<code> for one language)"
 	@echo ""
 	@echo "  win-build             cross-compile Windows x64 component locally (win-build-local.sh, no version bump)"
 	@echo "  win-build-x86         cross-compile the 32-bit (x86) DLL -> build-win-x86/ + _win-x86.fb2k-component"
@@ -115,7 +115,7 @@ i18n-check:
 	python3 scripts/i18n-check.py
 
 i18n-missing:
-	python3 scripts/i18n-check.py --missing
+	python3 scripts/i18n-check.py --missing $(ARGS)
 
 mac-test-clean:
 	rm -rf $(BUILD_MAC)/tests

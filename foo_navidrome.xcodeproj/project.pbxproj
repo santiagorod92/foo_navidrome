@@ -41,7 +41,7 @@
 		FE0BADD00000000000000002 /* NavidromeOfflineCache.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADD00000000000000001 /* NavidromeOfflineCache.cpp */; };
 		FE0BADD10000000000000002 /* OfflineCache.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADD10000000000000001 /* OfflineCache.cpp */; };
 		FE0BADD20000000000000002 /* I18n.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADD20000000000000001 /* I18n.cpp */; };
-		FE0BADD30000000000000002 /* I18nSpanish.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADD30000000000000001 /* I18nSpanish.cpp */; };
+		FE0BADD30000000000000002 /* I18nTable.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADD30000000000000001 /* I18nTable.cpp */; };
 		FE0BADCC0000000000000002 /* NavidromeServices.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADCC0000000000000001 /* NavidromeServices.cpp */; };
 /* End PBXBuildFile section */
 
@@ -93,7 +93,7 @@
 		FE0BADD00000000000000001 /* NavidromeOfflineCache.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = NavidromeOfflineCache.cpp; sourceTree = "<group>"; };
 		FE0BADD10000000000000001 /* OfflineCache.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = OfflineCache.cpp; sourceTree = "<group>"; };
 		FE0BADD20000000000000001 /* I18n.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = I18n.cpp; sourceTree = "<group>"; };
-		FE0BADD30000000000000001 /* I18nSpanish.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = I18nSpanish.cpp; sourceTree = "<group>"; };
+		FE0BADD30000000000000001 /* I18nTable.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = I18nTable.cpp; sourceTree = "<group>"; };
 		FE0BADCC0000000000000001 /* NavidromeServices.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = NavidromeServices.cpp; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -179,7 +179,7 @@
 				FE0BADD00000000000000001 /* NavidromeOfflineCache.cpp */,
 				FE0BADD10000000000000001 /* OfflineCache.cpp */,
 				FE0BADD20000000000000001 /* I18n.cpp */,
-				FE0BADD30000000000000001 /* I18nSpanish.cpp */,
+				FE0BADD30000000000000001 /* I18nTable.cpp */,
 				FE0BADCA0000000000000001 /* NavidromeAudioMuse.cpp */,
 				FE0BADC90000000000000001 /* NavidromeMenus.cpp */,
 				FE0BADC80000000000000001 /* NavidromeBrowserEnqueue.cpp */,
@@ -310,7 +310,7 @@
 				FE0BADD00000000000000002 /* NavidromeOfflineCache.cpp in Sources */,
 				FE0BADD10000000000000002 /* OfflineCache.cpp in Sources */,
 				FE0BADD20000000000000002 /* I18n.cpp in Sources */,
-				FE0BADD30000000000000002 /* I18nSpanish.cpp in Sources */,
+				FE0BADD30000000000000002 /* I18nTable.cpp in Sources */,
 				FE0BADCA0000000000000002 /* NavidromeAudioMuse.cpp in Sources */,
 				FE0BADC90000000000000002 /* NavidromeMenus.cpp in Sources */,
 				FE0BADC80000000000000002 /* NavidromeBrowserEnqueue.cpp in Sources */,

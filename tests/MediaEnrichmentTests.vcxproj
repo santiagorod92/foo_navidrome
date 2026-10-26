@@ -36,7 +36,7 @@
     <ClCompile Include="..\src\core\SubsonicCore.cpp" />
     <ClCompile Include="..\src\core\OfflineCache.cpp" />
     <ClCompile Include="..\src\core\I18n.cpp" />
-    <ClCompile Include="..\src\core\I18nSpanish.cpp" />
+    <ClCompile Include="..\src\core\I18nTable.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>
