@@ -26,9 +26,10 @@ Scenarios (one implementation each, run on any platform that supports it)
                         installed, the panel added to its layout via Live layout editing)
   prefs [PAGE]          wine, win11: Preferences on one of our pages, screenshot
                         (main | audiomuse | libraries | sections | radio | media | components)
-  i18n [ARTIFACT]       run in Spanish for once (UI language "es", restored after): assert the
-                        session banner says ui=es, open the browser through its Spanish menu
-                        command and window title, screenshot
+  i18n [LANG] [ARTIFACT]  run in another language for once (LANG = es, pt, zh, ja, fr, de, ru;
+                        default es; restored after): assert the session banner says ui=LANG,
+                        open the browser through its translated menu command and window title,
+                        screenshot
   offline [ARTIFACT]    wine, win11: prefetch on (restored after), play an album, assert the next
                         track is downloaded into the cache, Playback > Next, assert it plays from
                         the offline copy (needs the Default or Repeat (playlist) playback order)
@@ -92,11 +93,11 @@ run_cleanups() {
   for (( i = ${#CLEANUPS[@]} - 1; i >= 0; i-- )); do eval "${CLEANUPS[$i]}" >/dev/null 2>&1 || true; done
 }
 
+i18n_tr() { python3 "$REPO/scripts/i18n-check.py" --tr "$UI_LANG" "$1"; }
 ui_strings() {
-  case "$UI_LANG" in
-    es) BROWSER_TITLE='Navegador de Navidrome'; OPEN_CMD='Abrir el Navegador de Navidrome'; OPEN_PREFIX='Abrir el N' ;;
-    *)  BROWSER_TITLE='Navidrome Browser';      OPEN_CMD='Open Navidrome Browser';           OPEN_PREFIX='Open N' ;;
-  esac
+  BROWSER_TITLE="$(i18n_tr 'Navidrome Browser')"
+  OPEN_CMD="$(i18n_tr 'Open Navidrome Browser')"
+  OPEN_PREFIX="${OPEN_CMD:0:10}"
 }
 ui_strings
 
@@ -619,12 +620,12 @@ scenario_cui() {
 scenario_prefs() { d prefs "${1:-main}"; }
 
 scenario_i18n() {
-  UI_LANG=es; ui_strings
-  d deploy "${1:-}"
+  UI_LANG="${1:-es}"; ui_strings
+  d deploy "${2:-}"
   restart
-  expect 'NOTE +Env .*ui=es' 5 "the component runs in Spanish"
+  expect "NOTE +Env .*ui=$UI_LANG" 5 "the component runs in $UI_LANG"
   open_browser
-  d shot "$SHOTS/$PLATFORM-i18n-browser-$(date +%Y%m%d-%H%M%S).png" >/dev/null && ok "screenshot (Spanish browser)"
+  d shot "$SHOTS/$PLATFORM-i18n-$UI_LANG-browser-$(date +%Y%m%d-%H%M%S).png" >/dev/null && ok "screenshot ($UI_LANG browser)"
   post_checks i18n
 }
 

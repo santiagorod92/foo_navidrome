@@ -33,7 +33,7 @@ A [foobar2000](https://www.foobar2000.org/) component that lets you browse and s
 - **Play queue sync** — **File › Save Play Queue to Navidrome** stores the playing (or active) playlist, the current track and its position on the server; **File › Restore Play Queue from Navidrome** loads the queue saved there by any Subsonic client (Symfonium, Feishin, Tempo, …) into a *Navidrome Play Queue* playlist and resumes where it left off. See [Play queue sync](#play-queue-sync)
 - **Download Original Files…** from the right-click menu — saves the selected tracks to a folder, always in their stored format regardless of the streaming setting
 - **Offline playback** — **Make Available Offline** (browser right-click menu, or right-click › Navidrome on playlist tracks) keeps a local copy of the original files; those tracks then play, and seek, without the server. Optional **prefetch** downloads the next track while the current one plays, into a size-capped cache. See [Offline playback](#offline-playback)
-- **English and Spanish UI** — follows the system language, or pick one in *Preferences › Tools › Navidrome › Language*. See [Language](#language)
+- **UI in 8 languages** (English, Español, Português, 中文, 日本語, Français, Deutsch, Русский) — follows the system language, or pick one in *Preferences › Tools › Navidrome › Language*. See [Language](#language)
 - Add albums or artists to playlist in one click (loads all songs automatically)
 - Right-click any row for a **Play Now / Add to Playlist** context menu. **Play Now** (button, menu, double-click or Enter) replaces the active playlist with the selection and plays it from the first track; **Add to Playlist** appends without touching playback
 - **Artist Info** from the right-click menu on an artist row — shows the last.fm biography and a link to the full page (`getArtistInfo2.view`)
@@ -214,9 +214,13 @@ component** and abort on failure — pass `--no-test` to skip. All paths call
 `scripts/run-unit-tests.sh`, the one place the compile command lives.
 
 The same script first runs `make i18n-check` (`scripts/i18n-check.py`): every
-UI string wrapped in `tr()` / `trf()` / `trw()` / `NDTr()` / `N_()` must have an
-entry in the Spanish table (`src/core/I18nSpanish.cpp`), or the run fails and
-lists what's missing (`make i18n-missing` prints just the keys).
+UI string wrapped in `tr()` / `trf()` / `trw()` / `NDTr()` / `N_()` must have a
+row in the translation table (`src/core/I18nTable.cpp`) with text for every
+language, or the run fails and lists what's missing (`make i18n-missing` prints
+just the keys, `make i18n-missing ARGS=ja` only those missing in one language).
+Each row is the English key followed by one string per language, in the order of
+`kLanguages` in `src/core/I18n.h`. Adding a language = a `Language` value, a
+`kLanguages` entry and one more string in every row.
 
 No Xcode, only the Command Line Tools? `make mac-syntax` compiles the shared SDK
 glue and every macOS `.mm` file against the foobar2000 SDK with `-fsyntax-only`
@@ -405,8 +409,9 @@ reports how many files each part holds and their size.
 
 #### Language
 
-The component's windows, menus, preferences and messages are in **English** or
-**Spanish**. By default it follows the system language (macOS: the first
+The component's windows, menus, preferences and messages are in **English**, **Spanish**,
+**Portuguese** (Brazilian), **Chinese** (Simplified), **Japanese**, **French**, **German** or
+**Russian**. By default it follows the system language (macOS: the first
 preferred language; Windows: the display language). To pick one, set
 *Preferences › Tools › Navidrome › Language* and restart foobar2000. Log lines
 and *Copy Diagnostics* stay in English, since they're pasted into bug reports.
@@ -502,7 +507,7 @@ Apple Silicon Mac.
 make test          # Linux: fast clang-cl+wine build/run of the unit tests
 make mac-test       # macOS: native clang++ build/run of the SAME test suite
 make mac-syntax     # macOS without Xcode: compile-check the component sources against the SDK
-make i18n-check     # every UI string has a Spanish translation
+make i18n-check     # every UI string is translated into every language
 make win-build      # Linux: cross-compile the Windows x64 component
 make win-build-launch  # …same, then relaunch Wine foobar2000
 make win-logs       # follow the colourised component debug log (Wine)
@@ -833,7 +838,7 @@ under `build/ui-test/`:
 | Windows 11 VM | `make win11-smoke`, `make win11-ui ARGS=playqueue` / `search` / `cui` / `i18n` / `offline` / `solo` | `make win11-ui ARGS='prefs radio'` / `'browser'` / `'log 50'` |
 | macOS VM | `make mac-vm-smoke`, `make mac-vm-ui ARGS=playqueue` / `i18n` / `solo` | `make mac-vm-ui ARGS='browser'` / `'log 50'`, `make mac-vm-click ARGS='x y'` |
 
-`i18n` runs once in Spanish; `offline` turns prefetch on and checks that the next track plays
+`i18n` runs once in another language (`ARGS='i18n ja'`; Spanish by default); `offline` turns prefetch on and checks that the next track plays
 from the cache; `solo` moves the sister component [Panels UI](https://github.com/santiagorod92/foo_ui_panels)
 out of the profile for the run and checks foo_navidrome still works without it (Panels UI's
 own `ui-test.sh <platform> solo` checks the other direction). Every scenario restores what it

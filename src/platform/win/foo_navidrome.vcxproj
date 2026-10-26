@@ -188,7 +188,7 @@
     <ClCompile Include="..\..\core\I18n.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\..\core\I18nSpanish.cpp">
+    <ClCompile Include="..\..\core\I18nTable.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="EsLyricBridge.cpp">
