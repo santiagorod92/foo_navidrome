@@ -554,6 +554,15 @@ ArtistInfo SubsonicCore::getArtistInfo(const std::string& artistId, std::string&
     return parseArtistInfo2(root);
 }
 
+AlbumInfo SubsonicCore::getAlbumInfo(const std::string& albumId, std::string& outError) {
+    if (albumId.empty()) return {};
+    std::string body = httpGet(buildURL("getAlbumInfo2.view", "id=" + enc(albumId)), outError);
+    if (body.empty()) return {};
+    auto root = checkResponse(body, outError);
+    if (root.isNull()) return {};
+    return parseAlbumInfo(root);
+}
+
 std::vector<Song> SubsonicCore::getTopSongs(const std::string& artistName, int count,
                                             std::string& outError) {
     if (artistName.empty()) return {};

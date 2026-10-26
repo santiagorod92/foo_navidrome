@@ -223,6 +223,10 @@ NSNotificationName const NavidromeBrowserSectionsDidChangeNotification =
                                                      action:@selector(showArtistInfo:)
                                               keyEquivalent:@""];
     artistInfoItem.target = self;
+    NSMenuItem *albumInfoItem = [rowMenu addItemWithTitle:NDTr("Album Info")
+                                                    action:@selector(showAlbumInfo:)
+                                             keyEquivalent:@""];
+    albumInfoItem.target = self;
 
     [rowMenu addItem:[NSMenuItem separatorItem]];
     NSMenuItem *starItem = [rowMenu addItemWithTitle:NDTr("Star")
@@ -751,6 +755,45 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
             self->_statusLabel.stringValue = @"";
             NSAlert *alert = [[NSAlert alloc] init];
             alert.messageText = artistName;
+            alert.informativeText = text;
+            [alert addButtonWithTitle:NDTr("OK")];
+            if (lastFmUrl) [alert addButtonWithTitle:NDTr("Open on Last.fm")];
+            if ([alert runModal] == NSAlertSecondButtonReturn && lastFmUrl) {
+                [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:lastFmUrl]];
+            }
+        });
+    });
+}
+
+- (IBAction)showAlbumInfo:(id)sender {
+    NavidromeNode *node = [self selectedNodes].firstObject;
+    auto target = node ? navidrome::albumInfoTarget([node coreNode]) : navidrome::AlbumInfoTarget{};
+    if (target.albumId.empty()) {
+        _statusLabel.stringValue = NDTr("Album Info needs an album or a song");
+        return;
+    }
+
+    [_spinner startAnimation:nil];
+    _statusLabel.stringValue = NDTr("Fetching album info…");
+    NSString *albumTitle = @(target.title.c_str());
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        std::string err;
+        auto info = NBCBrowserClient().getAlbumInfo(target.albumId, err);
+        if (!err.empty()) NAVIDROME_WARN("UI", "album info " + target.albumId + ": " + err);
+        else NAVIDROME_LOG("UI", "album info " + target.albumId + ": notes=" +
+                           (info.notes.empty() ? "none" : std::to_string(info.notes.size()) + " chars"));
+        NSString *text = @(navidrome::formatAlbumNotes(info).c_str());
+        NSString *lastFmUrl = info.lastFmUrl.empty() ? nil : @(info.lastFmUrl.c_str());
+        std::string errCopy = err;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self->_spinner stopAnimation:nil];
+            if (!errCopy.empty()) {
+                self->_statusLabel.stringValue = NDTrf("Error: {0}", { errCopy });
+                return;
+            }
+            self->_statusLabel.stringValue = @"";
+            NSAlert *alert = [[NSAlert alloc] init];
+            alert.messageText = albumTitle;
             alert.informativeText = text;
             [alert addButtonWithTitle:NDTr("OK")];
             if (lastFmUrl) [alert addButtonWithTitle:NDTr("Open on Last.fm")];

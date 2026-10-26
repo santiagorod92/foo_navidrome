@@ -255,6 +255,18 @@ inline BrowserNodePtr makeDecadeNode(int startYear) {
     return n;
 }
 
+struct AlbumInfoTarget {
+    std::string albumId;
+    std::string title;
+};
+
+inline AlbumInfoTarget albumInfoTarget(const BrowserNode& n) {
+    if (n.type == BrowserNode::Album) return { n.id, n.displayName };
+    if (n.type == BrowserNode::Song && !n.albumId.empty())
+        return { n.albumId, n.album.empty() ? n.displayName : n.album };
+    return {};
+}
+
 inline BrowserNodePtr makeCrossArtistAlbumNode(const Album& a) {
     auto n = makeAlbumNode(a);
     if (!a.artist.empty()) n->displayName = a.artist + " \u2014 " + a.name;
@@ -472,6 +484,8 @@ struct IBrowserClient {
     virtual std::vector<Song>         getAllSongs(std::string& outError) = 0;
     virtual ArtistInfo                 getArtistInfo(const std::string& artistId,
                                                       std::string& outError) = 0;
+    virtual AlbumInfo                  getAlbumInfo(const std::string& albumId,
+                                                    std::string& outError) = 0;
     virtual std::vector<Song>         getTopSongs(const std::string& artistName, int count,
                                                   std::string& outError) = 0;
     virtual Lyrics                     getLyrics(const std::string& songId, const std::string& artist,

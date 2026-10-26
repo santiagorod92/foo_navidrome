@@ -288,6 +288,7 @@ GUIDs for cfg vars, prefs pages, menu commands, services and UI elements all liv
 | UI language | (none, client-side) | *Preferences › Tools › Navidrome › Language* (Automatic / English / Español / Português / 中文 / 日本語 / Français / Deutsch / Русский), restart to apply |
 | Lyrics | `getLyricsBySongId.view` (when `songLyrics` isn't known-absent), fallback `getLyrics.view` | Both: **Navidrome Lyrics** panel (synced line highlight; Mac `ui_element_mac`, Windows DUI element + Columns UI panel). Windows also: ESLyric searcher script. Both: `navidrome_lyrics_api` |
 | Artist Info | `getArtistInfo2.view` | Context menu item on an artist row → modal (biography + last.fm link) |
+| Album Info | `getAlbumInfo2.view` | Context menu item on an album row, or a song row (its album, `albumInfoTarget()`) → modal (last.fm notes + link); text via the shared `formatInfoText()` Artist Info also uses |
 | Top Songs / Similar Artists | `getTopSongs.view` (by artist name), `getArtistInfo2.view` | Two synthetic child nodes under every Artist node |
 | All Songs | `search3.view` (empty query, `songOffset` paged ×500) | Enqueue-only category node (never expands) — whole library in one Add/Play |
 | Hide tree sections | (none, client-side) | *Preferences › Tools › Navidrome › Browser Sections*; `cfg_browser_hidden_categories` |

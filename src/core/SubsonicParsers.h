@@ -236,6 +236,20 @@ inline ArtistInfo parseArtistInfo2(const json::Value& inner) {
     return info;
 }
 
+inline AlbumInfo parseAlbumInfo(const json::Value& inner) {
+    AlbumInfo info;
+    auto items = inner["albumInfo"].items();
+    if (items.empty()) return info;
+    const json::Value& a = *items[0];
+    info.notes          = jStr(a, "notes");
+    info.musicBrainzId  = jStr(a, "musicBrainzId");
+    info.lastFmUrl      = jStr(a, "lastFmUrl");
+    info.smallImageUrl  = jStr(a, "smallImageUrl");
+    info.mediumImageUrl = jStr(a, "mediumImageUrl");
+    info.largeImageUrl  = jStr(a, "largeImageUrl");
+    return info;
+}
+
 inline std::string stripHtmlTags(const std::string& html) {
     std::string out;
     out.reserve(html.size());
@@ -277,11 +291,20 @@ inline std::string stripHtmlTags(const std::string& html) {
     return collapsed;
 }
 
-inline std::string formatArtistBiography(const ArtistInfo& info) {
-    std::string bio = stripHtmlTags(info.biography);
-    std::string text = bio.empty() ? std::string(tr("No biography available.")) : bio;
-    if (!info.lastFmUrl.empty()) text += "\n\n" + info.lastFmUrl;
+inline std::string formatInfoText(const std::string& html, const std::string& lastFmUrl,
+                                  const char* emptyText) {
+    std::string body = stripHtmlTags(html);
+    std::string text = body.empty() ? std::string(emptyText) : body;
+    if (!lastFmUrl.empty()) text += "\n\n" + lastFmUrl;
     return text;
+}
+
+inline std::string formatArtistBiography(const ArtistInfo& info) {
+    return formatInfoText(info.biography, info.lastFmUrl, tr("No biography available."));
+}
+
+inline std::string formatAlbumNotes(const AlbumInfo& info) {
+    return formatInfoText(info.notes, info.lastFmUrl, tr("No album notes available."));
 }
 
 inline std::vector<std::string> splitLyricText(const std::string& text) {

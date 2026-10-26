@@ -94,6 +94,21 @@ TEST_CASE(testSubsonicCore) {
 
     {
         FakeTransport tx; FakeSettings cfg; cfg.s = basicSettings();
+        tx.routes.push_back({"getAlbumInfo2.view",
+            R"({"subsonic-response":{"status":"ok","albumInfo":{"notes":"N","lastFmUrl":"L"}}})"});
+        SubsonicCore core(tx, cfg);
+        std::string err;
+        auto info = core.getAlbumInfo("al 1", err);
+        check(err.empty() && info.notes == "N" && info.lastFmUrl == "L" && tx.urls.size() == 1 &&
+              tx.urls[0].find("/rest/getAlbumInfo2.view?") != std::string::npos &&
+              tx.urls[0].find("&id=al%201") != std::string::npos,
+              "getAlbumInfo asks getAlbumInfo2.view for the encoded album id");
+        check(core.getAlbumInfo("", err).notes.empty() && tx.urls.size() == 1,
+              "getAlbumInfo sends nothing without an album id");
+    }
+
+    {
+        FakeTransport tx; FakeSettings cfg; cfg.s = basicSettings();
         tx.forcedError = { navidrome::ErrorKind::Network, 0, 0, "reset" };
         tx.failTimes = 2;
         SubsonicCore core(tx, cfg);

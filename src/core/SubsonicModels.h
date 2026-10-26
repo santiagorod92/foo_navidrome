@@ -119,6 +119,15 @@ struct ArtistInfo {
     std::vector<Artist> similarArtists;
 };
 
+struct AlbumInfo {
+    std::string notes;
+    std::string musicBrainzId;
+    std::string lastFmUrl;
+    std::string smallImageUrl;
+    std::string mediumImageUrl;
+    std::string largeImageUrl;
+};
+
 struct LyricLine {
     long long   startMs = -1;
     std::string text;
