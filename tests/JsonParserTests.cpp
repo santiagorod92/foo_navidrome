@@ -162,6 +162,21 @@ TEST_CASE(testSubsonicParsers) {
     check(navidrome::formatArtistBiography(navidrome::ArtistInfo{}) == "No biography available.",
         "formatArtistBiography falls back when the server has no biography");
 
+    navidrome::AlbumInfo albumInfo = navidrome::parseAlbumInfo(parse(
+        "{\"albumInfo\":{\"notes\":\"A <b>classic</b> record\","
+        "\"lastFmUrl\":\"http://last.fm/album\",\"musicBrainzId\":\"mb2\","
+        "\"largeImageUrl\":\"http://img/l.jpg\"}}"));
+    check(albumInfo.notes == "A <b>classic</b> record" && albumInfo.musicBrainzId == "mb2" &&
+          albumInfo.lastFmUrl == "http://last.fm/album" &&
+          albumInfo.largeImageUrl == "http://img/l.jpg",
+        "parseAlbumInfo reads the albumInfo fields and keeps the notes raw");
+    check(navidrome::parseAlbumInfo(parse("{}")).notes.empty(),
+        "parseAlbumInfo defaults on a missing albumInfo object");
+    check(navidrome::formatAlbumNotes(albumInfo) == "A classic record\n\nhttp://last.fm/album",
+        "formatAlbumNotes strips markup and appends the last.fm link");
+    check(navidrome::formatAlbumNotes(navidrome::AlbumInfo{}) == "No album notes available.",
+        "formatAlbumNotes falls back when the server has no notes");
+
     navidrome::SubsonicResponse okResp = navidrome::parseSubsonicResponse(
         "{\"subsonic-response\":{\"status\":\"ok\",\"version\":\"1.16.1\","
         "\"songsByGenre\":{\"song\":[{\"id\":\"a\"},{\"id\":\"b\"}]}}}");

@@ -449,6 +449,23 @@ TEST_CASE(testSearchNodes) {
     }
 }
 
+TEST_CASE(testAlbumInfoTarget) {
+    using navidrome::BrowserNode;
+    BrowserNode album; album.type = BrowserNode::Album; album.id = "al1"; album.displayName = "Back in Black";
+    auto t = navidrome::albumInfoTarget(album);
+    check(t.albumId == "al1" && t.title == "Back in Black", "albumInfoTarget uses an album row's own id and name");
+
+    BrowserNode song; song.type = BrowserNode::Song; song.id = "s1"; song.displayName = "Hells Bells";
+    song.albumId = "al1"; song.album = "Back in Black";
+    t = navidrome::albumInfoTarget(song);
+    check(t.albumId == "al1" && t.title == "Back in Black", "albumInfoTarget maps a song row to its album");
+
+    song.albumId.clear();
+    check(navidrome::albumInfoTarget(song).albumId.empty(), "albumInfoTarget skips a song without an album id");
+    BrowserNode artist; artist.type = BrowserNode::Artist; artist.id = "ar1";
+    check(navidrome::albumInfoTarget(artist).albumId.empty(), "albumInfoTarget skips non-album rows");
+}
+
 TEST_CASE(testRootLoadSummary) {
     using navidrome::BrowserNode;
     auto mk = [](BrowserNode::Type t) { auto n = std::make_shared<BrowserNode>(); n->type = t; return n; };

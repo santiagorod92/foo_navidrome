@@ -66,6 +66,9 @@ public:
     ArtistInfo getArtistInfo(const std::string& id, std::string& e) override {
         return m_core.getArtistInfo(id, e);
     }
+    AlbumInfo getAlbumInfo(const std::string& id, std::string& e) override {
+        return m_core.getAlbumInfo(id, e);
+    }
     std::vector<Song> getTopSongs(const std::string& name, int n, std::string& e) override {
         return m_core.getTopSongs(name, n, e);
     }

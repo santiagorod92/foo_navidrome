@@ -67,6 +67,7 @@ public:
         COMMAND_ID_HANDLER_EX(IDC_ALCHEMY, OnAlchemy)
         COMMAND_ID_HANDLER_EX(IDC_RANDOM_MIX, OnRandomMix)
         COMMAND_ID_HANDLER_EX(IDC_ARTIST_INFO, OnArtistInfo)
+        COMMAND_ID_HANDLER_EX(IDC_ALBUM_INFO, OnAlbumInfo)
         COMMAND_ID_HANDLER_EX(IDC_REFRESH, OnRefresh)
         COMMAND_ID_HANDLER_EX(IDC_CLEAR_SEARCH, OnClearSearch)
         COMMAND_ID_HANDLER_EX(IDC_STAR,    OnStar)
@@ -122,6 +123,7 @@ private:
         IDC_MAKE_OFFLINE        = 1031,
         IDC_REMOVE_OFFLINE      = 1032,
         IDC_CLEAR_SEARCH        = 1033,
+        IDC_ALBUM_INFO          = 1034,
         IDC_PLAYLIST_FIRST = 1100,
         IDC_PLAYLIST_LAST  = 1299,
     };
@@ -149,6 +151,7 @@ private:
     void    OnPlaySimilar(UINT, int, HWND);
     void    OnRandomMix(UINT, int, HWND);
     void    OnArtistInfo(UINT, int, HWND);
+    void    OnAlbumInfo(UINT, int, HWND);
     void    OnAlchemy(UINT, int, HWND);
     void    OnRefresh(UINT, int, HWND);
     void    OnStar(UINT, int, HWND);

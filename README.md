@@ -37,6 +37,7 @@ A [foobar2000](https://www.foobar2000.org/) component that lets you browse and s
 - Add albums or artists to playlist in one click (loads all songs automatically)
 - Right-click any row for a **Play Now / Add to Playlist** context menu. **Play Now** (button, menu, double-click or Enter) replaces the active playlist with the selection and plays it from the first track; **Add to Playlist** appends without touching playback
 - **Artist Info** from the right-click menu on an artist row — shows the last.fm biography and a link to the full page (`getArtistInfo2.view`)
+- **Album Info** from the right-click menu on an album or song row — shows the album's last.fm notes and a link to its page (`getAlbumInfo2.view`). The server fetches them from last.fm, so it needs its last.fm agent enabled; without notes the window says so
 - Every artist has **Top Songs** and **Similar Artists** child nodes, so you can browse an artist's most popular tracks or jump straight to related artists without leaving the tree (`getTopSongs.view`, `getArtistInfo2.view`)
 - Double-click a song to play it immediately (replaces the active playlist, like Play Now)
 - Live search across artists, albums and songs — results update as you type (debounced, no per-keystroke server hammering), grouped under **Artists**, **Albums** and **Songs**: an artist or album found there expands like it does in the tree, and Play Now / Add to Playlist on a group queues everything in it. Clear it with the **×** beside the field or **Esc** to get the full tree back

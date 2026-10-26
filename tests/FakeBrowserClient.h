@@ -143,6 +143,14 @@ struct FakeBrowserClient : navidrome::IBrowserClient {
         info.similarArtists = { similar };
         return info;
     }
+    navidrome::AlbumInfo getAlbumInfo(const std::string& id, std::string& e) override {
+        calls.push_back("getAlbumInfo:" + id);
+        e = error;
+        if (!error.empty()) return {};
+        navidrome::AlbumInfo info;
+        info.notes = "Notes";
+        return info;
+    }
     std::vector<navidrome::Song> getTopSongs(const std::string& artistName, int count,
                                              std::string& e) override {
         calls.push_back("getTopSongs:" + artistName + ":" + std::to_string(count));

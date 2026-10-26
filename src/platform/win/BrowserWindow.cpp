@@ -760,6 +760,34 @@ void BrowserWindow::OnArtistInfo(UINT, int, HWND) {
     }).detach();
 }
 
+void BrowserWindow::OnAlbumInfo(UINT, int, HWND) {
+    dbgLog("OnAlbumInfo fired");
+    auto selected = selectedNodes();
+    auto target = selected.empty() ? navidrome::AlbumInfoTarget{}
+                                   : navidrome::albumInfoTarget(*selected.front());
+    if (target.albumId.empty()) {
+        setStatus(tr("Album Info needs an album or a song"));
+        return;
+    }
+
+    setStatus(tr("Fetching album info…"));
+    std::thread([this, target]() {
+        std::string err;
+        auto info = browserClient().getAlbumInfo(target.albumId, err);
+        if (!err.empty()) NAVIDROME_WARN("UI", "album info " + target.albumId + ": " + err);
+        else dbgLog("album info " + target.albumId + ": notes=" +
+                    (info.notes.empty() ? "none" : std::to_string(info.notes.size()) + " chars"));
+        std::wstring text  = u8ToWide(navidrome::formatAlbumNotes(info));
+        std::wstring title = u8ToWide(target.title);
+        fb2k::inMainThread([this, title, text, err]() mutable {
+            if (!IsWindow()) return;
+            if (!err.empty()) { setStatus(trf("Error: {0}", { err })); return; }
+            setStatus("");
+            MessageBoxW(text.c_str(), title.c_str(), MB_OK | MB_ICONINFORMATION);
+        });
+    }).detach();
+}
+
 void BrowserWindow::OnRandomMix(UINT, int, HWND) {
     dbgLog("OnRandomMix fired");
     setStatus(tr("Fetching random mix…"));
@@ -820,6 +848,7 @@ void BrowserWindow::OnContextMenu(CWindow wnd, CPoint point) {
     if (navidrome::audioMuseSettings().configured())
         menu.AppendMenu(MF_STRING, IDC_ALCHEMY, trw("Song Alchemy (AudioMuse-AI)").c_str());
     menu.AppendMenu(MF_STRING, IDC_ARTIST_INFO,  trw("Artist Info").c_str());
+    menu.AppendMenu(MF_STRING, IDC_ALBUM_INFO,   trw("Album Info").c_str());
 
     menu.AppendMenu(MF_SEPARATOR);
     menu.AppendMenu(MF_STRING, IDC_STAR,   trw("Star").c_str());

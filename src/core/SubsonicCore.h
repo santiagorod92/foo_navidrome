@@ -74,6 +74,7 @@ public:
     std::vector<Song>  getAllSongs(std::string& outError, int pageSize = kAllSongsPageSize);
     static constexpr int kAllSongsPageSize = 500;
     ArtistInfo         getArtistInfo(const std::string& artistId, std::string& outError);
+    AlbumInfo          getAlbumInfo(const std::string& albumId, std::string& outError);
     std::vector<Song>  getTopSongs(const std::string& artistName, int count, std::string& outError);
     Lyrics             getLyrics(const std::string& songId, const std::string& artist,
                                  const std::string& title, std::string& outError);

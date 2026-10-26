@@ -46,6 +46,9 @@ once, by prepare, to download Windows and build its unattended setup.
            a folder of the same name already there is replaced
   ssh      ssh into the guest as tester/tester (port 2223)
   shot     save the VM screen to FILE (default build/ui-test/win11-arm-<time>.png)
+  key      send KEY... to the foreground window through the QEMU monitor (sendkey
+           names: ret, esc, down, up, right, left, shift-f10, alt-f4, ...), 0.4 s apart
+  click    one left click at the pointer, to give a freshly opened window focus
   logs     follow the VM's serial/QEMU log
   down     stop the VM and the noVNC page (the disk is kept)
   status   VM, screen and ssh state
@@ -365,6 +368,13 @@ case "${1:-}" in
     case "$dest" in [A-Za-z]:*) gdest="${dest//\//\\}" ;; esac
     gps "Remove-Item -Recurse -Force \"$gdest\\$(basename "$src")\" -ErrorAction SilentlyContinue; New-Item -ItemType Directory -Force \"$gdest\" | Out-Null"
     gscp -r "$src" "tester@127.0.0.1:$dest/"
+    ;;
+  key)
+    shift; [ $# -gt 0 ] || { echo "usage: key KEY..." >&2; exit 2; }
+    for k in "$@"; do echo "sendkey $k" | nc -U -w 1 "$MONITOR" >/dev/null; sleep 0.4; done
+    ;;
+  click)
+    printf 'mouse_button 1\nmouse_button 0\n' | nc -U -w 1 "$MONITOR" >/dev/null
     ;;
   ssh)     shift; exec ssh -p "$SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null tester@127.0.0.1 "$@" ;;
   shot)

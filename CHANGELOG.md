@@ -1,3 +1,11 @@
+## [1.35.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.34.0...v1.35.0) (2026-10-26)
+
+
+### Features
+
+* **browser:** **Album Info** in the Navidrome Browser's right-click menu, under *Artist Info*. On an album row it shows that album's notes from last.fm, and on a song row the notes of the song's album, with the link to the album's last.fm page (on macOS, an **Open on Last.fm** button opens it). The notes come from the server (`getAlbumInfo2.view`), which gets them through its last.fm integration: albums last.fm has no description for, or a server without last.fm, show "No album notes available.". Translated into every UI language.
+
+
 ## [1.34.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.33.0...v1.34.0) (2026-10-26)
 
 
