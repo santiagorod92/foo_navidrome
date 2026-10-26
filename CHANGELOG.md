@@ -1,3 +1,16 @@
+## [1.34.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.33.0...v1.34.0) (2026-10-26)
+
+
+### Features
+
+* **i18n:** the component speaks **six more languages**: **Português** (Brazilian), **中文** (Simplified Chinese), **日本語**, **Français**, **Deutsch** and **Русский**, on top of English and Spanish. Windows, menus (File › Open Navidrome Browser, the right-click menus), every Preferences page, the Navidrome Browser, the Lyrics panel, popups and status lines are translated. By default the component follows the system language (Windows: the display language; macOS: the first preferred language), so nothing needs setting up; to pick one, use *Preferences › Tools › Navidrome › Language*, where each language is listed by its own name, and restart foobar2000. Any Chinese locale gets Simplified Chinese (Traditional included) and any Portuguese locale gets Brazilian Portuguese. Log lines and *Copy Diagnostics* stay in English. The new translations are a first pass: corrections from native speakers are welcome in an issue. Note that `foobar2000 /command:` takes the menu name in the language shown; keyboard shortcuts keep working in any language.
+
+
+### Code Refactoring
+
+* **i18n:** one translation table for every language. The Spanish-only table (`I18nSpanish.cpp`) is replaced by `I18nTable.cpp`, where each row is the English text followed by one string per language, in the order of `kLanguages` (`I18n.h`), the single list of languages (code and native name) that also feeds the Language setting and the system-language detection. Adding a language is a `Language` value, a `kLanguages` entry and one more string per row. `make i18n-check` fails on any missing cell in any language, `make i18n-missing ARGS=<code>` lists one language's gaps, the unit tests check every cell is filled and keeps the key's `{n}` placeholders, and the `i18n` UI scenario takes the language to run in (`ARGS='i18n ja'`).
+
+
 ## [1.33.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.32.0...v1.33.0) (2026-10-23)
 
 
