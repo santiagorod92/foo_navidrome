@@ -5,7 +5,7 @@
 	mac-vm mac-vm-vnc mac-vm-open mac-vm-smoke mac-vm-ui mac-vm-test mac-vm-release mac-vm-build mac-vm-build-test \
 	win11 win11-vnc win11-open win11-test win11-release win11-seed win11-smoke win11-ui win11-logs \
 	win11-arm win11-arm-vnc win11-arm-web win11-arm-up win11-arm-open win11-arm-ssh win11-arm-logs win11-arm-down win11-arm-status win11-arm-prepare win11-arm-reset win11-arm-shot \
-	win11-arm-provision win11-arm-deploy win11-arm-seed win11-arm-fb2k win11-arm-log win11-arm-test win11-arm-cfg \
+	win11-arm-provision win11-arm-deploy win11-arm-seed win11-arm-fb2k win11-arm-log win11-arm-test win11-arm-cfg win11-arm-key win11-arm-click \
 	audiomuse-up audiomuse-analyze audiomuse-status audiomuse-search audiomuse-logs audiomuse-down clean
 
 XWIN_SDK ?= $(HOME)/.local/share/xwin/sdk
@@ -85,6 +85,8 @@ help:
 	@echo "  win11-arm-log         end of the guest's foo_navidrome.log [ARGS='LINES REGEX']"
 	@echo "  win11-arm-test        unit tests built for Windows, run in the guest"
 	@echo "  win11-arm-cfg         run ARGS=\"SQL\" on the guest's config.sqlite (stops foobar2000)"
+	@echo "  win11-arm-key         send ARGS='ret down shift-f10 …' to the guest's foreground window"
+	@echo "  win11-arm-click       one left click in the guest (gives a new window focus)"
 	@echo "  win11-arm-prepare     one-time: fetch the Windows 11 ARM ISO + unattended setup through dockur (run by -up when missing)"
 	@echo "  win11-logs            follow the guest's debug log (lands in the VM's shared folder)"
 	@echo "  win11-<cmd>           any wvm command: win11-up, -down, -ssh, -shot, -dpi ARGS=144, -theme ARGS=dark, ..."
@@ -348,6 +350,12 @@ win11-arm-test:
 
 win11-arm-cfg:
 	./scripts/win11-arm.sh cfg "$(ARGS)"
+
+win11-arm-key:
+	./scripts/win11-arm.sh key $(ARGS)
+
+win11-arm-click:
+	./scripts/win11-arm.sh click
 
 audiomuse-up:
 	./scripts/audiomuse-dev.sh up
