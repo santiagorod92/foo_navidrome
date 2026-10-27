@@ -39,6 +39,7 @@
 		FE0BADCA0000000000000002 /* NavidromeAudioMuse.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADCA0000000000000001 /* NavidromeAudioMuse.cpp */; };
 		FE0BADCB0000000000000002 /* NavidromePlayQueue.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADCB0000000000000001 /* NavidromePlayQueue.cpp */; };
 		FE0BADD00000000000000002 /* NavidromeOfflineCache.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADD00000000000000001 /* NavidromeOfflineCache.cpp */; };
+		FE0BADD40000000000000002 /* NavidromeLastFm.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADD40000000000000001 /* NavidromeLastFm.cpp */; };
 		FE0BADD10000000000000002 /* OfflineCache.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADD10000000000000001 /* OfflineCache.cpp */; };
 		FE0BADD20000000000000002 /* I18n.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADD20000000000000001 /* I18n.cpp */; };
 		FE0BADD30000000000000002 /* I18nTable.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADD30000000000000001 /* I18nTable.cpp */; };
@@ -91,6 +92,7 @@
 		FE0BADCA0000000000000001 /* NavidromeAudioMuse.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = NavidromeAudioMuse.cpp; sourceTree = "<group>"; };
 		FE0BADCB0000000000000001 /* NavidromePlayQueue.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = NavidromePlayQueue.cpp; sourceTree = "<group>"; };
 		FE0BADD00000000000000001 /* NavidromeOfflineCache.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = NavidromeOfflineCache.cpp; sourceTree = "<group>"; };
+		FE0BADD40000000000000001 /* NavidromeLastFm.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = NavidromeLastFm.cpp; sourceTree = "<group>"; };
 		FE0BADD10000000000000001 /* OfflineCache.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = OfflineCache.cpp; sourceTree = "<group>"; };
 		FE0BADD20000000000000001 /* I18n.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = I18n.cpp; sourceTree = "<group>"; };
 		FE0BADD30000000000000001 /* I18nTable.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = I18nTable.cpp; sourceTree = "<group>"; };
@@ -177,6 +179,7 @@
 				FE0BADCC0000000000000001 /* NavidromeServices.cpp */,
 				FE0BADCB0000000000000001 /* NavidromePlayQueue.cpp */,
 				FE0BADD00000000000000001 /* NavidromeOfflineCache.cpp */,
+				FE0BADD40000000000000001 /* NavidromeLastFm.cpp */,
 				FE0BADD10000000000000001 /* OfflineCache.cpp */,
 				FE0BADD20000000000000001 /* I18n.cpp */,
 				FE0BADD30000000000000001 /* I18nTable.cpp */,
@@ -308,6 +311,7 @@
 				FE0BADCC0000000000000002 /* NavidromeServices.cpp in Sources */,
 				FE0BADCB0000000000000002 /* NavidromePlayQueue.cpp in Sources */,
 				FE0BADD00000000000000002 /* NavidromeOfflineCache.cpp in Sources */,
+				FE0BADD40000000000000002 /* NavidromeLastFm.cpp in Sources */,
 				FE0BADD10000000000000002 /* OfflineCache.cpp in Sources */,
 				FE0BADD20000000000000002 /* I18n.cpp in Sources */,
 				FE0BADD30000000000000002 /* I18nTable.cpp in Sources */,

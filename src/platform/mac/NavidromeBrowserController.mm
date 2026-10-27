@@ -5,6 +5,7 @@
 #include "../../core/NavidromeBrowserModel.h"
 #include "../../core/NavidromeBrowserEnqueue.h"
 #include "../../core/NavidromeAudioMuse.h"
+#include "../../core/NavidromeLastFm.h"
 #include "../../core/NavidromeDebugLog.h"
 #include "../../core/NavidromeLibraryPlatform.h"
 #include <SDK/playlist.h>
@@ -740,9 +741,10 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
     _statusLabel.stringValue = NDTr("Fetching artist info…");
     std::string artistId = NBCStr(node.nodeId);
     NSString *artistName = node.displayName;
+    std::string artistNameU8 = NBCStr(artistName);
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         std::string err;
-        auto info = NBCBrowserClient().getArtistInfo(artistId, err);
+        auto info = navidrome::artistInfoForDisplay(artistId, artistNameU8, err);
         NSString *text = @(navidrome::formatArtistBiography(info).c_str());
         NSString *lastFmUrl = info.lastFmUrl.empty() ? nil : @(info.lastFmUrl.c_str());
         std::string errCopy = err;

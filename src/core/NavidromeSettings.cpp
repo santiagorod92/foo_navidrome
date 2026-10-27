@@ -17,6 +17,7 @@ cfg_var_modern::cfg_int cfg_max_bitrate(guids::cfgMaxBitrate, 0);
 cfg_var_modern::cfg_bool cfg_library_filter(guids::cfgLibraryFilter, false);
 cfg_string cfg_library_ids(guids::cfgLibraryIds, "");
 cfg_string cfg_ui_language(guids::cfgUiLanguage, "");
+cfg_string cfg_lastfm_api_key(guids::cfgLastFmApiKey, "");
 cfg_string cfg_browser_hidden_categories(guids::cfgBrowserHiddenCategories, "");
 cfg_string cfg_server_profiles(guids::cfgServerProfiles, "");
 cfg_string cfg_active_server_profile(guids::cfgActiveServerProfile, "");

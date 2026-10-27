@@ -18,6 +18,7 @@ extern cfg_var_modern::cfg_bool cfg_library_filter;
 extern cfg_string cfg_library_ids;
 extern cfg_string cfg_browser_hidden_categories;
 extern cfg_string cfg_ui_language;
+extern cfg_string cfg_lastfm_api_key;
 extern cfg_string cfg_server_profiles;
 extern cfg_string cfg_active_server_profile;
 

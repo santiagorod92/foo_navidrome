@@ -5,6 +5,7 @@
 #include "../../core/CoreBrowserClient.h"
 #include "../../core/NavidromeBrowserEnqueue.h"
 #include "../../core/NavidromeAudioMuse.h"
+#include "../../core/NavidromeLastFm.h"
 #include "WinUi.h"
 #include "BrowserPrompts.h"
 #include <uxtheme.h>
@@ -746,10 +747,11 @@ void BrowserWindow::OnArtistInfo(UINT, int, HWND) {
 
     setStatus(tr("Fetching artist info…"));
     std::string artistId   = node->id;
-    std::wstring artistName = u8ToWide(node->displayName);
-    std::thread([this, artistId, artistName]() {
+    std::string artistNameU8 = node->displayName;
+    std::wstring artistName = u8ToWide(artistNameU8);
+    std::thread([this, artistId, artistNameU8, artistName]() {
         std::string err;
-        auto info = navidrome::SubsonicClientWin::get().getArtistInfo(artistId, err);
+        auto info = navidrome::artistInfoForDisplay(artistId, artistNameU8, err);
         std::wstring text = u8ToWide(navidrome::formatArtistBiography(info));
         fb2k::inMainThread([this, artistName, text, err]() mutable {
             if (!IsWindow()) return;
