@@ -9,6 +9,7 @@
 #include "../../core/NavidromeGuids.h"
 #include "../../core/NavidromeSettings.h"
 #include "../../core/NavidromeLibraryPlatform.h"
+#include "../../core/LastFm.h"
 #include "BrowserPrompts.h"
 #include "EsLyricBridge.h"
 #include "WinUi.h"
@@ -206,6 +207,7 @@ public:
         m_format.SetCurSel(0);
         m_bitrate.SetCurSel(0);
         m_language.SetCurSel(0);
+        SetDlgItemText(IDC_LASTFM_KEY, L"");
         m_changed = true; notifyCb();
     }
 
@@ -229,6 +231,7 @@ public:
         COMMAND_HANDLER_EX(IDC_FORMAT,  CBN_SELCHANGE, OnChanged)
         COMMAND_HANDLER_EX(IDC_BITRATE, CBN_SELCHANGE, OnChanged)
         COMMAND_HANDLER_EX(IDC_LANGUAGE, CBN_SELCHANGE, OnChanged)
+        COMMAND_HANDLER_EX(IDC_LASTFM_KEY, EN_CHANGE, OnChanged)
         COMMAND_HANDLER_EX(IDC_RESCAN, BN_CLICKED, OnRescan)
         COMMAND_HANDLER_EX(IDC_DIAG, BN_CLICKED, OnCopyDiagnostics)
         COMMAND_HANDLER_EX(IDC_LOGDIR, BN_CLICKED, OnOpenLogFolder)
@@ -262,7 +265,7 @@ private:
            IDC_HEADERS=1006, IDC_SCROBBLE=1007, IDC_FORMAT=1008, IDC_BITRATE=1009,
            IDC_RESCAN=1010, IDC_SCAN_STATUS=1011, IDC_DIAG=1012, IDC_LOGDIR=1013,
            IDC_DIAG_STATUS=1014, IDC_LANGUAGE=1015, IDC_PROFILE=1016, IDC_PROFILE_ADD=1017,
-           IDC_PROFILE_REMOVE=1018 };
+           IDC_PROFILE_REMOVE=1018, IDC_LASTFM_KEY=1019 };
 
     static constexpr UINT WM_TEST_RESULT = WM_USER + 200;
     static constexpr UINT WM_SCAN_STATUS = WM_USER + 201;
@@ -293,6 +296,7 @@ private:
         HWND lblFmt  = make(L"STATIC", trw("Stream as:").c_str(),   0);
         HWND lblRate = make(L"STATIC", trw("Max bitrate:").c_str(), 0);
         HWND lblLang = make(L"STATIC", trw("Language:").c_str(), 0);
+        HWND lblLastFm = make(L"STATIC", trw("Last.fm API key:").c_str(), 0);
 
         const DWORD editSty = WS_BORDER|WS_TABSTOP|ES_AUTOHSCROLL;
         HWND url  = make(L"EDIT", L"", editSty, IDC_URL);
@@ -332,6 +336,8 @@ private:
         for (const auto& opt : navidrome::i18n::languageOptions())
             m_language.AddString(trw(opt.label).c_str());
         HWND langHint = make(L"STATIC", trw("Restart foobar2000 to apply.").c_str(), SS_LEFT|SS_NOPREFIX);
+        HWND lastFm = make(L"EDIT", L"", editSty, IDC_LASTFM_KEY);
+        HWND lastFmHint = make(L"STATIC", trw("Optional. Fills in artist biographies the server has none for.").c_str(), SS_LEFT|SS_NOPREFIX);
 
         HWND rescan = make(L"BUTTON", trw("Rescan").c_str(), WS_TABSTOP|BS_PUSHBUTTON, IDC_RESCAN);
         HWND scanSt = make(L"STATIC", L"", SS_LEFT|SS_ENDELLIPSIS, IDC_SCAN_STATUS);
@@ -359,7 +365,7 @@ private:
         const int step  = rowH + s(8);
         const int pad = s(8), gap = s(8);
         int labelW = 0;
-        for (HWND l : { lblProf, lblUrl, lblUser, lblPass, lblFmt, lblRate, lblLang })
+        for (HWND l : { lblProf, lblUrl, lblUser, lblPass, lblFmt, lblRate, lblLang, lblLastFm })
             labelW = (std::max)(labelW, textWidth(l));
         const int x = pad + labelW + gap;
         const int fieldW = s(300), statusW = s(240);
@@ -400,6 +406,8 @@ private:
         label(lblRate, y);  place(m_bitrate, x, y, s(240), s(220));  y += step;
         label(lblLang, y);  place(m_language, x, y, s(240), s(220));  y += rowH + s(4);
         place(langHint, x, y, textWidth(langHint) + s(4), lineH);       y += lineH + s(8);
+        label(lblLastFm, y); place(lastFm, x, y, fieldW, rowH);       y += rowH + s(4);
+        place(lastFmHint, x, y, textWidth(lastFmHint) + s(4), lineH);   y += lineH + s(8);
         y += s(6);
         section(librarySection, y);                           y += step;
         buttonWithStatus(rescan, scanSt, y);                  y += step + s(6);
@@ -510,6 +518,7 @@ private:
         m_bitrate.SetCurSel(bitrateIndex);
 
         m_language.SetCurSel(navidrome::i18n::languageOptionIndex(navidrome::cfg_ui_language.get().c_str()));
+        SetDlgItemText(IDC_LASTFM_KEY, pfc::stringcvt::string_wide_from_utf8(navidrome::cfg_lastfm_api_key.get().c_str()));
     }
 
     void saveSettings() {
@@ -522,6 +531,7 @@ private:
         navidrome::cfg_username.set(getText(IDC_USER).c_str());
         navidrome::cfg_password.set(getText(IDC_PASS).c_str());
         navidrome::cfg_scrobble.set(IsDlgButtonChecked(IDC_SCROBBLE) == BST_CHECKED);
+        navidrome::cfg_lastfm_api_key.set(navidrome::lastfm::trimSpaces(getText(IDC_LASTFM_KEY)).c_str());
 
         const auto& formats = navidrome::streamFormatOptions();
         int fi = m_format.GetCurSel();

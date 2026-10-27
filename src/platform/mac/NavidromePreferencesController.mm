@@ -7,6 +7,7 @@
 #include "../../core/NavidromeDebugLog.h"
 #include "../../core/NavidromeSettings.h"
 #include "../../core/NavidromeLibraryPlatform.h"
+#include "../../core/LastFm.h"
 
 static NSArray<NSArray *> *NavidromeStreamFormats(void) {
     NSMutableArray<NSArray *> *out = [NSMutableArray array];
@@ -156,6 +157,7 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
 @property (nonatomic, strong) NSPopUpButton      *formatPopup;
 @property (nonatomic, strong) NSPopUpButton      *bitratePopup;
 @property (nonatomic, strong) NSPopUpButton      *languagePopup;
+@property (nonatomic, strong) NSTextField        *lastFmKeyField;
 @end
 
 @implementation NavidromePreferencesController
@@ -283,6 +285,15 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
     languageHint.textColor = [NSColor secondaryLabelColor];
     languageHint.font = [NSFont systemFontOfSize:11];
     [root addSubview:languageHint];
+
+    NSTextField *lLastFm = makeLabel(NDTr("Last.fm API key:"));
+    _lastFmKeyField = makeField(@"");
+
+    NSTextField *lastFmHint = [NSTextField labelWithString:NDTr("Optional. Fills in artist biographies the server has none for.")];
+    lastFmHint.translatesAutoresizingMaskIntoConstraints = NO;
+    lastFmHint.textColor = [NSColor secondaryLabelColor];
+    lastFmHint.font = [NSFont systemFontOfSize:11];
+    [root addSubview:lastFmHint];
 
     _rescanButton = [NSButton buttonWithTitle:NDTr("Rescan")
                                         target:self
@@ -450,7 +461,19 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
         [languageHint.leadingAnchor constraintEqualToAnchor:_languagePopup.leadingAnchor constant:2],
         [languageHint.trailingAnchor constraintLessThanOrEqualToAnchor:root.trailingAnchor constant:-pad],
 
-        [librarySection.topAnchor constraintEqualToAnchor:languageHint.bottomAnchor constant:vGap * 2],
+        [lLastFm.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:pad],
+        [lLastFm.widthAnchor constraintEqualToConstant:labelW],
+        [lLastFm.centerYAnchor constraintEqualToAnchor:_lastFmKeyField.centerYAnchor],
+
+        [_lastFmKeyField.topAnchor constraintEqualToAnchor:languageHint.bottomAnchor constant:vGap],
+        [_lastFmKeyField.leadingAnchor constraintEqualToAnchor:lLastFm.trailingAnchor constant:8],
+        [_lastFmKeyField.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-pad],
+        [_lastFmKeyField.heightAnchor constraintEqualToConstant:fieldH],
+        [lastFmHint.topAnchor constraintEqualToAnchor:_lastFmKeyField.bottomAnchor constant:4],
+        [lastFmHint.leadingAnchor constraintEqualToAnchor:_lastFmKeyField.leadingAnchor constant:2],
+        [lastFmHint.trailingAnchor constraintLessThanOrEqualToAnchor:root.trailingAnchor constant:-pad],
+
+        [librarySection.topAnchor constraintEqualToAnchor:lastFmHint.bottomAnchor constant:vGap * 2],
         [librarySection.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:pad],
         [libraryLine.centerYAnchor constraintEqualToAnchor:librarySection.centerYAnchor],
         [libraryLine.leadingAnchor constraintEqualToAnchor:librarySection.trailingAnchor constant:8],
@@ -497,6 +520,10 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
                                              selector:@selector(fieldChanged:)
                                                  name:NSControlTextDidChangeNotification
                                                object:_passwordField];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(lastFmKeyChanged:)
+                                                 name:NSControlTextDidChangeNotification
+                                               object:_lastFmKeyField];
 
     self.view = root;
 }
@@ -574,6 +601,11 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
     [_bitratePopup selectItemAtIndex:bitrateIndex];
 
     [_languagePopup selectItemAtIndex:navidrome::i18n::languageOptionIndex(navidrome::cfg_ui_language.get().c_str())];
+    _lastFmKeyField.stringValue = [NSString stringWithUTF8String:navidrome::cfg_lastfm_api_key.get().c_str()];
+}
+
+- (void)lastFmKeyChanged:(NSNotification *)note {
+    navidrome::cfg_lastfm_api_key.set(navidrome::lastfm::trimSpaces([_lastFmKeyField.stringValue UTF8String] ?: "").c_str());
 }
 
 - (IBAction)languageChanged:(id)sender {

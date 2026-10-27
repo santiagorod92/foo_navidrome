@@ -36,7 +36,7 @@ A [foobar2000](https://www.foobar2000.org/) component that lets you browse and s
 - **UI in 8 languages** (English, Español, Português, 中文, 日本語, Français, Deutsch, Русский) — follows the system language, or pick one in *Preferences › Tools › Navidrome › Language*. See [Language](#language)
 - Add albums or artists to playlist in one click (loads all songs automatically)
 - Right-click any row for a **Play Now / Add to Playlist** context menu. **Play Now** (button, menu, double-click or Enter) replaces the active playlist with the selection and plays it from the first track; **Add to Playlist** appends without touching playback
-- **Artist Info** from the right-click menu on an artist row — shows the last.fm biography and a link to the full page (`getArtistInfo2.view`)
+- **Artist Info** from the right-click menu on an artist row — shows the last.fm biography and a link to the full page (`getArtistInfo2.view`). When the server has no biography (common when artists are tagged *Last, First* or *Beatles, The*, because Navidrome asks last.fm by the exact name), foo_navidrome asks last.fm itself, first with the stored name and last.fm's autocorrection, then as *First Last* (*Jackson, Michael* → *Michael Jackson*, *Beatles, The* → *The Beatles*). This needs a free last.fm API key in *Preferences › Tools › Navidrome › Last.fm API key* (create one at [last.fm/api/account/create](https://www.last.fm/api/account/create)); with the field empty nothing is sent to last.fm. Only the artist name and the UI language are sent
 - **Album Info** from the right-click menu on an album or song row — shows the album's last.fm notes and a link to its page (`getAlbumInfo2.view`). The server fetches them from last.fm, so it needs its last.fm agent enabled; without notes the window says so
 - Every artist has **Top Songs** and **Similar Artists** child nodes, so you can browse an artist's most popular tracks or jump straight to related artists without leaving the tree (`getTopSongs.view`, `getArtistInfo2.view`)
 - Double-click a song to play it immediately (replaces the active playlist, like Play Now)
@@ -416,6 +416,23 @@ The component's windows, menus, preferences and messages are in **English**, **S
 preferred language; Windows: the display language). To pick one, set
 *Preferences › Tools › Navidrome › Language* and restart foobar2000. Log lines
 and *Copy Diagnostics* stay in English, since they're pasted into bug reports.
+
+#### Last.fm API key
+
+*Artist Info* shows the biography Navidrome gets from last.fm. Navidrome asks
+last.fm by the exact artist name, so an artist stored as *Jackson, Michael* or
+*Beatles, The* comes back with "No biography available.". With a last.fm API
+key in *Preferences › Tools › Navidrome › Last.fm API key*, foo_navidrome then
+asks last.fm itself, with the stored name and last.fm's name correction first,
+then as *Michael Jackson* / *The Beatles*.
+
+The key is free: sign in to last.fm, open
+[last.fm/api/account/create](https://www.last.fm/api/account/create), fill in an
+application name and contact email, and paste the **API key** it shows (not the
+shared secret). With the field empty nothing is sent to last.fm. With a key, only
+the artist name and the UI language are sent, from your computer; your server's
+custom headers never are. *Top Songs* and *Similar Artists* still come from the
+server.
 
 ---
 
