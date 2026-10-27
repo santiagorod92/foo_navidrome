@@ -1,3 +1,11 @@
+## [1.36.1](https://github.com/santiagorod92/foo_navidrome/compare/v1.36.0...v1.36.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* **playback:** with *Stream as* set to a format (e.g. Opus), playing a track **again** (Previous, a replay, or an album played before) showed the original file's format and bitrate as the codec, as if transcoding had been switched off ([#51](https://github.com/santiagorod92/foo_navidrome/issues/51)). The audio was always transcoded: Navidrome serves a replay from its transcoding cache, and only the label was wrong. foobar2000 now shows the codec actually streamed (*Opus*) on every play, and on a first play the track length shows again instead of `?`. With *Original (no transcoding)* the original format shows as before. Nothing to change in your settings or playlists.
+
+
 ## [1.36.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.35.0...v1.36.0) (2026-10-27)
 
 
