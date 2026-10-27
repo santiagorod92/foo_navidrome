@@ -350,7 +350,8 @@ local ones:
 - **Stream as** — `Server default` leaves it to Navidrome's own transcoding
   rules, `Original (no transcoding)` always sends the stored file, or pick a
   target format to have the server transcode on the fly: MP3, Opus, AAC,
-  FLAC or WAV.
+  FLAC or WAV. While a track plays, the codec foobar2000 shows is the one
+  actually streamed (e.g. Opus), on the first play and on replays alike.
 - **Max bitrate** — a kbps ceiling the server may not exceed. Ignored when the
   stream isn't being transcoded, and when the target is lossless.
 

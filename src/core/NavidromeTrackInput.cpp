@@ -76,6 +76,7 @@ bool navidrome::TrackDecoder::openCached(abort_callback& abort) {
         if (decoder.is_empty()) throw exception_io_data();
         decoder->initialize(0, m_flags, abort);
         m_decoder = decoder;
+        captureStreamInfo(abort);
     } catch (const exception_aborted&) {
         throw;
     } catch (const std::exception& e) {
@@ -126,7 +127,26 @@ void navidrome::TrackDecoder::openAt(double offsetSeconds, abort_callback& abort
         throw;
     }
     m_decoder = decoder;
+    captureStreamInfo(abort);
     NAVIDROME_LOG("Input", "decoder ready");
+}
+
+void navidrome::TrackDecoder::captureStreamInfo(abort_callback& abort) {
+    m_streamInfo.clear();
+    file_info_impl info;
+    try {
+        m_decoder->get_info(0, info, abort);
+    } catch (const exception_aborted&) {
+        throw;
+    } catch (const std::exception& e) {
+        NAVIDROME_WARN("Input", "id=" + m_track.id + " stream info unreadable (" + e.what() + ")");
+        return;
+    }
+    for (const char* key : {"codec", "codec_profile", "encoding"})
+        if (const char* v = info.info_get(key)) m_streamInfo.emplace_back(key, v);
+    m_streamInfoPending = !m_streamInfo.empty();
+    NAVIDROME_LOG("Input", "id=" + m_track.id + " stream codec="
+                  + (info.info_get("codec") ? info.info_get("codec") : "?") + " (catalog suffix=" + m_track.suffix + ")");
 }
 
 bool navidrome::TrackDecoder::run(audio_chunk& chunk, abort_callback& abort) {
@@ -162,11 +182,23 @@ bool navidrome::TrackDecoder::canSeek() {
 }
 
 bool navidrome::TrackDecoder::getDynamicInfo(file_info& out, double& delta) {
-    return m_decoder.is_valid() && m_decoder->get_dynamic_info(out, delta);
+    bool changed = m_decoder.is_valid() && m_decoder->get_dynamic_info(out, delta);
+    if (m_streamInfoPending) {
+        m_streamInfoPending = false;
+        for (const auto& kv : m_streamInfo) {
+            const char* cur = out.info_get(kv.first.c_str());
+            if (cur != nullptr && kv.second == cur) continue;
+            out.info_set(kv.first.c_str(), kv.second.c_str());
+            changed = true;
+        }
+    }
+    return changed;
 }
 
 bool navidrome::TrackDecoder::getDynamicInfoTrack(file_info& out, double& delta) {
-    return m_decoder.is_valid() && m_decoder->get_dynamic_info_track(out, delta);
+    if (!m_decoder.is_valid() || !m_decoder->get_dynamic_info_track(out, delta)) return false;
+    if (out.get_length() <= 0 && m_track.duration > 0) out.set_length(m_track.duration);
+    return true;
 }
 
 void navidrome::TrackDecoder::onIdle(abort_callback& abort) {
