@@ -49,8 +49,10 @@ installed.
   `service_query_t`) adds `list_albums_v2` + `library_album_sink_v2`, which also passes the
   album's Subsonic `created` date (ISO-8601) for "recently added"; v1 stays for older consumers,
   and a consumer falls back to v1 when the query fails (older foo_navidrome). `list_albums`/`fetch_cover` block (one request per artist) — worker thread
-  only. Consumer: foo_ui_panels' album grid (`src/panels/album_list.cpp`). Vendored copy:
-  `foo_ui_panels/src/core/navidrome_library_api.h`.
+  only. Consumers: foo_ui_panels' album grid (`src/panels/album_list.cpp`) and foo_js_panel's
+  `navidrome` script object (`src/core/panel.cpp`: albums/artists on a worker thread, play/add).
+  Vendored copies: `foo_ui_panels/src/core/navidrome_library_api.h`,
+  `foo_js_panel/src/core/navidrome_library_api.h` (identical to each other).
 
 - **`navidrome_lyrics_api`** (`NavidromeLyricsService.h`, both platforms: service in `NavidromeServices.cpp` over
   `navidrome::lyricsForTrackURI()` + `libraryClient()`) — a navidrome:// track's lyrics, streamed
@@ -63,18 +65,19 @@ Adding a new cross-component interface: follow the same shape, and add a bullet 
 interface, what it's for, and every known consumer — keeps both repos' CLAUDE.md honest about
 who depends on what without needing to grep across machines.
 
-## Shared conventions (foo_ui_panels ⇄ foo_navidrome)
+## Shared conventions (foo_ui_panels ⇄ foo_navidrome ⇄ foo_js_panel)
 
-foo_ui_panels (Panels UI) and foo_navidrome are sister components, sibling checkouts under one
-parent (`../foo_ui_panels`, `../foo_navidrome`). They're developed together, installed together
-and tested in the same foobar2000. **This section is identical in both repos' CLAUDE.md** and
-holds only what's true for both; anything repo-specific stays in the repo's own sections.
-- **Editing it:** change both copies in the same round, keep the subsection order below, one
+foo_ui_panels (Panels UI), foo_navidrome and foo_js_panel (JS Panel) are sister components,
+sibling checkouts under one parent (`../foo_ui_panels`, `../foo_navidrome`, `../foo_js_panel`).
+They're developed together, installed together and tested in the same foobar2000. **This section
+is identical in all three repos' CLAUDE.md** and holds only what's true for more than one;
+anything repo-specific stays in the repo's own sections.
+- **Editing it:** change all three copies in the same round, keep the subsection order below, one
   terse bullet per fact (`**Topic:** fact`), no narrative or session logs. Check they match:
-  `diff <(awk '/^## Shared conventions/{f=1} /^## /&&!/^## Shared/{f=0} f' ../foo_ui_panels/CLAUDE.md) <(awk '/^## Shared conventions/{f=1} /^## /&&!/^## Shared/{f=0} f' ../foo_navidrome/CLAUDE.md)`.
-- **What goes here:** a rule, tool, layout or gotcha that's useful in both repos (SDK, build
-  layout, versioning, logging, release, test environments, troubleshooting). If it's useful in
-  only one repo, it goes in that repo's own sections.
+  `for r in foo_navidrome foo_js_panel; do diff <(awk '/^## Shared conventions/{f=1} /^## /&&!/^## Shared/{f=0} f' ../foo_ui_panels/CLAUDE.md) <(awk '/^## Shared conventions/{f=1} /^## /&&!/^## Shared/{f=0} f' ../$r/CLAUDE.md); done`.
+- **What goes here:** a rule, tool, layout or gotcha that's useful in more than one repo (SDK,
+  build layout, versioning, logging, release, test environments, troubleshooting). If it's useful
+  in only one repo, it goes in that repo's own sections.
 
 ### How they work together
 - **Contracts:** foo_navidrome publishes `service_base` interfaces, and foo_ui_panels vendors a
@@ -84,8 +87,17 @@ holds only what's true for both; anything repo-specific stays in the repo's own 
   interface, its consumers and its vendored copies.
 - **Current links:** `navidrome_rating_api` drives Panels UI's star ratings on `navidrome://`
   tracks, which also read the `NAVIDROME_RATING` field. `navidrome_library_api` feeds the
-  Panels UI album grid (`album_list`) and `library_tree`. `navidrome_lyrics_api` feeds Panels
-  UI's `lyrics_panel`.
+  Panels UI album grid (`album_list`) and `library_tree`, and JS Panel's `navidrome` script
+  object. `navidrome_lyrics_api` feeds Panels UI's `lyrics_panel`.
+- **Shared source:** foo_js_panel compiles foo_ui_panels' `src/gfx/canvas.h` and its backends
+  (`src/platform/win/gdi_canvas.*`, `src/platform/mac/mac_canvas.*`) from the sibling checkout
+  (`PANELS_UI_SRC`); its CI checks foo_ui_panels out next to it. A change to those files is
+  built in both repos in the same round.
+- **Hosting:** Panels UI hosts JS Panel like any foreign UI element, by name
+  (`$panel(<name>,JS Panel,…)`), and hands it the skin's `panel.<name>.script` through the
+  `js_panel_api.h` contract (foo_js_panel's original, vendored byte-identical in foo_ui_panels):
+  Windows = the element's `ui_element_config` data (UTF-8 path), macOS = the `instantiate()`
+  dictionary key `script`. The wizard's `albums-js` layout needs it.
 - **Changing a contract:** a change to a contract header (GUID, vtable order, sink signatures)
   lands in both repos in the same round, and the vendored copy stays byte-identical to the
   original. A new interface also gets a bullet in foo_navidrome's cross-compatibility list.
@@ -97,18 +109,18 @@ holds only what's true for both; anything repo-specific stays in the repo's own 
 ### SDK
 - **Source:** `reupen/foobar2000-sdk-unmodified`, tags `SDK-YYYY-MM-DD`. Don't use the
   `marc2k3` or `razielanarki` mirrors: they're stale and missing `helpers-mac/`.
-- **Location:** one checkout, shared by both repos: `../foobar2000/{SDK,helpers,helpers-mac,shared,
-  foobar2000_component_client}` + `../pfc`. A bump therefore affects both repos at once. CI
+- **Location:** one checkout, shared by all three repos: `../foobar2000/{SDK,helpers,helpers-mac,
+  shared,foobar2000_component_client}` + `../pfc`. A bump therefore affects every repo at once. CI
   re-clones upstream's default branch on every run.
 - **In use: SDK-2026-10-01.** foobar2000 v2.26; C++20 is required (since 2026-09-16).
 - **Bump procedure:**
   1. Clone the tag into a scratch dir.
   2. Run `diff -rq` against the sibling SDK folders.
   3. Read foobar2000.org/changelog-sdk.
-  4. `git grep` both repos for every symbol the diff touches.
+  4. `git grep` every repo for every symbol the diff touches.
   5. Copy the changed files into the siblings.
-  6. Build every leg of both repos and run both test suites.
-  7. Update the version in "In use" above (both copies) and in each README's development table.
+  6. Build every leg of every repo and run every test suite.
+  7. Update the version in "In use" above (all copies) and in each README's development table.
 - **Sync history:**
   - 2026-09-16: C++20 is required. pfc now redirects to `shared.dll` through
     `wrap_pfc_hooks.h`, and the ARM64EC link needed the hooks. `skipTrack.h` was added.
@@ -121,10 +133,10 @@ holds only what's true for both; anything repo-specific stays in the repo's own 
 ### Build, version, release
 - **Toolchain:** local Windows builds are done on Linux with clang-cl + lld-link + xwin (splat
   `--arch x86,x86_64,aarch64`), static `/MT` CRT, x64 + x86. Release builds also include ARM64EC:
-  foo_ui_panels builds it with clang-cl, foo_navidrome with MSBuild in CI. macOS ships as a
+  foo_ui_panels and foo_js_panel build it with clang-cl, foo_navidrome with MSBuild in CI. macOS ships as a
   universal bundle, and the x86_64 slice must stay (the VM guest is Intel).
-- **Version:** `scripts/version.sh` is the same resolver in both repos: env override
-  (`PUI_VERSION` / `NAVIDROME_VERSION`) → `git describe` against `v*` → `version.txt`
+- **Version:** `scripts/version.sh` is the same resolver in every repo: env override
+  (`PUI_VERSION` / `NAVIDROME_VERSION` / `JSP_VERSION`) → `git describe` against `v*` → `version.txt`
   (`export-subst`). No version is kept by hand. CI checks out with `fetch-depth: 0`. Run
   `git fetch --tags` after each release.
 - **Release:** semantic-release with Conventional Commits (`feat` = minor;
@@ -139,9 +151,9 @@ holds only what's true for both; anything repo-specific stays in the repo's own 
   iteration.
 - **CI path filters:** files that aren't part of the component don't trigger CI builds:
   `**.md`, issue forms, `LICENSE`, `.gitignore`, and local-only dev/test scripts and tools. The
-  `paths-ignore` lists live in foo_ui_panels' `build.yml` (push + PR; a new PR push cancels the
-  superseded run) and in foo_navidrome's `release.yml` (push). A new local-only script or tool
-  is added to that list in the same change. Anything CI builds, tests or packages with stays off
+  `paths-ignore` lists live in foo_ui_panels' and foo_js_panel's `build.yml` (push + PR; a new
+  PR push cancels the superseded run) and in foo_navidrome's `release.yml` (push). A new
+  local-only script or tool is added to that list in the same change. Anything CI builds, tests or packages with stays off
   it. A release-worthy commit that only touches ignored paths doesn't release; dispatch the
   workflow by hand.
 
@@ -155,38 +167,40 @@ holds only what's true for both; anything repo-specific stays in the repo's own 
   `make` target.
 
 ### Logging and diagnostics
-- **Log file:** `<profile>/<component>.log` (`foo_ui_panels.log`, `foo_navidrome.log`). Shape:
+- **Log file:** `<profile>/<component>.log` (`foo_ui_panels.log`, `foo_navidrome.log`,
+  `foo_js_panel.log`). Shape:
   - WARN+ by default; INFO when the component's verbose toggle is on.
   - Rotates to `.1` past 2 MB.
   - Each session opens with an always-written NOTE banner (component, foobar2000, OS, arch,
     Wine versions).
   - Lines from before the log path is known are buffered.
 - **Copy Diagnostics:** an in-memory ring of recent lines feeds the Copy Diagnostics report in
-  Preferences, on both platforms. The text is pasted into public issues, so it is always
+  Preferences (JS Panel: *View › JS Panel*), on both platforms. The text is pasted into public issues, so it is always
   redacted: home → `~`, user name, server host, auth/URLs (`scrubAuth`). Issue forms live in
   `.github/ISSUE_TEMPLATE/`.
 - **Keep the logging matched:** a new logging or diagnostics feature (level, field, redaction,
-  rotation) is mirrored in the other repo unless there's a stated reason not to.
+  rotation) is mirrored in the other repos unless there's a stated reason not to.
 
 ### Test environments
-- **Wine:** `~/.foobar2000` (fb2k v2.26 x64), with both components in
+- **Wine:** `~/.foobar2000` (fb2k v2.26 x64), with the components in
   `profile/user-components-x64/<name>/`. Each repo's `win-build`/`deploy` installs its own DLL,
-  and the other stays as last installed. `tools/wclick.c` (originally from foo_ui_panels) posts
+  and the others stay as last installed. `tools/wclick.c` (originally from foo_ui_panels) posts
   clicks and keys without touching the host pointer.
 - **macOS VM:** `../macos-devbox` (`mvm`, dockur/macos, Intel guest). **Windows 11 VM:**
   `../windows-devbox` (`wvm`, dockur/windows), for Dark Mode, DPI and native theming that Wine
   fakes. Never `docker prune`/`rm`/`rmi`.
 - **Windows 11 ARM VM (Apple Silicon Mac):** foo_navidrome's `scripts/win11-arm.sh` (QEMU +
-  HVF, launchd jobs). Both repos drive it with the same `make win11-arm*` targets; foo_ui_panels
-  points at `../foo_navidrome/scripts/win11-arm.sh` (`WIN11_ARM=`). `deploy <dll>` installs into
+  HVF, launchd jobs). Every repo drives it with the same `make win11-arm*` targets; foo_ui_panels
+  and foo_js_panel point at `../foo_navidrome/scripts/win11-arm.sh` (`WIN11_ARM=`). `deploy <dll>` installs into
   `user-components-arm64ec/<dll name>`, `push` copies a folder in, `COMPONENT=` picks the log
   `fb2k log` reads, `make win11-arm-test` runs each repo's unit tests in the guest.
 - **All three Windows builds run in that one VM:** ARM64EC natively, x64 in the same ARM
   foobar2000 (an ARM64EC process loads x64 DLLs), x86 in a portable 32-bit foobar2000 at
-  `C:\fb2k-x86` (`FB2K_ARCH=x86`, foo_ui_panels: `ARCH=x86`; `provision` installs it once and
+  `C:\fb2k-x86` (`FB2K_ARCH=x86`, foo_ui_panels and foo_js_panel: `ARCH=x86`; `provision` installs it once and
   seeds its profile from the ARM one). `fb2k stop` closes whichever build is running.
-- **UI tests:** both repos drive the real foobar2000 with one script,
-  `scripts/ui-test.sh <wine|win11|mac> <scenario>`: each scenario is written once over a small
+- **UI tests:** every repo drives the real foobar2000 with one script,
+  `scripts/ui-test.sh <platform> <scenario>` (foo_ui_panels and foo_navidrome: `wine|win11|mac`;
+  foo_js_panel so far: `mac` = this Mac's foobar2000, `win11-arm`): each scenario is written once over a small
   per-platform driver and asserts on the component log, the process and crash reports.
   `ui-test.sh compare <scenario> [platforms]` prints a step matrix that marks where platforms
   differ (`PARALLEL=1` runs them at once; one test agent per platform works the same way).
