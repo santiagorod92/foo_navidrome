@@ -1,3 +1,12 @@
+## [1.36.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.35.0...v1.36.0) (2026-10-27)
+
+
+### Features
+
+* **browser:** **Artist Info** now finds a biography for artists stored as *Last, First* or with the article at the end (*Jackson, Michael*, *Beatles, The*, *Rolling Stones, The*) ([#49](https://github.com/santiagorod92/foo_navidrome/issues/49)). Navidrome asks last.fm by the exact artist name, so for these names it had nothing and the window read "No biography available.". When the server has no biography, foo_navidrome now asks last.fm itself: first with the stored name and last.fm's own name correction (the same one that redirects last.fm/music/Jackson,+Michael to Michael Jackson's page), then turned around into *First Last* (*Michael Jackson*, *The Beatles*). Names with two or more commas (*Crosby, Stills, Nash & Young*) are band names and aren't turned around. The biography comes in the UI language when last.fm has it, and the link at the end (on macOS, the **Open on Last.fm** button) goes to the artist's page that was found. Artists the server already has a biography for work exactly as before.
+* **prefs:** new **Last.fm API key** field in *Preferences › Tools › Navidrome*, under *Language*. The fallback above only runs when a key is set; with the field empty Artist Info behaves as before and nothing is sent to last.fm. A key is free: create one at [last.fm/api/account/create](https://www.last.fm/api/account/create) while signed in to last.fm (an application name and a contact email are enough), and paste the *API key* (not the shared secret). Only the artist name and the UI language are sent to last.fm, from your computer; the custom headers set for your Navidrome server are never sent there. *Top Songs* and *Similar Artists* still come from the server, so for these artist names they may stay empty.
+
+
 ## [1.35.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.34.0...v1.35.0) (2026-10-26)
 
 
