@@ -60,7 +60,7 @@ TEST_CASE(testLastFmParseArtistInfo) {
 }
 
 TEST_CASE(testLastFmBiographyFallback) {
-    using navidrome::lastfm::withBiographyFallback;
+    using navidrome::lastfm::withLastFmFallback;
     std::vector<std::string> asked;
     auto fetch = [&](const std::string& url) -> std::string {
         asked.push_back(url);
@@ -71,7 +71,7 @@ TEST_CASE(testLastFmBiographyFallback) {
 
     navidrome::ArtistInfo server;
     server.lastFmUrl = "https://www.last.fm/music/Jackson,+Michael";
-    auto info = withBiographyFallback(server, "Jackson, Michael", "KEY", "en", fetch);
+    auto info = withLastFmFallback(server, "Jackson, Michael", "KEY", "en", fetch);
     check(asked.size() == 2 && info.biography == "King of Pop" &&
               info.lastFmUrl == "https://www.last.fm/music/Michael+Jackson",
           "an empty server biography is looked up as stored, then as First Last");
@@ -79,16 +79,33 @@ TEST_CASE(testLastFmBiographyFallback) {
     asked.clear();
     navidrome::ArtistInfo withBio;
     withBio.biography = "<p>From the server</p>";
-    check(withBiographyFallback(withBio, "Jackson, Michael", "KEY", "en", fetch).biography ==
-              "<p>From the server</p>" && asked.empty(),
-          "a server biography is kept and Last.fm isn't asked");
+    withBio.lastFmUrl = "https://www.last.fm/music/Server";
+    auto kept = withLastFmFallback(withBio, "Jackson, Michael", "KEY", "en", fetch);
+    check(kept.biography == "<p>From the server</p>" &&
+              kept.lastFmUrl == "https://www.last.fm/music/Server" && asked.empty(),
+          "a server biography with a link is kept and Last.fm isn't asked");
 
-    check(withBiographyFallback(server, "Jackson, Michael", "", "en", fetch).biography.empty() &&
+    asked.clear();
+    navidrome::ArtistInfo bioNoUrl;
+    bioNoUrl.biography = "<p>From the server</p>";
+    auto linked = withLastFmFallback(bioNoUrl, "Jackson, Michael", "KEY", "en", fetch);
+    check(asked.size() == 2 && linked.biography == "<p>From the server</p>" &&
+              linked.lastFmUrl == "https://www.last.fm/music/Michael+Jackson",
+          "a server biography without a link keeps its text and takes Last.fm's page");
+
+    asked.clear();
+    auto unlinked = withLastFmFallback(bioNoUrl, "Nobody", "KEY", "en", fetch);
+    check(asked.size() == 1 && unlinked.biography == "<p>From the server</p>" &&
+              unlinked.lastFmUrl.empty(),
+          "no Last.fm page leaves a server biography without a link");
+
+    asked.clear();
+    check(withLastFmFallback(server, "Jackson, Michael", "", "en", fetch).biography.empty() &&
               asked.empty(),
           "without an API key nothing is sent");
 
     asked.clear();
-    auto none = withBiographyFallback(server, "Nobody", "KEY", "en", fetch);
+    auto none = withLastFmFallback(server, "Nobody", "KEY", "en", fetch);
     check(asked.size() == 1 && none.biography.empty() && none.lastFmUrl == server.lastFmUrl,
           "no Last.fm biography leaves the server's answer untouched");
 }

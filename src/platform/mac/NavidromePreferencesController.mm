@@ -157,7 +157,7 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
 @property (nonatomic, strong) NSPopUpButton      *formatPopup;
 @property (nonatomic, strong) NSPopUpButton      *bitratePopup;
 @property (nonatomic, strong) NSPopUpButton      *languagePopup;
-@property (nonatomic, strong) NSTextField        *lastFmKeyField;
+@property (nonatomic, strong) NSSecureTextField  *lastFmKeyField;
 @end
 
 @implementation NavidromePreferencesController
@@ -287,7 +287,7 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
     [root addSubview:languageHint];
 
     NSTextField *lLastFm = makeLabel(NDTr("Last.fm API key:"));
-    _lastFmKeyField = makeField(@"");
+    _lastFmKeyField = makeSecure(@"");
 
     NSTextField *lastFmHint = [NSTextField labelWithString:NDTr("Optional. Fills in artist biographies the server has none for.")];
     lastFmHint.translatesAutoresizingMaskIntoConstraints = NO;

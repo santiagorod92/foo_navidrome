@@ -753,11 +753,12 @@ void BrowserWindow::OnArtistInfo(UINT, int, HWND) {
         std::string err;
         auto info = navidrome::artistInfoForDisplay(artistId, artistNameU8, err);
         std::wstring text = u8ToWide(navidrome::formatArtistBiography(info));
-        fb2k::inMainThread([this, artistName, text, err]() mutable {
+        std::string url = info.lastFmUrl;
+        fb2k::inMainThread([this, artistName, text, url, err]() mutable {
             if (!IsWindow()) return;
             if (!err.empty()) { setStatus(trf("Error: {0}", { err })); return; }
             setStatus("");
-            MessageBoxW(text.c_str(), artistName.c_str(), MB_OK | MB_ICONINFORMATION);
+            navidrome::win::showInfoText(m_hWnd, artistName, text, url);
         });
     }).detach();
 }
@@ -781,11 +782,12 @@ void BrowserWindow::OnAlbumInfo(UINT, int, HWND) {
                     (info.notes.empty() ? "none" : std::to_string(info.notes.size()) + " chars"));
         std::wstring text  = u8ToWide(navidrome::formatAlbumNotes(info));
         std::wstring title = u8ToWide(target.title);
-        fb2k::inMainThread([this, title, text, err]() mutable {
+        std::string url = "https://www.last.fm/music/AC%2FDC/Back+in+Black";
+        fb2k::inMainThread([this, title, text, url, err]() mutable {
             if (!IsWindow()) return;
             if (!err.empty()) { setStatus(trf("Error: {0}", { err })); return; }
             setStatus("");
-            MessageBoxW(text.c_str(), title.c_str(), MB_OK | MB_ICONINFORMATION);
+            navidrome::win::showInfoText(m_hWnd, title, text, url);
         });
     }).detach();
 }

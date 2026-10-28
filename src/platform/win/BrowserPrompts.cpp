@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "BrowserPrompts.h"
 #include "WinUi.h"
+#include "../../core/NavidromeDebugLog.h"
 #include <uxtheme.h>
 #include <commctrl.h>
 #include <shlobj.h>
@@ -285,6 +286,41 @@ bool navidrome::win::promptRadioStation(HWND owner, const wchar_t* title,
     return RadioStationPromptWindow::run(owner, title, initialName, initialStreamURL,
                                          initialHomePageURL, outName, outStreamURL,
                                          outHomePageURL);
+}
+
+void navidrome::win::showInfoText(HWND owner, const std::wstring& title, const std::wstring& text,
+                                  const std::string& lastFmUrl) {
+    using TaskDialogIndirectFn = HRESULT (WINAPI*)(const TASKDIALOGCONFIG*, int*, int*, BOOL*);
+    constexpr int kOpenLastFm = 100;
+    auto taskDialog = reinterpret_cast<TaskDialogIndirectFn>(
+        ::GetProcAddress(::GetModuleHandleW(L"comctl32.dll"), "TaskDialogIndirect"));
+    if (lastFmUrl.empty() || !taskDialog) {
+        if (!lastFmUrl.empty()) NAVIDROME_WARN("UI", "info popup: TaskDialogIndirect unavailable, no Last.fm button");
+        ::MessageBoxW(owner, text.c_str(), title.c_str(), MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    const std::wstring openLabel = trw("Open on Last.fm");
+    TASKDIALOG_BUTTON buttons[] = { { kOpenLastFm, openLabel.c_str() } };
+    TASKDIALOGCONFIG cfg{};
+    cfg.cbSize = sizeof(cfg);
+    cfg.hwndParent = owner;
+    cfg.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION | TDF_POSITION_RELATIVE_TO_WINDOW;
+    cfg.dwCommonButtons = TDCBF_OK_BUTTON;
+    cfg.pszWindowTitle = title.c_str();
+    cfg.pszMainIcon = TD_INFORMATION_ICON;
+    cfg.pszContent = text.c_str();
+    cfg.cButtons = 1;
+    cfg.pButtons = buttons;
+    cfg.nDefaultButton = IDOK;
+    int pressed = 0;
+    if (FAILED(taskDialog(&cfg, &pressed, nullptr, nullptr))) {
+        NAVIDROME_WARN("UI", "info popup: TaskDialogIndirect failed, falling back to MessageBox");
+        ::MessageBoxW(owner, text.c_str(), title.c_str(), MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    if (pressed != kOpenLastFm) return;
+    NAVIDROME_LOG("UI", "info popup: opening " + lastFmUrl);
+    ::ShellExecuteW(owner, L"open", u8ToWide(lastFmUrl).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 }
 
 bool navidrome::win::pickFolder(HWND owner, std::wstring& outPath) {

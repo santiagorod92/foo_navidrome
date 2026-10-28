@@ -57,14 +57,20 @@ inline bool parseArtistInfo(const std::string& body, std::string& biography, std
 
 using Fetch = std::function<std::string(const std::string& url)>;
 
-inline ArtistInfo withBiographyFallback(ArtistInfo info, const std::string& artistName,
-                                        const std::string& apiKey, const std::string& lang,
-                                        const Fetch& fetch) {
-    if (!stripHtmlTags(info.biography).empty() || apiKey.empty()) return info;
+inline bool needsLastFmLookup(const ArtistInfo& info) {
+    return stripHtmlTags(info.biography).empty() || info.lastFmUrl.empty();
+}
+
+inline ArtistInfo withLastFmFallback(ArtistInfo info, const std::string& artistName,
+                                     const std::string& apiKey, const std::string& lang,
+                                     const Fetch& fetch) {
+    if (!needsLastFmLookup(info) || apiKey.empty()) return info;
+    const bool keepServerBio = !stripHtmlTags(info.biography).empty();
     for (const auto& candidate : artistNameCandidates(artistName)) {
         std::string bio, url;
         if (!parseArtistInfo(fetch(artistInfoURL(candidate, apiKey, lang)), bio, url)) continue;
-        info.biography = bio;
+        if (keepServerBio && url.empty()) continue;
+        if (!keepServerBio) info.biography = bio;
         if (!url.empty()) info.lastFmUrl = url;
         return info;
     }

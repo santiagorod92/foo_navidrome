@@ -336,7 +336,7 @@ private:
         for (const auto& opt : navidrome::i18n::languageOptions())
             m_language.AddString(trw(opt.label).c_str());
         HWND langHint = make(L"STATIC", trw("Restart foobar2000 to apply.").c_str(), SS_LEFT|SS_NOPREFIX);
-        HWND lastFm = make(L"EDIT", L"", editSty, IDC_LASTFM_KEY);
+        HWND lastFm = make(L"EDIT", L"", editSty|ES_PASSWORD, IDC_LASTFM_KEY);
         HWND lastFmHint = make(L"STATIC", trw("Optional. Fills in artist biographies the server has none for.").c_str(), SS_LEFT|SS_NOPREFIX);
 
         HWND rescan = make(L"BUTTON", trw("Rescan").c_str(), WS_TABSTOP|BS_PUSHBUTTON, IDC_RESCAN);

@@ -22,6 +22,8 @@ TEST_CASE(testScrubAuth) {
           "scrubAuth hides a legacy p= password");
     check(!contains(scrubAuth("https://h/rest/ping.view?apiKey=SECRETKEY&f=json"), "SECRETKEY"),
           "scrubAuth hides an OpenSubsonic apiKey");
+    check(!contains(scrubAuth("https://ws.audioscrobbler.com/2.0/?method=artist.getinfo&api_key=LFMKEY&format=json"), "LFMKEY"),
+          "scrubAuth hides a Last.fm api_key");
     check(!contains(scrubAuth("https://bob:hunter2@music.example.com/rest/x"), "hunter2"),
           "scrubAuth hides URL userinfo credentials");
     check(scrubAuth("https://h/rest/search3.view?query=artist&songCount=5") ==

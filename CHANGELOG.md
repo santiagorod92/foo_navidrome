@@ -1,3 +1,17 @@
+## [1.37.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.36.1...v1.37.0) (2026-10-28)
+
+
+### Features
+
+* **windows:** **Artist Info** and **Album Info** now have an **Open on Last.fm** button that opens the artist's or album's last.fm page in your browser, as on macOS ([#53](https://github.com/santiagorod92/foo_navidrome/issues/53)). The link used to be plain text in the popup and couldn't be clicked. The button only shows when there is a last.fm page to open.
+* **browser:** with a **Last.fm API key** set, Artist Info now finds the last.fm page for artists your server has a biography for but no link to. Many Navidrome servers send the biography without the last.fm link, so the link (and the button above) was missing for most artists. The server's biography is kept as it is, and only the artist's page is asked from last.fm, with the same name matching as before (*Jackson, Michael* still goes to Michael Jackson's page). Without a key nothing changes and nothing is sent to last.fm.
+
+
+### Bug Fixes
+
+* **prefs:** the **Last.fm API key** field in *Preferences › Tools › Navidrome* is now masked like the password, and the key can no longer end up in `foo_navidrome.log` or in **Copy Diagnostics** when a last.fm request fails.
+
+
 ## [1.36.1](https://github.com/santiagorod92/foo_navidrome/compare/v1.36.0...v1.36.1) (2026-10-27)
 
 
