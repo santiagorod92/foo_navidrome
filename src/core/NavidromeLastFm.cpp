@@ -24,7 +24,7 @@ std::string lastFmGet(const std::string& url) {
         }
         return body;
     } catch (const std::exception& e) {
-        NAVIDROME_WARN("API", std::string("Last.fm artist.getinfo failed: ") + e.what());
+        NAVIDROME_WARN("API", navidrome::dbg::scrubAuth(std::string("Last.fm artist.getinfo failed: ") + e.what()));
         return {};
     }
 }

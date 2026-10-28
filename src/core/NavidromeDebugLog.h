@@ -27,7 +27,7 @@ inline std::string scrubAuth(std::string s) {
         if (at != std::string::npos && (end == std::string::npos || at < end))
             s.replace(hostStart, at - hostStart, "***");
     }
-    for (const char* key : { "t=", "s=", "p=", "u=", "apiKey=" }) {
+    for (const char* key : { "t=", "s=", "p=", "u=", "apiKey=", "api_key=" }) {
         const size_t keyLen = std::char_traits<char>::length(key);
         size_t pos = 0;
         while ((pos = s.find(key, pos)) != std::string::npos) {
