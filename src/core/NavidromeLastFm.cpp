@@ -35,21 +35,27 @@ navidrome::ArtistInfo navidrome::artistInfoForDisplay(const std::string& artistI
                                                       const std::string& artistName,
                                                       std::string& outError) {
     ArtistInfo info = libraryClient().getArtistInfo(artistId, outError);
-    if (!outError.empty() || !stripHtmlTags(info.biography).empty()) return info;
+    if (!outError.empty() || !lastfm::needsLastFmLookup(info)) return info;
+    const bool hasServerBio = !stripHtmlTags(info.biography).empty();
+    const std::string missing = hasServerBio ? "no Last.fm link" : "no server biography";
     const std::string apiKey = lastfm::trimSpaces(cfg_lastfm_api_key.get().c_str());
     if (apiKey.empty()) {
-        NAVIDROME_LOG("API", "no server biography for \"" + artistName + "\"; no Last.fm API key set");
+        NAVIDROME_LOG("API", missing + " for \"" + artistName + "\"; no Last.fm API key set");
         return info;
     }
-    NAVIDROME_LOG("API", "no server biography for \"" + artistName + "\", asking Last.fm");
-    ArtistInfo out = lastfm::withBiographyFallback(
+    NAVIDROME_LOG("API", missing + " for \"" + artistName + "\", asking Last.fm");
+    ArtistInfo out = lastfm::withLastFmFallback(
         info, artistName, apiKey, i18n::languageCode(i18n::language()),
         [&](const std::string& url) {
             NAVIDROME_LOG("API", "Last.fm artist.getinfo for \"" + artistName + "\"");
             return lastFmGet(url);
         });
-    NAVIDROME_LOG("API", out.biography.empty()
-        ? "Last.fm has no biography for \"" + artistName + "\" either"
-        : "Last.fm biography found for \"" + artistName + "\" at " + out.lastFmUrl);
+    if (out.lastFmUrl.empty() && stripHtmlTags(out.biography).empty())
+        NAVIDROME_LOG("API", "Last.fm has no biography for \"" + artistName + "\" either");
+    else if (out.lastFmUrl.empty())
+        NAVIDROME_LOG("API", "Last.fm has no page for \"" + artistName + "\"");
+    else
+        NAVIDROME_LOG("API", std::string(hasServerBio ? "Last.fm link" : "Last.fm biography") +
+                             " found for \"" + artistName + "\" at " + out.lastFmUrl);
     return out;
 }
