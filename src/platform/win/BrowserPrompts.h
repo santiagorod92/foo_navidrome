@@ -15,5 +15,8 @@ bool promptRadioStation(HWND owner, const wchar_t* title,
 
 bool pickFolder(HWND owner, std::wstring& outPath);
 
+void showInfoText(HWND owner, const std::wstring& title, const std::wstring& text,
+                  const std::string& lastFmUrl);
+
 void addDarkModeHooksKeepingLists(fb2k::CCoreDarkModeHooks& dark, HWND page);
 }
