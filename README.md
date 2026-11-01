@@ -50,6 +50,7 @@ A [foobar2000](https://www.foobar2000.org/) component that lets you browse and s
 - Appears under **Preferences › Media Library › Library viewers** alongside Album List / Artist View, and can also be docked as a panel in the main window layout: **Navidrome Browser** in the Default UI element picker on Windows (*View › Layout › Enable layout editing mode*, right-click › *Replace UI Element…*) or as a [Columns UI](https://github.com/reupen/columns_ui) panel (*Panels › Navidrome Browser*), `navidrome` in **View › Layout › Edit Layout…** on macOS
 - **Lyrics on Windows** in a native **Navidrome Lyrics** panel (Default UI and Columns UI), or through [ESLyric](https://github.com/ESLyric/release) — see [Lyrics (Windows)](#lyrics-windows)
 - **Lyrics on macOS** in a native **Navidrome Lyrics** layout panel — see [Lyrics (macOS)](#lyrics-macos)
+- **Works with [JS Panel](https://github.com/santiagorod92/foo_js_panel)**: scripts see your server's tracks next to the Media Library (`fb.GetLibraryItems()`), and get an artist's biography and image (`navidrome.GetArtistInfoAsync`), which JS Panel's Eole conversion uses for its library views and artist photos
 - **Instant Mix** from any playlist track (right-click › Navidrome › Instant Mix) or any song, album or artist in the browser — plays similar songs in a dedicated *Instant Mix* playlist — plus **AudioMuse-AI** Text Search, Instant Playlist and Song Alchemy — see [Instant Mix and AudioMuse-AI](#instant-mix-and-audiomuse-ai)
 
 ## Lyrics (Windows)

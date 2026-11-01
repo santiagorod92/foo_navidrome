@@ -1,3 +1,11 @@
+## [1.38.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.37.0...v1.38.0) (2026-10-31)
+
+
+### Features
+
+* **library:** version 3 of the library service that other components use. It lists every track on your server as foobar2000 tracks, and looks an artist up by name for its biography, its image and its last.fm page (with the same Last.fm fallback as Artist Info). [JS Panel](https://github.com/santiagorod92/foo_js_panel) 1.1 uses it to put your server's tracks in `fb.GetLibraryItems()` next to the Media Library and to show artist photos, so themes such as Eole browse and play your Navidrome library on Windows and macOS. Components built for the older versions keep working unchanged.
+
+
 ## [1.37.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.36.1...v1.37.0) (2026-10-28)
 
 

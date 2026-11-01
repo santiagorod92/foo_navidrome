@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/win11-arm.sh <prepare|up|open|provision|deploy|fb2k|seed|cfg|run|push|ssh|shot|logs|down|status|reset>
+Usage: scripts/win11-arm.sh <prepare|up|open|provision|deploy|fb2k|seed|cfg|run|push|ssh|shot|key|click|move|tap|logs|down|status|reset>
 
 Windows 11 ARM test VM on an Apple Silicon Mac, driven like the Linux Win11 VM:
 one command to start it, its screen in a browser tab (noVNC), ssh in.
@@ -48,7 +48,15 @@ once, by prepare, to download Windows and build its unattended setup.
   shot     save the VM screen to FILE (default build/ui-test/win11-arm-<time>.png)
   key      send KEY... to the foreground window through the QEMU monitor (sendkey
            names: ret, esc, down, up, right, left, shift-f10, alt-f4, ...), 0.4 s apart
-  click    one left click at the pointer, to give a freshly opened window focus
+  click    click [X Y [right|double]]: one left click where the last move left the
+           pointer (to give a freshly opened window focus), or at screen pixel X Y.
+           Clicks are made inside the guest's desktop session (SetCursorPos +
+           mouse_event through a scheduled task): Windows ignores the QEMU tablet
+  move     move the pointer to X% Y% of the screen (e.g. move 50 50 for the centre)
+  tap      tap STEPS: several steps in one run inside the guest, so a popup menu
+           opened by one click is still there for the next: X,Y[,right|double]
+           (pixels, or X%,Y% of the screen), wait,MS, key,VK (a virtual-key code,
+           e.g. key,13 for Enter), separated by ';'
   logs     follow the VM's serial/QEMU log
   down     stop the VM and the noVNC page (the disk is kept)
   status   VM, screen and ssh state
@@ -236,6 +244,43 @@ EXP
   gssh exit || { echo "ssh key install failed" >&2; exit 1; }
 }
 
+tap() {
+  local ps="$DIR/tap.ps1"
+  cat > "$ps" <<'PS1'
+param([string]$steps)
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type @"
+using System; using System.Runtime.InteropServices;
+public static class Tap {
+  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+  [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, uint d, IntPtr e);
+  [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint f, IntPtr e);
+}
+"@
+$b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+function At([string]$v, [int]$size) { if ($v.EndsWith('%')) { [int]([double]$v.TrimEnd('%') * $size / 100) } else { [int]$v } }
+foreach ($s in $steps.Split(';')) {
+  $p = $s.Trim().Split(',')
+  if ($p[0] -eq 'wait') { Start-Sleep -Milliseconds ([int]$p[1]); continue }
+  if ($p[0] -eq 'key') {
+    [Tap]::keybd_event([byte][int]$p[1], 0, 0, [IntPtr]::Zero); [Tap]::keybd_event([byte][int]$p[1], 0, 2, [IntPtr]::Zero)
+    Start-Sleep -Milliseconds 500; continue
+  }
+  [Tap]::SetCursorPos((At $p[0] $b.Width), (At $p[1] $b.Height)) | Out-Null
+  Start-Sleep -Milliseconds 150
+  $kind = if ($p.Length -gt 2) { $p[2] } else { 'left' }
+  $down = if ($kind -eq 'right') { 0x8 } else { 0x2 }
+  for ($i = 0; $i -lt $(if ($kind -eq 'double') { 2 } else { 1 }); $i++) {
+    [Tap]::mouse_event($down, 0, 0, 0, [IntPtr]::Zero); [Tap]::mouse_event($down * 2, 0, 0, 0, [IntPtr]::Zero)
+    Start-Sleep -Milliseconds 80
+  }
+  Start-Sleep -Milliseconds 1500
+}
+PS1
+  gscp "$ps" "tester@127.0.0.1:AppData/Local/Temp/win11-arm-tap.ps1" >/dev/null
+  gps "\$a=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File C:\\Users\\tester\\AppData\\Local\\Temp\\win11-arm-tap.ps1 \"$1\"'; \$p=New-ScheduledTaskPrincipal -UserId tester -LogonType Interactive; Register-ScheduledTask -TaskName fbnd-tap -Action \$a -Principal \$p -Force | Out-Null; Start-ScheduledTask -TaskName fbnd-tap; Start-Sleep -Milliseconds 500; while ((Get-ScheduledTask -TaskName fbnd-tap).State -eq 'Running') { Start-Sleep -Milliseconds 200 }; Unregister-ScheduledTask -TaskName fbnd-tap -Confirm:\$false"
+}
+
 in_session() {
   local arg=""; [ -n "${2:-}" ] && arg=" -Argument '${2//\'/\'\'}'"
   gps "\$a=New-ScheduledTaskAction -Execute '$1'$arg; \$p=New-ScheduledTaskPrincipal -UserId tester -LogonType Interactive; Register-ScheduledTask -TaskName fbnd-gui -Action \$a -Principal \$p -Force | Out-Null; Start-ScheduledTask -TaskName fbnd-gui; Start-Sleep 2; Unregister-ScheduledTask -TaskName fbnd-gui -Confirm:\$false"
@@ -374,8 +419,17 @@ case "${1:-}" in
     for k in "$@"; do echo "sendkey $k" | nc -U -w 1 "$MONITOR" >/dev/null; sleep 0.4; done
     ;;
   click)
-    printf 'mouse_button 1\nmouse_button 0\n' | nc -U -w 1 "$MONITOR" >/dev/null
+    shift
+    if [ $# -ge 2 ]; then tap "$1,$2${3:+,$3}"
+    else read -r px py < "$DIR/pointer" 2>/dev/null || { px=50; py=50; }; tap "$px%,$py%"
+    fi
     ;;
+  move)
+    shift; px="${1:?usage: move X% Y%}"; py="${2:?usage: move X% Y%}"
+    echo "$px $py" > "$DIR/pointer"
+    printf 'mouse_move %d %d\n' $(( px * 32767 / 100 )) $(( py * 32767 / 100 )) | nc -U -w 1 "$MONITOR" >/dev/null
+    ;;
+  tap)     shift; tap "${1:?usage: tap 'X,Y[,right|double];wait,MS;key,VK'}" ;;
   ssh)     shift; exec ssh -p "$SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null tester@127.0.0.1 "$@" ;;
   shot)
     f="${2:-$ROOT/build/ui-test/win11-arm-$(date +%H%M%S).png}"; mkdir -p "$(dirname "$f")"

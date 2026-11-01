@@ -37,7 +37,9 @@ installed.
   of the standard file-tag path when the track is one of ours; its rating *display* also reads
   `NAVIDROME_RATING` as a fallback field (see this repo's own "Don't name an exported field
   `rating`" gotcha below — that's exactly why a separate read path is needed on the consumer side
-  too). Vendored copy: `foo_ui_panels/src/core/navidrome_rating_api.h`.
+  too). Vendored copies: `foo_ui_panels/src/core/navidrome_rating_api.h`,
+  `foo_js_panel/src/core/navidrome_rating_api.h` (identical; JS Panel's
+  `FbMetadbHandleList.UpdateFileInfoFromJSON` rates `navidrome://` tracks through it).
 
 - **`navidrome_library_api`** (`NavidromeLibraryService.h`, both platforms: service in `NavidromeServices.cpp` over
   the seams in `NavidromeLibraryPlatform.h` — `libraryCore`/`libraryClient`/`libraryFetchCover`,
@@ -48,9 +50,14 @@ installed.
   `play_album` action. `navidrome_library_api_v2` (own GUID, derives from v1, reached with
   `service_query_t`) adds `list_albums_v2` + `library_album_sink_v2`, which also passes the
   album's Subsonic `created` date (ISO-8601) for "recently added"; v1 stays for older consumers,
-  and a consumer falls back to v1 when the query fails (older foo_navidrome). `list_albums`/`fetch_cover` block (one request per artist) — worker thread
+  and a consumer falls back to v1 when the query fails (older foo_navidrome). `navidrome_library_api_v3`
+  (own GUID, derives from v2) adds `list_tracks` (every song as a `metadb_handle`, info hinted, through
+  `library_track_sink`) and `artist_info` (artist name → `getArtists` match, case-insensitive, then
+  `artistInfoForDisplay` with its Last.fm fallback; `artist_info_sink` gets id, biography, the largest
+  image URL and the Last.fm URL). `list_albums`/`fetch_cover`/`list_tracks`/`artist_info` block — worker thread
   only. Consumers: foo_ui_panels' album grid (`src/panels/album_list.cpp`) and foo_js_panel's
-  `navidrome` script object (`src/core/panel.cpp`: albums/artists on a worker thread, play/add).
+  `navidrome` script object (`src/core/panel.cpp`: albums/artists on a worker thread, play/add,
+  `GetArtistInfoAsync`) and `fb.GetLibraryItems()` (v3 `list_tracks`).
   Vendored copies: `foo_ui_panels/src/core/navidrome_library_api.h`,
   `foo_js_panel/src/core/navidrome_library_api.h` (identical to each other).
 
@@ -193,7 +200,10 @@ anything repo-specific stays in the repo's own sections.
   HVF, launchd jobs). Every repo drives it with the same `make win11-arm*` targets; foo_ui_panels
   and foo_js_panel point at `../foo_navidrome/scripts/win11-arm.sh` (`WIN11_ARM=`). `deploy <dll>` installs into
   `user-components-arm64ec/<dll name>`, `push` copies a folder in, `COMPONENT=` picks the log
-  `fb2k log` reads, `make win11-arm-test` runs each repo's unit tests in the guest.
+  `fb2k log` reads, `make win11-arm-test` runs each repo's unit tests in the guest. Windows
+  ignores the QEMU tablet, so `click [X Y]` and `tap 'X,Y;wait,MS;key,VK'` click from inside
+  the desktop session (scheduled task + `SetCursorPos`/`mouse_event`); `tap` runs a whole
+  sequence in one go so a popup menu stays open for the next click.
 - **All three Windows builds run in that one VM:** ARM64EC natively, x64 in the same ARM
   foobar2000 (an ARM64EC process loads x64 DLLs), x86 in a portable 32-bit foobar2000 at
   `C:\fb2k-x86` (`FB2K_ARCH=x86`, foo_ui_panels and foo_js_panel: `ARCH=x86`; `provision` installs it once and

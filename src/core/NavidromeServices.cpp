@@ -8,6 +8,7 @@
 #include "NavidromeAudioMuse.h"
 #include "NavidromeLibraryPlatform.h"
 #include "NavidromeDebugLog.h"
+#include "NavidromeLastFm.h"
 #include "NavidromeGuids.h"
 #include "NavidromeDiagnostics.h"
 #include "NavidromeTrackInput.h"
@@ -69,7 +70,7 @@ public:
 
 static service_factory_single_t<navidrome_rating_api_impl> g_navidrome_rating_api_factory;
 
-class navidrome_library_api_impl : public navidrome::navidrome_library_api_v2 {
+class navidrome_library_api_impl : public navidrome::navidrome_library_api_v3 {
 public:
     bool is_configured() override { return navidrome::libraryCore().isConfigured(); }
 
@@ -87,6 +88,80 @@ public:
             sink.on_album(al.id.c_str(), al.name.c_str(), al.artist.c_str(), al.artistId.c_str(),
                           al.coverArtId.c_str(), al.year, al.songCount, al.created.c_str());
         });
+    }
+
+    bool list_tracks(navidrome::library_track_sink& sink, abort_callback& abort,
+                     pfc::string_base& errorOut) override {
+        if (!is_configured()) {
+            errorOut = "foo_navidrome has no server configured";
+            return false;
+        }
+        std::string err;
+        const auto songs = navidrome::libraryClient().getAllSongs(err);
+        abort.check();
+        if (!err.empty()) {
+            errorOut = err.c_str();
+            return false;
+        }
+        auto hints = metadb_io_v2::get()->create_hint_list();
+        std::size_t count = 0;
+        for (const auto& s : songs) {
+            abort.check();
+            const navidrome::TrackURI t = navidrome::trackURIFromNode(*navidrome::makeSongNode(s));
+            const std::string uri = navidrome::buildTrackURI(t);
+            if (uri.empty()) continue;
+            playable_location_impl loc;
+            loc.set_path(uri.c_str());
+            loc.set_subsong(0);
+            metadb_handle_ptr handle;
+            metadb::get()->handle_create(handle, loc);
+            file_info_impl info;
+            navidrome::applyTrackInfo(t, info);
+            hints->add_hint(handle, info, filestats_invalid, true);
+            sink.on_track(handle);
+            ++count;
+        }
+        fb2k::inMainThread([hints]() { hints->on_done(); });
+        NAVIDROME_LOG("Library", "list_tracks: " + std::to_string(count) + " tracks");
+        return true;
+    }
+
+    bool artist_info(const char* artistName, navidrome::artist_info_sink& sink, abort_callback& abort,
+                     pfc::string_base& errorOut) override {
+        if (!is_configured()) {
+            errorOut = "foo_navidrome has no server configured";
+            return false;
+        }
+        const std::string name = artistName ? artistName : "";
+        const auto lower = [](std::string s) {
+            for (auto& c : s) c = (char)std::tolower((unsigned char)c);
+            return s;
+        };
+        std::string err;
+        const auto artists = navidrome::libraryClient().getArtists(err);
+        abort.check();
+        if (!err.empty()) {
+            errorOut = err.c_str();
+            return false;
+        }
+        const std::string want = lower(name);
+        const auto it = std::find_if(artists.begin(), artists.end(),
+                                     [&](const navidrome::Artist& a) { return lower(a.name) == want; });
+        if (it == artists.end()) {
+            errorOut = ("no artist named \"" + name + "\" on the server").c_str();
+            return false;
+        }
+        const navidrome::ArtistInfo info = navidrome::artistInfoForDisplay(it->id, it->name, err);
+        abort.check();
+        if (!err.empty()) {
+            errorOut = err.c_str();
+            return false;
+        }
+        const std::string& image = !info.largeImageUrl.empty() ? info.largeImageUrl
+                                 : !info.mediumImageUrl.empty() ? info.mediumImageUrl : info.smallImageUrl;
+        sink.on_artist_info(it->id.c_str(), info.biography.c_str(), image.c_str(), info.lastFmUrl.c_str());
+        NAVIDROME_LOG("Library", "artist_info: \"" + it->name + "\"" + (image.empty() ? " (no image)" : ""));
+        return true;
     }
 
     album_art_data_ptr fetch_cover(const char* coverArtId, int size, abort_callback& abort) override {
