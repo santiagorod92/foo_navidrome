@@ -56,7 +56,9 @@ once, by prepare, to download Windows and build its unattended setup.
   tap      tap STEPS: several steps in one run inside the guest, so a popup menu
            opened by one click is still there for the next: X,Y[,right|double]
            (pixels, or X%,Y% of the screen), wait,MS, key,VK (a virtual-key code,
-           e.g. key,13 for Enter), separated by ';'
+           e.g. key,13 for Enter), drag,X1,Y1,X2,Y2 (left button held from the first
+           point to the second), hover,X,Y (move the pointer there, no click),
+           separated by ';'
   logs     follow the VM's serial/QEMU log
   down     stop the VM and the noVNC page (the disk is kept)
   status   VM, screen and ssh state
@@ -262,6 +264,23 @@ function At([string]$v, [int]$size) { if ($v.EndsWith('%')) { [int]([double]$v.T
 foreach ($s in $steps.Split(';')) {
   $p = $s.Trim().Split(',')
   if ($p[0] -eq 'wait') { Start-Sleep -Milliseconds ([int]$p[1]); continue }
+  if ($p[0] -eq 'hover') {
+    [Tap]::SetCursorPos((At $p[1] $b.Width) - 3, (At $p[2] $b.Height)) | Out-Null; Start-Sleep -Milliseconds 100
+    [Tap]::SetCursorPos((At $p[1] $b.Width), (At $p[2] $b.Height)) | Out-Null; Start-Sleep -Milliseconds 300
+    continue
+  }
+  if ($p[0] -eq 'drag') {
+    $x1 = At $p[1] $b.Width; $y1 = At $p[2] $b.Height; $x2 = At $p[3] $b.Width; $y2 = At $p[4] $b.Height
+    [Tap]::SetCursorPos($x1, $y1) | Out-Null; Start-Sleep -Milliseconds 150
+    [Tap]::mouse_event(0x2, 0, 0, 0, [IntPtr]::Zero); Start-Sleep -Milliseconds 150
+    for ($i = 1; $i -le 20; $i++) {
+      [Tap]::SetCursorPos([int]($x1 + ($x2 - $x1) * $i / 20), [int]($y1 + ($y2 - $y1) * $i / 20)) | Out-Null
+      Start-Sleep -Milliseconds 40
+    }
+    Start-Sleep -Milliseconds 300
+    [Tap]::mouse_event(0x4, 0, 0, 0, [IntPtr]::Zero); Start-Sleep -Milliseconds 1500
+    continue
+  }
   if ($p[0] -eq 'key') {
     [Tap]::keybd_event([byte][int]$p[1], 0, 0, [IntPtr]::Zero); [Tap]::keybd_event([byte][int]$p[1], 0, 2, [IntPtr]::Zero)
     Start-Sleep -Milliseconds 500; continue
