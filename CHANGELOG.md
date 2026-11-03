@@ -1,3 +1,11 @@
+## [1.39.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.38.0...v1.39.0) (2026-11-03)
+
+
+### Features
+
+* **playlist:** your Navidrome play count and last-played date now show in foobar2000, as `%navidrome_play_count%` and `%navidrome_last_played%` (`YYYY-MM-DD HH:MM:SS`, local time) ([#55](https://github.com/santiagorod92/foo_navidrome/issues/55)). Add them as a custom column in any UI, for example under *Preferences › Display › Default User Interface › Playlist View* (`[%navidrome_play_count%]`). They are refreshed like ratings: when you open the album or search in the browser, when the track starts playing, when foobar2000 starts, and right after a play is scrobbled, so the count includes the play you just made. Tracks never played have no value. They are separate fields from foobar2000's own `%play_count%` / `%last_played%`, which another component can't write. The last-played date needs a server that reports it (current Navidrome does).
+
+
 ## [1.38.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.37.0...v1.38.0) (2026-10-31)
 
 
