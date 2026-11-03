@@ -53,8 +53,9 @@ bool applyRatingFields(file_info& info, const navidrome::RatingUpdate& u) {
     const char* wantRating  = rating.is_empty() ? nullptr : rating.c_str();
     const char* wantStarred = u.starred ? "1" : nullptr;
 
+    const bool playsChanged = u.plays && navidrome::applyPlayStats(info, *u.plays);
     if (same(have(navidrome::kRatingTag), wantRating) &&
-        same(have(navidrome::kStarredTag), wantStarred)) return false;
+        same(have(navidrome::kStarredTag), wantStarred)) return playsChanged;
 
     put(navidrome::kRatingTag,  wantRating);
     put(navidrome::kStarredTag, wantStarred);

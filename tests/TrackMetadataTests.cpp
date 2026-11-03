@@ -126,3 +126,47 @@ TEST_CASE(testTrackMetaFields) {
           "song node → URI keeps the tags");
 }
 }
+
+TEST_CASE(testPlayStats) {
+    navidrome::Song played = songFrom(
+        "{\"id\":\"p1\",\"playCount\":7,\"played\":\"2026-10-01T12:34:56.789Z\"}");
+    check(played.plays.known && played.plays.count == 7 &&
+          played.plays.lastPlayed == "2026-10-01T12:34:56.789Z",
+          "parseSong reads playCount and the OpenSubsonic played date");
+
+    navidrome::Song never = songFrom("{\"id\":\"p2\"}");
+    check(never.plays.known && never.plays.count == 0 && never.plays.lastPlayed.empty(),
+          "parseSong: a song without playCount counts as never played");
+
+    long long secs = 0;
+    check(navidrome::parseIsoTimestamp("1970-01-01T00:00:00Z", secs) && secs == 0,
+          "parseIsoTimestamp: epoch");
+    check(navidrome::parseIsoTimestamp("2026-10-01T12:34:56.789Z", secs) && secs == 1790858096LL,
+          "parseIsoTimestamp: fraction and Z");
+    check(navidrome::parseIsoTimestamp("2026-10-01T14:34:56+02:00", secs) && secs == 1790858096LL,
+          "parseIsoTimestamp: positive offset");
+    check(navidrome::parseIsoTimestamp("2026-10-01T09:04:56.5-0330", secs) && secs == 1790858096LL,
+          "parseIsoTimestamp: negative offset without colon");
+    check(navidrome::parseIsoTimestamp("2024-02-29T00:00:00", secs) && secs == 1709164800LL,
+          "parseIsoTimestamp: leap day, no zone = UTC");
+    check(!navidrome::parseIsoTimestamp("", secs) &&
+          !navidrome::parseIsoTimestamp("2026-13-01T00:00:00Z", secs) &&
+          !navidrome::parseIsoTimestamp("2026-10-01", secs) &&
+          !navidrome::parseIsoTimestamp("2026-10-01T00:00:00Q", secs),
+          "parseIsoTimestamp rejects empty, invalid and date-only values");
+
+    navidrome::PlayStats p;
+    p.known = true;
+    p.count = 3;
+    p.lastPlayed = "2026-10-01T12:34:56Z";
+    const navidrome::PlayStatsMeta m = navidrome::playStatsMeta(p);
+    check(m.playCount == "3", "playStatsMeta: count as text");
+    check(m.lastPlayed.size() == 19 && m.lastPlayed[4] == '-' && m.lastPlayed[10] == ' ' &&
+          m.lastPlayed[13] == ':', "playStatsMeta: last played as YYYY-MM-DD HH:MM:SS local time");
+
+    navidrome::PlayStats none;
+    none.known = true;
+    const navidrome::PlayStatsMeta empty = navidrome::playStatsMeta(none);
+    check(empty.playCount.empty() && empty.lastPlayed.empty(),
+          "playStatsMeta: a never-played song writes no fields");
+}

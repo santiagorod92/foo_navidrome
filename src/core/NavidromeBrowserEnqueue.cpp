@@ -70,6 +70,7 @@ metadb_handle_list navidrome::makeTrackHandles(
 
         file_info_impl info;
         navidrome::applyTrackInfo(t, info);
+        if (node->plays.known) navidrome::applyPlayStats(info, node->plays);
         hints->add_hint(handle, info, filestats_invalid, true);
     }
     hints->on_done();

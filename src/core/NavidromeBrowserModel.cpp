@@ -6,7 +6,7 @@
 
 namespace navidrome {
 
-void syncBrowserNodesToPlaylists(const std::vector<BrowserNodePtr>& nodes) {
+void syncBrowserNodesToPlaylists(const std::vector<BrowserNodePtr>& nodes, bool withPlays) {
     std::vector<RatingUpdate> updates;
     std::function<void(const std::vector<BrowserNodePtr>&)> walk =
         [&](const std::vector<BrowserNodePtr>& list) {
@@ -18,6 +18,7 @@ void syncBrowserNodesToPlaylists(const std::vector<BrowserNodePtr>& nodes) {
                 u.songId  = n->id;
                 u.rating  = n->rating;
                 u.starred = n->starred;
+                if (withPlays && n->plays.known) u.plays = n->plays;
                 updates.push_back(std::move(u));
             }
         };
@@ -279,7 +280,7 @@ StarRatingResult applyStarredToNodes(IBrowserClient& client,
             result.error = one;
         }
     }
-    syncBrowserNodesToPlaylists(targets);
+    syncBrowserNodesToPlaylists(targets, false);
     return result;
 }
 
@@ -296,7 +297,7 @@ StarRatingResult applyRatingToNodes(IBrowserClient& client,
             result.error = one;
         }
     }
-    syncBrowserNodesToPlaylists(targets);
+    syncBrowserNodesToPlaylists(targets, false);
     return result;
 }
 

@@ -59,6 +59,7 @@ struct BrowserNode {
     double       bookmarkPositionMs = 0.0;
     std::string  infoText;
     TrackTags    tags;
+    PlayStats    plays;
 
     bool         childrenLoaded = false;
     bool         isLoading       = false;
@@ -120,6 +121,7 @@ inline BrowserNodePtr makeSongNode(const Song& s, double bookmarkPositionMs = 0.
     n->starred        = s.starred;
     n->rating         = s.rating;
     n->tags           = s.tags;
+    n->plays          = s.plays;
     n->bookmarkPositionMs = bookmarkPositionMs;
     n->childrenLoaded = true;
     return n;
@@ -566,7 +568,7 @@ std::string queueProblemMessage(bool gotSongs, const std::string& error, bool re
 std::vector<std::string> collectSongIdsDeep(IBrowserClient& client,
                                             const std::vector<BrowserNodePtr>& nodes);
 
-void syncBrowserNodesToPlaylists(const std::vector<BrowserNodePtr>& nodes);
+void syncBrowserNodesToPlaylists(const std::vector<BrowserNodePtr>& nodes, bool withPlays = true);
 
 struct StarRatingResult {
     std::size_t done = 0;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "PlayStats.h"
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -12,6 +14,7 @@ struct RatingUpdate {
     std::string songId;
     int  rating  = 0;
     bool starred = false;
+    std::optional<PlayStats> plays;
 };
 
 void syncRatingsToPlaylists(std::vector<RatingUpdate> updates);

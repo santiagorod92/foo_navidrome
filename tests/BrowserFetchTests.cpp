@@ -354,6 +354,7 @@ TEST_CASE(testBrowserFetchDispatch) {
 
     {
         navidrome::Song s1; s1.id = "s1"; s1.rating = 4; s1.starred = true;
+        s1.plays.known = true; s1.plays.count = 9;
         navidrome::Song s2; s2.id = "";   s2.rating = 2;
         std::vector<navidrome::BrowserNodePtr> mixed = {
             navidrome::makeSongNode(s1),
@@ -369,6 +370,8 @@ TEST_CASE(testBrowserFetchDispatch) {
               navidrome::g_lastRatingSync[0].rating == 4 &&
               navidrome::g_lastRatingSync[0].starred,
               "syncBrowserNodesToPlaylists forwards only id-bearing Song nodes");
+        check(navidrome::g_lastRatingSync[0].plays && navidrome::g_lastRatingSync[0].plays->count == 9,
+              "syncBrowserNodesToPlaylists carries the play stats of freshly loaded songs");
 
         FakeBrowserClient fc;
         navidrome::Song s3; s3.id = "s3";

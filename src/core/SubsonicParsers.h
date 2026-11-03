@@ -110,6 +110,9 @@ inline Song parseSong(const json::Value& s) {
     so.starred    = jFlag(s, "starred");
     so.rating     = jInt(s, "userRating");
     so.tags       = parseTrackTags(s);
+    so.plays.known      = true;
+    so.plays.count      = jInt(s, "playCount");
+    so.plays.lastPlayed = jStr(s, "played");
     return so;
 }
 

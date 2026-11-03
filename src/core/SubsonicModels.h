@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "PlayStats.h"
 #include "TrackTags.h"
 
 namespace navidrome {
@@ -43,6 +44,7 @@ struct Song {
     bool   starred  = false;
     int    rating   = 0;
     TrackTags tags;
+    PlayStats plays;
 };
 
 struct Playlist {

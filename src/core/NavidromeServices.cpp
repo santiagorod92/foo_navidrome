@@ -117,6 +117,7 @@ public:
             metadb::get()->handle_create(handle, loc);
             file_info_impl info;
             navidrome::applyTrackInfo(t, info);
+            navidrome::applyPlayStats(info, s.plays);
             hints->add_hint(handle, info, filestats_invalid, true);
             sink.on_track(handle);
             ++count;

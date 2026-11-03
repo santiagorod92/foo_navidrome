@@ -53,6 +53,25 @@ void navidrome::applyTrackInfo(const TrackURI& t, file_info& info) {
     }
 }
 
+bool navidrome::applyPlayStats(file_info& info, const PlayStats& plays) {
+    const PlayStatsMeta want = playStatsMeta(plays);
+    bool changed = false;
+    auto put = [&](const char* field, const std::string& value) {
+        const char* have = info.meta_get_count_by_name(field) > 0 ? info.meta_get(field, 0) : nullptr;
+        if (value.empty()) {
+            if (!have) return;
+            info.meta_remove_field(field);
+        } else {
+            if (have && value == have) return;
+            info.meta_set(field, value.c_str());
+        }
+        changed = true;
+    };
+    put(kPlayCountTag, want.playCount);
+    put(kLastPlayedTag, want.lastPlayed);
+    return changed;
+}
+
 void navidrome::TrackDecoder::open(const TrackURI& track, unsigned flags, abort_callback& abort) {
     m_track = track;
     m_flags = flags;

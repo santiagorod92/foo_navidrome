@@ -60,6 +60,33 @@ std::int64_t nowMs() {
         std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
+void refreshTrackFromServer(const std::string& songId) {
+    auto& core = navidrome::libraryCore();
+    std::string err;
+    navidrome::Song song;
+    if (!core.getSong(songId, song, err)) {
+        NAVIDROME_WARN("Rating", "getSong id=" + songId + " failed: " + core.lastError().kindName());
+        return;
+    }
+    navidrome::RatingUpdate u;
+    u.songId  = songId;
+    u.rating  = song.rating;
+    u.starred = song.starred;
+    u.plays   = song.plays;
+    NAVIDROME_LOG("Rating", "id=" + songId + " -> rating=" + std::to_string(u.rating) +
+                  " starred=" + (u.starred ? "1" : "0") +
+                  " plays=" + std::to_string(song.plays.count));
+    std::vector<navidrome::RatingUpdate> updates;
+    updates.push_back(std::move(u));
+    navidrome::syncRatingsToPlaylists(std::move(updates));
+}
+
+void refreshRatingAsync(std::string songId) {
+    std::thread([songId]() {
+        navidrome::dbg::runGuarded("Rating", "refreshRatingAsync", [&] { refreshTrackFromServer(songId); });
+    }).detach();
+}
+
 void scrobbleAsync(std::string songId, bool submission) {
     const std::int64_t playedAtMs = nowMs();
     std::thread([songId, submission, playedAtMs]() {
@@ -75,33 +102,12 @@ void scrobbleAsync(std::string songId, bool submission) {
             NAVIDROME_LOG("Scrobble", std::string(submission ? "submit" : "now-playing") +
                           " id=" + songId + (e.ok() ? " ok"
                           : std::string(" FAILED ") + e.kindName() + ": " + e.message));
-            if (submission && navidrome::shouldQueueScrobble(e))
+            if (submission && e.ok())
+                refreshTrackFromServer(songId);
+            else if (submission && navidrome::shouldQueueScrobble(e))
                 queueScrobble(songId, playedAtMs, e.kindName());
             else if (!submission && e.ok())
                 flushScrobbleQueue("now-playing");
-        });
-    }).detach();
-}
-
-void refreshRatingAsync(std::string songId) {
-    std::thread([songId]() {
-        navidrome::dbg::runGuarded("Rating", "refreshRatingAsync", [&] {
-            auto& core = navidrome::libraryCore();
-            std::string err;
-            navidrome::Song song;
-            if (!core.getSong(songId, song, err)) {
-                NAVIDROME_WARN("Rating", "getSong id=" + songId + " failed: " + core.lastError().kindName());
-                return;
-            }
-            navidrome::RatingUpdate u;
-            u.songId  = songId;
-            u.rating  = song.rating;
-            u.starred = song.starred;
-            NAVIDROME_LOG("Rating", "id=" + songId + " -> rating=" + std::to_string(u.rating) +
-                          " starred=" + (u.starred ? "1" : "0"));
-            std::vector<navidrome::RatingUpdate> updates;
-            updates.push_back(std::move(u));
-            navidrome::syncRatingsToPlaylists(std::move(updates));
         });
     }).detach();
 }
@@ -200,6 +206,7 @@ void refreshRatingsOnStart() {
                     u.songId  = song.id;
                     u.rating  = song.rating;
                     u.starred = song.starred;
+                    u.plays   = song.plays;
                     updates.push_back(std::move(u));
                 }
             }

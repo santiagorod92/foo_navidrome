@@ -1,4 +1,5 @@
 #pragma once
+#include "PlayStats.h"
 #include "TrackUri.h"
 #include <SDK/input.h>
 #include <SDK/file_info.h>
@@ -11,6 +12,7 @@
 namespace navidrome {
 
 void applyTrackInfo(const TrackURI& track, file_info& info);
+bool applyPlayStats(file_info& info, const PlayStats& plays);
 
 class TrackDecoder {
 public:

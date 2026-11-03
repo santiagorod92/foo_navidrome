@@ -50,10 +50,14 @@ TEST_CASE(testStarRatingSimilarRandom) {
     {
         FakeBrowserClient fc;
         navidrome::Song s; s.id = "song1";
+        s.plays.known = true; s.plays.count = 2;
         std::vector<BrowserNodePtr> targets = { navidrome::makeSongNode(s) };
+        navidrome::g_lastRatingSync.clear();
         auto result = navidrome::applyRatingToNodes(fc, targets, 4);
         check(result.done == 1 && result.error.empty() && targets[0]->rating == 4,
               "applyRatingToNodes rates a song and mutates rating in place");
+        check(navidrome::g_lastRatingSync.size() == 1 && !navidrome::g_lastRatingSync[0].plays,
+              "applyRatingToNodes leaves the playlist's play stats alone (the node's may be stale)");
         check(fc.calls.back() == "setRating:song1:4", "applyRatingToNodes forwards stars + id");
     }
 

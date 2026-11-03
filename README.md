@@ -18,7 +18,7 @@ A [foobar2000](https://www.foobar2000.org/) component that lets you browse and s
 - **Decades**: expand it for one entry per decade your library spans (2020s, 2010s, … down to your oldest album); expand a decade for every album released in it, band by band (sorted by artist, then year), shown as *Artist — Album* with the year. Add / Play on a decade queues all of it. Albums without a year aren't listed; the library filter applies
 - **Scrobbling**: plays are reported back to Navidrome, so play counts, "Recently Played" and any Last.fm / ListenBrainz relay the server has configured stay in sync (toggle in Preferences). A play that can't be reported because the server is unreachable is kept and sent, with its original time, once the server answers again
 - **Several servers**: save more than one Navidrome login in *Preferences › Tools › Navidrome* (**Server:** › **Add…**) and switch between them from the same list; the browser, search and everything else follow the selected server
-- **Favorites and ratings** from the right-click menu — Star / Unstar and a 0-5 star rating, stored per-user on the server so they show up in the web UI and on your phone, and available in the playlist as `%navidrome_rating%` / `%navidrome_starred%` for a custom column. Also available straight from **the playlist's own right-click menu** (rate/star a track without going back to the browser), and kept in sync in already-added playlist entries — see [Showing ratings in the playlist](#showing-ratings-in-the-playlist)
+- **Favorites and ratings** from the right-click menu — Star / Unstar and a 0-5 star rating, stored per-user on the server so they show up in the web UI and on your phone, and available in the playlist as `%navidrome_rating%` / `%navidrome_starred%` for a custom column (the server's play count and last-played date too: `%navidrome_play_count%` / `%navidrome_last_played%`). Also available straight from **the playlist's own right-click menu** (rate/star a track without going back to the browser), and kept in sync in already-added playlist entries — see [Showing ratings in the playlist](#showing-ratings-in-the-playlist)
 - **Manage server playlists** from the right-click menu — add the selection to any existing playlist or a **New Playlist…**, remove tracks, rename, delete. Changes land on the server, so they show up everywhere
 - **Send Active Playlist to Navidrome** from the right-click menu — uploads the active foobar2000 playlist under the same name
 - **Bookmarks (resume playback)** — bookmark the currently playing track's position with **File › Bookmark Current Position** (Windows and macOS), browse them under the **Bookmarks** smart list (shows a trailing `⏱ m:ss`), remove one from its right-click menu. Backed by Subsonic's `getBookmarks.view` / `createBookmark.view` / `deleteBookmark.view`
@@ -330,6 +330,27 @@ still reach them, and opening their album in the browser updates them
 immediately, no re-adding needed. Re-adding a track is only needed if you want
 that entry to take part in the *startup* pass as well, since the album id is
 written into the URI when the track is added.
+
+#### Showing play counts in the playlist
+
+The server's play count and last-played date are exported the same way, as
+`%navidrome_play_count%` and `%navidrome_last_played%`
+(`YYYY-MM-DD HH:MM:SS`, your local time; the date needs a server that reports
+OpenSubsonic's `played` field, as current Navidrome does). Both are absent for tracks never played. Add them as custom
+columns, e.g. `[%navidrome_play_count%]`, in any UI: the Default UI's playlist
+view, Columns UI, or a skin.
+
+They are refreshed by the same triggers as ratings (opening the album or
+searching, the track starting to play, the startup pass), and once more right
+after a play is scrobbled, so the count includes the play you just made.
+Rating or starring a track keeps the counts it already shows.
+
+These are separate from foobar2000's own `%play_count%` / `%last_played%`
+(Playback Statistics): another component can't write those, so both sets live
+side by side. Plays made in foobar2000 are scrobbled to Navidrome (when
+scrobbling is on), so the Navidrome count includes them. The counts aren't
+written into the track's URI, so a forced *Reload info* clears them until the next
+refresh.
 
 #### Managing server playlists
 
