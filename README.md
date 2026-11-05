@@ -938,7 +938,7 @@ Platform folders only hold transport, widget and wiring code — a data-layer fi
 ### Commits, versioning, and PRs
 
 - Commit messages **must** follow [Conventional Commits](https://www.conventionalcommits.org/) — the release pipeline parses them to decide the version bump. See [Commit message convention](#commit-message-convention). In short: `feat:` → minor, `fix:`/`perf:`/`refactor:` → patch, `chore:`/`docs:`/`ci:`/etc. → no release, `!` or a `BREAKING CHANGE:` footer → major.
-- **Never bump a version by hand** — releases are tags; the pipeline stamps the version. Release notes come from the commits; your job is just well-typed commits. Changes reach `main` through pull requests.
+- **Never bump a version by hand** — releases are tags; the pipeline stamps the version. Release notes are the version's `CHANGELOG.md` section; your job is well-typed commits (the maintainer writes the entry). Changes reach `main` through pull requests.
 - Test on at least one platform and say which one in the PR. Cross-platform changes ideally get verified on both macOS and a Windows build (native, or cross-compiled + run under Wine — see the Linux section).
 - Keep PRs focused; one logical change per PR makes review and the auto-generated changelog far cleaner.
 
