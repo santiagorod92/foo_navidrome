@@ -196,7 +196,8 @@ win-setup-toolchain-mac:
 win-build-mac:
 	./scripts/win-build-mac.sh
 
-MVM ?= $(abspath ../macos-devbox/mvm)
+TERMINAL_MAC_SH = $(abspath scripts/terminal-mac.sh)
+MVM ?= $(if $(filter Darwin,$(shell uname)),$(TERMINAL_MAC_SH),$(abspath ../macos-devbox/mvm))
 COMPONENT ?= $(firstword $(shell ls -t foo_navidrome*.fb2k-component 2>/dev/null))
 
 VNC ?= 1
@@ -214,7 +215,8 @@ mac-vm-vnc:
 	$(MVM) up --wait
 
 mac-vm-open:
-	@eval "$$( [ -f "$(MVM_ENV)" ] && grep -E '^MVM_(WEB|SSH)_PORT=' "$(MVM_ENV)" )"; \
+	@if [ "$(MVM)" = "$(TERMINAL_MAC_SH)" ]; then exec $(MVM) open; fi; \
+	  eval "$$( [ -f "$(MVM_ENV)" ] && grep -E '^MVM_(WEB|SSH)_PORT=' "$(MVM_ENV)" )"; \
 	  web=http://127.0.0.1:$${MVM_WEB_PORT:-8006}; ssh=$${MVM_SSH_PORT:-50922}; \
 	  echo "waiting for macOS to boot (sshd on :$$ssh) before opening $$web ..."; \
 	  for i in $$(seq 1 180); do \
@@ -232,7 +234,8 @@ mac-vm-release:
 	$(MVM) deploy --gh santiagorod92/foo_navidrome$(if $(TAG),@$(TAG)) --launch
 
 mac-vm-smoke:
-	./scripts/mac-vm/mac-vm-build.sh --debug-log --no-unit-tests
+	@if [ "$(MVM)" = "$(TERMINAL_MAC_SH)" ]; then ./scripts/mac-dev-build.sh --package --no-test; \
+	  else ./scripts/mac-vm/mac-vm-build.sh --debug-log --no-unit-tests; fi
 	./scripts/ui-test.sh mac smoke
 
 mac-vm-ui:

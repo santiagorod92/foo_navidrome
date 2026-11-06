@@ -17,6 +17,7 @@ for arg in "$@"; do
         --patch)        BUMP="patch"      ;;
         --no-bump)      BUMP="none"       ;;
         --no-install)   DO_INSTALL=false  ;;
+        --package)      DO_INSTALL=package ;;
         --no-test)      RUN_TESTS=false   ;;
         --new-release)  DO_RELEASE=true   ;;
         *) echo "Unknown argument: $arg"; exit 1 ;;
@@ -107,7 +108,9 @@ else
     exit 1
 fi
 
-if [ "$DO_INSTALL" = true ]; then
+if [ "$DO_INSTALL" = package ]; then
+    "$SCRIPT_DIR/install-macos.sh" --package-only
+elif [ "$DO_INSTALL" = true ]; then
     if [ "$DO_RELEASE" = true ]; then
         "$SCRIPT_DIR/install-macos.sh" --new-release
     else

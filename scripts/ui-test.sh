@@ -10,7 +10,8 @@ component's debug log, the process and its crash reports; screenshots go to buil
 Platforms
   wine     the local Wine foobar2000 (~/.foobar2000); input posted with tools/wclick.c
   win11    the Windows 11 VM (../windows-devbox, wvm); real Windows, VNC input
-  mac      the macOS VM (../macos-devbox, mvm); VNC input
+  mac      the macOS VM: on a Mac terminal-mac (../foo_navidrome/scripts/terminal-mac.sh),
+           elsewhere ../macos-devbox's mvm; MVM= picks another
 
 Scenarios (one implementation each, run on any platform that supports it)
   smoke [ARTIFACT]      relaunch, open the browser, expand an artist, play an album, post-checks
@@ -315,8 +316,10 @@ win11_seed() {
 }
 
 mac_init() {
-  MVM="${MVM:-$(cd "$REPO/.." && pwd)/macos-devbox/mvm}"
-  [ -x "$MVM" ] || { echo "mvm not found at $MVM"; exit 1; }
+  local vm="$(cd "$REPO/.." && pwd)/macos-devbox/mvm"
+  [ "$(uname)" = Darwin ] && vm="$REPO/scripts/terminal-mac.sh"
+  MVM="${MVM:-$vm}"
+  [ -x "$MVM" ] || { echo "no macOS VM driver at $MVM"; exit 1; }
   LOG=/tmp/foo_navidrome_debug.log
   GUEST_CFG='~/Library/foobar2000-v2/config.sqlite'
   FILE_MENU_X=162; FILE_MENU_Y=11
@@ -341,9 +344,16 @@ mac_clear_log() { g ": > $LOG"; }
 mac_crash_count() { g 'ls ~/Library/Logs/DiagnosticReports 2>/dev/null | grep -c "^foobar2000" || true'; }
 mac_cfg_sql() { mac_stop; g "sqlite3 $GUEST_CFG \"$1\""; }
 mac_keys() { "$MVM" key "$@" >/dev/null; sleep 0.3; }
-mac_file_menu() {
+mac_front() {
   g "osascript -e 'tell application \"foobar2000\" to activate'" >/dev/null
+  for _ in $(seq 1 20); do
+    g 'lsappinfo info -only name "$(lsappinfo front)"' | grep -q foobar2000 && break
+    sleep 0.5
+  done
   sleep 1
+}
+mac_file_menu() {
+  mac_front
   "$MVM" click "$FILE_MENU_X" "$FILE_MENU_Y" >/dev/null; sleep 1
   "$MVM" type "$1" >/dev/null; mac_keys enter
 }

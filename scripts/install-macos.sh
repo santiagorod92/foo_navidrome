@@ -3,9 +3,11 @@
 set -euo pipefail
 
 NEW_RELEASE=false
+PACKAGE_ONLY=false
 for arg in "$@"; do
     case "$arg" in
         --new-release) NEW_RELEASE=true ;;
+        --package-only) PACKAGE_ONLY=true ;;
         *) echo "Unknown argument: $arg"; exit 1 ;;
     esac
 done
@@ -37,6 +39,7 @@ if [ -z "$COMPONENT" ]; then
 fi
 
 DEST="${FB2K_COMPONENTS}/${COMPONENT_NAME}"
+[ "$PACKAGE_ONLY" = true ] && DEST="$(mktemp -d)/${COMPONENT_NAME}"
 echo "Installing: $COMPONENT"
 echo "       To:  $DEST"
 mkdir -p "$DEST"

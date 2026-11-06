@@ -24,6 +24,7 @@ on:
       - 'scripts/mac-dev-build.sh'
       - 'scripts/mac-syntax-check.sh'
       - 'scripts/win11-arm.sh'
+      - 'scripts/terminal-mac.sh'
   workflow_dispatch:
 
 permissions:
