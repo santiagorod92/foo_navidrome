@@ -70,7 +70,7 @@ public:
 
 static service_factory_single_t<navidrome_rating_api_impl> g_navidrome_rating_api_factory;
 
-class navidrome_library_api_impl : public navidrome::navidrome_library_api_v3 {
+class navidrome_library_api_impl : public navidrome::navidrome_library_api_v4 {
 public:
     bool is_configured() override { return navidrome::libraryCore().isConfigured(); }
 
@@ -90,6 +90,21 @@ public:
         });
     }
 
+    static bool track_handle(const navidrome::Song& s, const metadb_hint_list::ptr& hints, metadb_handle_ptr& handle) {
+        const navidrome::TrackURI t = navidrome::trackURIFromNode(*navidrome::makeSongNode(s));
+        const std::string uri = navidrome::buildTrackURI(t);
+        if (uri.empty()) return false;
+        playable_location_impl loc;
+        loc.set_path(uri.c_str());
+        loc.set_subsong(0);
+        metadb::get()->handle_create(handle, loc);
+        file_info_impl info;
+        navidrome::applyTrackInfo(t, info);
+        navidrome::applyPlayStats(info, s.plays);
+        hints->add_hint(handle, info, filestats_invalid, true);
+        return true;
+    }
+
     bool list_tracks(navidrome::library_track_sink& sink, abort_callback& abort,
                      pfc::string_base& errorOut) override {
         if (!is_configured()) {
@@ -107,18 +122,8 @@ public:
         std::size_t count = 0;
         for (const auto& s : songs) {
             abort.check();
-            const navidrome::TrackURI t = navidrome::trackURIFromNode(*navidrome::makeSongNode(s));
-            const std::string uri = navidrome::buildTrackURI(t);
-            if (uri.empty()) continue;
-            playable_location_impl loc;
-            loc.set_path(uri.c_str());
-            loc.set_subsong(0);
             metadb_handle_ptr handle;
-            metadb::get()->handle_create(handle, loc);
-            file_info_impl info;
-            navidrome::applyTrackInfo(t, info);
-            navidrome::applyPlayStats(info, s.plays);
-            hints->add_hint(handle, info, filestats_invalid, true);
+            if (!track_handle(s, hints, handle)) continue;
             sink.on_track(handle);
             ++count;
         }
@@ -162,6 +167,36 @@ public:
                                  : !info.mediumImageUrl.empty() ? info.mediumImageUrl : info.smallImageUrl;
         sink.on_artist_info(it->id.c_str(), info.biography.c_str(), image.c_str(), info.lastFmUrl.c_str());
         NAVIDROME_LOG("Library", "artist_info: \"" + it->name + "\"" + (image.empty() ? " (no image)" : ""));
+        return true;
+    }
+
+    bool search(const char* query, navidrome::library_search_sink& sink, abort_callback& abort,
+                pfc::string_base& errorOut) override {
+        if (!is_configured()) {
+            errorOut = "foo_navidrome has no server configured";
+            return false;
+        }
+        const std::string q = query ? query : "";
+        std::string err;
+        const navidrome::SearchResults found = navidrome::libraryClient().search(q, err);
+        abort.check();
+        if (!err.empty()) {
+            errorOut = err.c_str();
+            return false;
+        }
+        for (const auto& a : found.artists) sink.on_artist(a.id.c_str(), a.name.c_str(), a.coverArtId.c_str(), a.albumCount);
+        for (const auto& al : found.albums)
+            sink.on_album(al.id.c_str(), al.name.c_str(), al.artist.c_str(), al.artistId.c_str(), al.coverArtId.c_str(), al.year,
+                          al.songCount, al.created.c_str());
+        auto hints = metadb_io_v2::get()->create_hint_list();
+        for (const auto& s : found.songs) {
+            abort.check();
+            metadb_handle_ptr handle;
+            if (track_handle(s, hints, handle)) sink.on_track(handle);
+        }
+        fb2k::inMainThread([hints]() { hints->on_done(); });
+        NAVIDROME_LOG("Library", "search: " + std::to_string(found.artists.size()) + " artists, " + std::to_string(found.albums.size()) +
+                                     " albums, " + std::to_string(found.songs.size()) + " songs");
         return true;
     }
 

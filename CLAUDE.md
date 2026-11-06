@@ -54,10 +54,13 @@ installed.
   (own GUID, derives from v2) adds `list_tracks` (every song as a `metadb_handle`, info hinted, through
   `library_track_sink`) and `artist_info` (artist name → `getArtists` match, case-insensitive, then
   `artistInfoForDisplay` with its Last.fm fallback; `artist_info_sink` gets id, biography, the largest
-  image URL and the Last.fm URL). `list_albums`/`fetch_cover`/`list_tracks`/`artist_info` block — worker thread
-  only. Consumers: foo_ui_panels' album grid (`src/panels/album_list.cpp`) and foo_js_panel's
+  image URL and the Last.fm URL). `navidrome_library_api_v4` (own GUID, derives from v3) adds `search`
+  (`libraryClient().search()`, i.e. `search3` over the active music folders; `library_search_sink` gets
+  artists, albums with their `created` date, and songs as hinted `metadb_handle`s, made by the same
+  `track_handle` helper as `list_tracks`). `list_albums`/`fetch_cover`/`list_tracks`/`artist_info`/`search`
+  block — worker thread only. Consumers: foo_ui_panels' album grid (`src/panels/album_list.cpp`) and foo_js_panel's
   `navidrome` script object (`src/core/panel.cpp`: albums/artists on a worker thread, play/add,
-  `GetArtistInfoAsync`) and `fb.GetLibraryItems()` (v3 `list_tracks`).
+  `GetArtistInfoAsync`), `fb.GetLibraryItems()` (v3 `list_tracks`) and `navidrome.SearchAsync` (v4).
   Vendored copies: `foo_ui_panels/src/core/navidrome_library_api.h`,
   `foo_js_panel/src/core/navidrome_library_api.h` (identical to each other).
 
@@ -67,6 +70,10 @@ installed.
   `on_line(startMs, text)`, `startMs` = -1 when unsynced). `get_lyrics` blocks on a cache miss, so call it from a
   worker thread only. Shares the session `lyricsCache()` with the macOS lyrics panel. Consumer:
   foo_ui_panels' `lyrics_panel` (vendored copy: `foo_ui_panels/src/core/navidrome_lyrics_api.h`).
+
+- **`js_panel_notify_api`** (not this repo's: foo_js_panel's `src/core/js_panel_api.h`, vendored in
+  foo_ui_panels) — Panels UI skins → JS Panel scripts (`JSPANEL:` actions, skin variable changes).
+  Listed here so the cross-component list stays complete; see Shared conventions › Hosting.
 
 Adding a new cross-component interface: follow the same shape, and add a bullet here naming the
 interface, what it's for, and every known consumer — keeps both repos' CLAUDE.md honest about
@@ -105,6 +112,10 @@ anything repo-specific stays in the repo's own sections.
   `js_panel_api.h` contract (foo_js_panel's original, vendored byte-identical in foo_ui_panels):
   Windows = the element's `ui_element_config` data (UTF-8 path), macOS = the `instantiate()`
   dictionary key `script`. The wizard's `albums-js` layout needs it.
+- **Skin → script:** the same header carries `js_panel_notify_api`, published by JS Panel: Panels
+  UI calls `notify(name, info)` for a `JSPANEL:<name>[:<info>]` action and
+  `variable_changed(name, value)` from `save_pvars` for each changed skin variable (not the `_`
+  ones); JS Panel hands them to every panel as `on_notify_data` / `on_panelsui_variable_changed`.
 - **Changing a contract:** a change to a contract header (GUID, vtable order, sink signatures)
   lands in both repos in the same round, and the vendored copy stays byte-identical to the
   original. A new interface also gets a bullet in foo_navidrome's cross-compatibility list.
@@ -202,6 +213,18 @@ anything repo-specific stays in the repo's own sections.
 - **macOS VM:** `../macos-devbox` (`mvm`, dockur/macos, Intel guest). **Windows 11 VM:**
   `../windows-devbox` (`wvm`, dockur/windows), for Dark Mode, DPI and native theming that Wine
   fakes. Never `docker prune`/`rm`/`rmi`.
+- **macOS VM on a Mac (terminal-mac):** foo_navidrome's `scripts/terminal-mac.sh` over
+  github.com/govijr/terminal-mac (VM `default`, latest macOS, user `dev`). Files, config and
+  logs go over ssh (Remote Login on in the guest, key put there by `provision`); screenshots
+  and input go through terminal-mac's guest helper, in screen points. It has `mvm`'s commands, so
+  on a Mac `MVM` and `ui-test.sh mac` (foo_ui_panels, foo_navidrome) and foo_js_panel's
+  `ui-test.sh mac-vm` use it, and this Mac's own foobar2000 and desktop stay untouched.
+  `provision` also makes Panels UI the UI module and puts two silent tracks in the default
+  playlist; `seed` copies foo_navidrome's settings. Its drag is one atomic action, too quick for
+  an `NSDraggingSession`. "No guest display is available" = the guest's display slept, which
+  also locks the session: `provision` sets `pmset displaysleep 0 sleep 0` so it doesn't, and a
+  locked session is unlocked by hand from `terminal-mac open`/`view`. Its menu bar ignores a
+  click right after foobar2000 launches, so the mac drivers wait for `lsappinfo front` and retry.
 - **Windows 11 ARM VM (Apple Silicon Mac):** foo_navidrome's `scripts/win11-arm.sh` (QEMU +
   HVF, launchd jobs). Every repo drives it with the same `make win11-arm*` targets; foo_ui_panels
   and foo_js_panel point at `../foo_navidrome/scripts/win11-arm.sh` (`WIN11_ARM=`). `deploy <dll>` installs into
@@ -216,7 +239,7 @@ anything repo-specific stays in the repo's own sections.
   seeds its profile from the ARM one). `fb2k stop` closes whichever build is running.
 - **UI tests:** every repo drives the real foobar2000 with one script,
   `scripts/ui-test.sh <platform> <scenario>` (foo_ui_panels and foo_navidrome: `wine|win11|mac`;
-  foo_js_panel so far: `mac` = this Mac's foobar2000, `win11-arm`): each scenario is written once over a small
+  foo_js_panel so far: `mac` = this Mac's foobar2000, `mac-vm`, `win11-arm`): each scenario is written once over a small
   per-platform driver and asserts on the component log, the process and crash reports.
   `ui-test.sh compare <scenario> [platforms]` prints a step matrix that marks where platforms
   differ (`PARALLEL=1` runs them at once; one test agent per platform works the same way).

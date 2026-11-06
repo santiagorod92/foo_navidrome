@@ -1,3 +1,11 @@
+## [1.40.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.39.0...v1.40.0) (2026-11-06)
+
+### Added
+- **Search for other components**: version 4 of the library interface other components use lets
+  them search your server (artists, albums and tracks, across the music folders you picked).
+  [JS Panel](https://github.com/santiagorod92/foo_js_panel) 1.4 scripts use it as
+  `navidrome.SearchAsync(query)`; the tracks come back ready to play or add to a playlist.
+
 ## [1.39.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.38.0...v1.39.0) (2026-11-03)
 
 
