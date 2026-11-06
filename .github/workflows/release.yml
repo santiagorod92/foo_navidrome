@@ -90,7 +90,7 @@ jobs:
   build-mac:
     needs: version
     if: needs.version.outputs.next_version != ''
-    runs-on: macos-14
+    runs-on: macos-latest
 
     steps:
       - name: Checkout foo_navidrome
