@@ -116,6 +116,18 @@ anything repo-specific stays in the repo's own sections.
   UI calls `notify(name, info)` for a `JSPANEL:<name>[:<info>]` action and
   `variable_changed(name, value)` from `save_pvars` for each changed skin variable (not the `_`
   ones); JS Panel hands them to every panel as `on_notify_data` / `on_panelsui_variable_changed`.
+  `js_panel_notify_api_v2::state_changed(name, value)` (`mini_mode`, `zoom`; sent after a render
+  that changed them) becomes `on_panelsui_mini_mode` / `on_panelsui_zoom`.
+- **Script → skin panels:** `panels_ui_api_v2` (queried from the v1 service) names a hosted JS
+  Panel's slot from its native view (HWND / NSView), gives panel rects and, for a
+  `panel.<name>.transparent = 1` panel, the skin pixels beneath it (`get_backdrop`, PARGB into the
+  caller's buffer, so no allocation crosses the DLLs), the skin's colours and fonts for
+  `window.GetColour*`/`GetFont*` (`get_colour`/`get_font`, Default UI kind numbers) and
+  `eval` (titleformat through the skin's hook, drawing into a throwaway canvas), and
+  `get_value`/`set_value` (unsaved values the skin reads with `$getvalue`; fb2k's own `$get` never
+  reaches the hook). While Panels UI creates an embedded panel, `panel_name` answers with that
+  panel's name, so a script's top-level code already sees `panelsui.PanelName`.
+  `panelsui.ShowPanel`/`MovePanel`/… are `PANEL:` actions sent through `run_action`.
 - **Changing a contract:** a change to a contract header (GUID, vtable order, sink signatures)
   lands in both repos in the same round, and the vendored copy stays byte-identical to the
   original. A new interface also gets a bullet in foo_navidrome's cross-compatibility list.
