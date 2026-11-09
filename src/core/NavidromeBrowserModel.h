@@ -277,46 +277,55 @@ inline BrowserNodePtr makeCrossArtistAlbumNode(const Album& a) {
     return n;
 }
 
+using CollationRanks = std::vector<int> (*)(const std::vector<std::string>& keys);
+std::vector<std::string> uniqueKeys(const std::vector<std::string>& keys);
+std::vector<int> collationRanksBy(const std::vector<std::string>& keys, const std::vector<std::string>& unique,
+                                  const std::function<int(size_t, size_t)>& cmp);
+std::vector<int> foldedRanks(const std::vector<std::string>& keys);
+void setCollationRanks(CollationRanks ranks);
+std::vector<int> collationRanks(const std::vector<std::string>& keys);
+
 inline void sortDecadeAlbums(std::vector<Album>& albums) {
-    auto lower = [](std::string s) {
-        for (auto& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        return s;
-    };
-    std::stable_sort(albums.begin(), albums.end(), [&](const Album& a, const Album& b) {
-        const std::string la = lower(a.artist), lb = lower(b.artist);
-        if (la != lb) return la < lb;
-        if (a.year != b.year) return a.year < b.year;
-        return lower(a.name) < lower(b.name);
+    std::vector<std::string> artists, names;
+    for (const auto& a : albums) { artists.push_back(a.artist); names.push_back(a.name); }
+    const std::vector<int> artist = collationRanks(artists), name = collationRanks(names);
+    std::vector<size_t> order(albums.size());
+    for (size_t i = 0; i < order.size(); ++i) order[i] = i;
+    std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+        if (artist[a] != artist[b]) return artist[a] < artist[b];
+        if (albums[a].year != albums[b].year) return albums[a].year < albums[b].year;
+        return name[a] < name[b];
     });
+    std::vector<Album> sorted;
+    sorted.reserve(albums.size());
+    for (size_t i : order) sorted.push_back(std::move(albums[i]));
+    albums = std::move(sorted);
 }
 
 inline void sortAllSongs(std::vector<Song>& songs) {
-    auto lower = [](std::string s) {
-        for (auto& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        return s;
-    };
-    struct Key { std::string artist, album, title; size_t index; };
-    std::vector<Key> keys;
-    keys.reserve(songs.size());
-    for (size_t i = 0; i < songs.size(); ++i) {
-        const Song& s = songs[i];
-        keys.push_back({ lower(s.tags.albumArtist.empty() ? s.artist : s.tags.albumArtist),
-                         lower(s.album), lower(s.title), i });
+    std::vector<std::string> artists, albumNames, titles;
+    for (const Song& s : songs) {
+        artists.push_back(s.tags.albumArtist.empty() ? s.artist : s.tags.albumArtist);
+        albumNames.push_back(s.album);
+        titles.push_back(s.title);
     }
-    std::stable_sort(keys.begin(), keys.end(), [&](const Key& ka, const Key& kb) {
-        const Song& a = songs[ka.index];
-        const Song& b = songs[kb.index];
-        if (ka.artist != kb.artist) return ka.artist < kb.artist;
+    const std::vector<int> artist = collationRanks(artists), album = collationRanks(albumNames), title = collationRanks(titles);
+    std::vector<size_t> order(songs.size());
+    for (size_t i = 0; i < order.size(); ++i) order[i] = i;
+    std::stable_sort(order.begin(), order.end(), [&](size_t ia, size_t ib) {
+        const Song& a = songs[ia];
+        const Song& b = songs[ib];
+        if (artist[ia] != artist[ib]) return artist[ia] < artist[ib];
         if (a.year != b.year) return a.year < b.year;
-        if (ka.album != kb.album) return ka.album < kb.album;
+        if (album[ia] != album[ib]) return album[ia] < album[ib];
         if (a.albumId != b.albumId) return a.albumId < b.albumId;
         if (a.tags.discNumber != b.tags.discNumber) return a.tags.discNumber < b.tags.discNumber;
         if (a.track != b.track) return a.track < b.track;
-        return ka.title < kb.title;
+        return title[ia] < title[ib];
     });
     std::vector<Song> sorted;
     sorted.reserve(songs.size());
-    for (const auto& k : keys) sorted.push_back(std::move(songs[k.index]));
+    for (size_t i : order) sorted.push_back(std::move(songs[i]));
     songs = std::move(sorted);
 }
 

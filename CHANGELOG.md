@@ -1,3 +1,11 @@
+## [1.41.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.40.0...v1.41.0) (2026-11-09)
+
+### Changed
+- **Browser lists sort in your language's order**: All Songs and a decade's albums sort artists,
+  albums and titles the way your system does (Windows: the regional format; macOS: the list sort
+  order): Chinese names by Pinyin on a Chinese system, numbers by value (*Vol. 9* before
+  *Vol. 10*). Before, non-English names sorted by their character codes.
+
 ## [1.40.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.39.0...v1.40.0) (2026-11-06)
 
 ### Added

@@ -36,6 +36,17 @@ std::string navidrome::systemLanguageCode() {
     }
 }
 
+std::vector<int> navidrome::systemCollationRanks(const std::vector<std::string>& keys) {
+    @autoreleasepool {
+        const std::vector<std::string> unique = navidrome::uniqueKeys(keys);
+        NSMutableArray<NSString *> *strings = [NSMutableArray arrayWithCapacity:unique.size()];
+        for (const auto& k : unique) [strings addObject:[NSString stringWithUTF8String:k.c_str()] ?: @""];
+        return navidrome::collationRanksBy(keys, unique, [&](size_t a, size_t b) {
+            return (int)[strings[a] localizedStandardCompare:strings[b]];
+        });
+    }
+}
+
 void navidrome::serverSettingsChanged() {
     [SubsonicClient.sharedClient refreshMusicFolders];
     [NSNotificationCenter.defaultCenter postNotificationName:NavidromeBrowserSectionsDidChangeNotification

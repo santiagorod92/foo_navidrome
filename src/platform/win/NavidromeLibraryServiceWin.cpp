@@ -43,6 +43,20 @@ std::string navidrome::systemLanguageCode() {
     return navidrome::win::wToU8(name);
 }
 
+std::vector<int> navidrome::systemCollationRanks(const std::vector<std::string>& keys) {
+    const std::vector<std::string> unique = navidrome::uniqueKeys(keys);
+    std::vector<std::wstring> wide;
+    wide.reserve(unique.size());
+    for (const auto& k : unique) wide.push_back(navidrome::win::u8ToWide(k));
+    return navidrome::collationRanksBy(keys, unique, [&](size_t a, size_t b) {
+        const int r = ::CompareStringEx(LOCALE_NAME_USER_DEFAULT, LINGUISTIC_IGNORECASE | SORT_DIGITSASNUMBERS,
+                                        wide[a].c_str(), (int)wide[a].size(), wide[b].c_str(), (int)wide[b].size(),
+                                        nullptr, nullptr, 0);
+        if (r == 0) return _wcsicmp(wide[a].c_str(), wide[b].c_str());
+        return r - CSTR_EQUAL;
+    });
+}
+
 navidrome::SubsonicCore& navidrome::libraryCore() {
     return navidrome::SubsonicClientWin::get().core();
 }

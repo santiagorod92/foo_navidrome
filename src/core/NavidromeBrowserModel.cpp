@@ -1,10 +1,58 @@
 #include "NavidromeBrowserModel.h"
 #include "NavidromePlaylistSync.h"
 
+#include <atomic>
+#include <cctype>
 #include <cstdlib>
 #include <unordered_set>
 
 namespace navidrome {
+
+namespace {
+std::atomic<CollationRanks> g_collationRanks{ nullptr };
+}
+
+std::vector<std::string> uniqueKeys(const std::vector<std::string>& keys) {
+    std::vector<std::string> u(keys);
+    std::sort(u.begin(), u.end());
+    u.erase(std::unique(u.begin(), u.end()), u.end());
+    return u;
+}
+
+std::vector<int> collationRanksBy(const std::vector<std::string>& keys, const std::vector<std::string>& unique,
+                                  const std::function<int(size_t, size_t)>& cmp) {
+    std::vector<size_t> order(unique.size());
+    for (size_t i = 0; i < order.size(); ++i) order[i] = i;
+    std::sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+        const int c = cmp(a, b);
+        return c != 0 ? c < 0 : a < b;
+    });
+    std::vector<int> rankOf(unique.size());
+    int rank = 0;
+    for (size_t i = 0; i < order.size(); ++i) {
+        if (i && cmp(order[i - 1], order[i]) != 0) ++rank;
+        rankOf[order[i]] = rank;
+    }
+    std::vector<int> ranks(keys.size());
+    for (size_t i = 0; i < keys.size(); ++i)
+        ranks[i] = rankOf[std::lower_bound(unique.begin(), unique.end(), keys[i]) - unique.begin()];
+    return ranks;
+}
+
+std::vector<int> foldedRanks(const std::vector<std::string>& keys) {
+    const std::vector<std::string> unique = uniqueKeys(keys);
+    std::vector<std::string> folded(unique);
+    for (auto& k : folded)
+        for (auto& c : k) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return collationRanksBy(keys, unique, [&](size_t a, size_t b) { return folded[a].compare(folded[b]); });
+}
+
+void setCollationRanks(CollationRanks ranks) { g_collationRanks.store(ranks); }
+
+std::vector<int> collationRanks(const std::vector<std::string>& keys) {
+    const CollationRanks ranks = g_collationRanks.load();
+    return ranks ? ranks(keys) : foldedRanks(keys);
+}
 
 void syncBrowserNodesToPlaylists(const std::vector<BrowserNodePtr>& nodes, bool withPlays) {
     std::vector<RatingUpdate> updates;

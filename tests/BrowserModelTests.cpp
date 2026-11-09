@@ -1,6 +1,7 @@
 #include "TestHarness.h"
 #include "../src/core/NavidromeBrowserModel.h"
 
+#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -89,6 +90,26 @@ TEST_CASE(testDecadeHelpers) {
     check(so[0].id == "a0" && so[1].id == "a1" && so[2].id == "d1t9" && so[3].id == "d2t1" &&
           so[4].id == "b1" && so[5].id == "b2",
           "All Songs sort by album artist, year, album, disc and track");
+
+    const std::vector<std::string> keys = { "item10", "item9", "Item9", "item10" };
+    const std::vector<std::string> unique = navidrome::uniqueKeys(keys);
+    check(unique == std::vector<std::string>({ "Item9", "item10", "item9" }), "uniqueKeys sorts and drops repeats");
+    auto num = [&](size_t i) { return std::atoi(unique[i].c_str() + 4); };
+    check(navidrome::collationRanksBy(keys, unique, [&](size_t a, size_t b) { return num(a) - num(b); }) ==
+              std::vector<int>({ 1, 0, 0, 1 }),
+          "the platform compare orders the keys, and keys it calls equal share a rank");
+    check(navidrome::foldedRanks({ "b", "A", "a", "C" }) == std::vector<int>({ 1, 0, 0, 2 }),
+          "without a platform collation, keys sort case-insensitively");
+    navidrome::setCollationRanks([](const std::vector<std::string>& k) {
+        std::vector<int> r(k.size());
+        for (size_t i = 0; i < k.size(); ++i) r[i] = k[i] == "Zebra" ? 0 : 1;
+        return r;
+    });
+    std::vector<navidrome::Album> zs(2);
+    zs[0].name = "One"; zs[0].artist = "apple"; zs[1].name = "Two"; zs[1].artist = "Zebra";
+    navidrome::sortDecadeAlbums(zs);
+    check(zs[0].artist == "Zebra", "the installed collation decides the order");
+    navidrome::setCollationRanks(nullptr);
 }
 
 TEST_CASE(testBrowserModel) {

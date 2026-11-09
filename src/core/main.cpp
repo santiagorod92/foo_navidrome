@@ -61,6 +61,7 @@ static navidrome::i18n::Language resolveUiLanguage() {
 }
 
 [[maybe_unused]] static const bool g_uiLanguageResolver = (navidrome::i18n::setResolver(&resolveUiLanguage), true);
+[[maybe_unused]] static const bool g_collation = (navidrome::setCollationRanks(&navidrome::systemCollationRanks), true);
 
 static advconfig_checkbox_factory cfg_refresh_ratings_on_start(
     "Navidrome: refresh ratings on startup",
