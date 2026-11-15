@@ -92,6 +92,33 @@ TEST_CASE(testTrackTagsUriRoundTrip) {
           "a URI written before tags existed parses with no tags");
 }
 
+TEST_CASE(testTrackAudioProperties) {
+    const navidrome::Song s = songFrom(R"j({"id":"s1","bitRate":1411,"samplingRate":96000,
+        "bitDepth":24,"channelCount":2})j");
+    check(s.tags.bitRate == 1411 && s.tags.sampleRate == 96000 && s.tags.bitDepth == 24 &&
+          s.tags.channels == 2, "bitRate, samplingRate, bitDepth and channelCount come from the song");
+
+    navidrome::TrackURI in;
+    in.id = "a";
+    in.tags = s.tags;
+    const navidrome::TrackURI out = navidrome::parseTrackURI(navidrome::buildTrackURI(in));
+    check(out.tags.bitRate == 1411 && out.tags.sampleRate == 96000 && out.tags.bitDepth == 24 &&
+          out.tags.channels == 2, "audio properties round-trip through the URI");
+
+    const auto f = navidrome::trackTechInfoFields(out.tags);
+    check(hasField(f, "bitrate", "1411") && hasField(f, "samplerate", "96000") &&
+          hasField(f, "bitspersample", "24") && hasField(f, "channels", "2"),
+          "audio properties use foobar2000's technical info names");
+
+    const navidrome::Song lossy = songFrom(R"j({"id":"s2","bitRate":320,"samplingRate":44100,
+        "bitDepth":0})j");
+    const auto lf = navidrome::trackTechInfoFields(lossy.tags);
+    check(lf.size() == 2 && !hasField(lf, "bitspersample", "0"),
+          "a missing or zero bit depth or channel count is not exported");
+    check(navidrome::parseTrackURI("navidrome://track/x?title=T").tags.bitRate == 0,
+          "a URI written before audio properties existed parses without them");
+}
+
 TEST_CASE(testTrackMetaFields) {
     navidrome::TrackURI t;
     t.id = "x";

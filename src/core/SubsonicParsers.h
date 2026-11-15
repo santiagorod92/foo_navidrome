@@ -90,6 +90,10 @@ inline TrackTags parseTrackTags(const json::Value& s) {
     t.musicBrainzId = jStr(s, "musicBrainzId");
     t.discNumber    = jInt(s, "discNumber");
     t.bpm           = jInt(s, "bpm");
+    t.bitRate       = jInt(s, "bitRate");
+    t.sampleRate    = jInt(s, "samplingRate");
+    t.bitDepth      = jInt(s, "bitDepth");
+    t.channels      = jInt(s, "channelCount");
     t.replayGain    = parseReplayGain(s["replayGain"]);
     return t;
 }

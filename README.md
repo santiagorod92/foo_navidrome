@@ -29,6 +29,7 @@ A [foobar2000](https://www.foobar2000.org/) component that lets you browse and s
 - **Choose which sections the tree shows** — **Preferences › Tools › Navidrome › Browser Sections** has a checkbox per top-level section (All Songs, ★ Starred, Recently Added, … Radio, Podcasts, Now Playing). Untick the ones you never use and the tree keeps just those plus your artists (and libraries); open browsers update on Apply (Windows) or as you click (macOS). Everything is shown by default
 - **Streaming quality**: ask the server to transcode on the fly (MP3 / Opus / AAC) and cap the bitrate — useful on slow links. Set in Preferences; "Original" always sends the stored file. Seeking works in transcoded streams too: when the stream itself can't seek, the track is reopened at the new position (needs a server with the OpenSubsonic `transcodeOffset` extension, which current Navidrome has)
 - **Full tags from the server**: besides title / artist / album / track / date, every track carries **album artist**, **disc number**, **genre** (all of them, as a multi-value field), **composer**, **BPM** and its **MusicBrainz** recording id (`MUSICBRAINZ_TRACKID`), so compilations and multi-disc albums group and sort properly
+- **Audio properties**: bitrate, sample rate, bit depth and channel count come from the server too, so `%bitrate%`, `%samplerate%`, `%__bitspersample%` and `%channels%` work in playlist columns and *Properties* shows them before a track is played. While a track plays, the values of the stream foobar2000 actually receives replace them, so a transcoded stream shows its own bitrate and sample rate
 - **ReplayGain**: the server's track/album gain and peak values are passed to foobar2000, so *Playback › ReplayGain* evens out the volume of streamed tracks like it does for local files (needs an OpenSubsonic server that reports `replayGain`, such as current Navidrome, and files with ReplayGain tags)
 - **Play queue sync** — **File › Save Play Queue to Navidrome** stores the playing (or active) playlist, the current track and its position on the server; **File › Restore Play Queue from Navidrome** loads the queue saved there by any Subsonic client (Symfonium, Feishin, Tempo, …) into a *Navidrome Play Queue* playlist and resumes where it left off. See [Play queue sync](#play-queue-sync)
 - **Download Original Files…** from the right-click menu — saves the selected tracks to a folder, always in their stored format regardless of the streaming setting
@@ -285,7 +286,7 @@ called *Navidrome Play Queue* (replaced each time) and starts playing the saved 
 saved position. Tracks added this way carry the same tags as tracks added from the browser.
 
 Tracks added before this version don't have the new tags (album artist, disc, genre,
-ReplayGain, …) in their playlist entry; add them again from the browser to pick them up.
+ReplayGain, bitrate, sample rate, …) in their playlist entry; add them again from the browser to pick them up.
 
 #### Showing ratings in the playlist
 

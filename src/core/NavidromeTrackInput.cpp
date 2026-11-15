@@ -39,6 +39,7 @@ void navidrome::applyTrackInfo(const TrackURI& t, file_info& info) {
     for (const auto& f : trackMetaFields(t)) info.meta_add(f.first.c_str(), f.second.c_str());
     if (t.duration > 0) info.set_length(t.duration);
     if (!t.suffix.empty()) info.info_set("codec", t.suffix.c_str());
+    for (const auto& f : trackTechInfoFields(t.tags)) info.info_set(f.first.c_str(), f.second.c_str());
     if (t.rating > 0) info.meta_set(kRatingTag, pfc::format_int(t.rating));
     if (t.starred) info.meta_set(kStarredTag, "1");
 
@@ -161,7 +162,7 @@ void navidrome::TrackDecoder::captureStreamInfo(abort_callback& abort) {
         NAVIDROME_WARN("Input", "id=" + m_track.id + " stream info unreadable (" + e.what() + ")");
         return;
     }
-    for (const char* key : {"codec", "codec_profile", "encoding"})
+    for (const char* key : {"codec", "codec_profile", "encoding", "bitrate", "samplerate", "bitspersample", "channels"})
         if (const char* v = info.info_get(key)) m_streamInfo.emplace_back(key, v);
     m_streamInfoPending = !m_streamInfo.empty();
     NAVIDROME_LOG("Input", "id=" + m_track.id + " stream codec="

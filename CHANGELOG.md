@@ -1,3 +1,13 @@
+## [1.42.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.41.0...v1.42.0) (2026-11-14)
+
+### Added
+- **Bitrate, sample rate, bit depth and channels** ([#56](https://github.com/santiagorod92/foo_navidrome/issues/56)):
+  tracks now carry the audio properties the server reports, so `%bitrate%`, `%samplerate%`,
+  `%__bitspersample%` and `%channels%` work in playlist columns and *Properties* shows them before
+  a track is played. While a track plays, the values of the stream foobar2000 actually receives
+  take over, so a transcoded stream shows its own bitrate and sample rate. Tracks already in a
+  playlist get them once they are added again from the browser.
+
 ## [1.41.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.40.0...v1.41.0) (2026-11-09)
 
 ### Changed

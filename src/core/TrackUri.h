@@ -117,6 +117,10 @@ inline std::string buildTrackURI(const TrackURI& t) {
     if (g.discNumber > 0)         q.push_back("disc=" + std::to_string(g.discNumber));
     if (g.bpm > 0)                q.push_back("bpm=" + std::to_string(g.bpm));
     if (!g.musicBrainzId.empty()) q.push_back("mbid=" + percentEncode(g.musicBrainzId));
+    if (g.bitRate > 0)            q.push_back("bitRate=" + std::to_string(g.bitRate));
+    if (g.sampleRate > 0)         q.push_back("sampleRate=" + std::to_string(g.sampleRate));
+    if (g.bitDepth > 0)           q.push_back("bitDepth=" + std::to_string(g.bitDepth));
+    if (g.channels > 0)           q.push_back("channels=" + std::to_string(g.channels));
     const ReplayGain& rg = g.replayGain;
     if (rg.hasTrackGain) q.push_back("rgTrackGain=" + formatUriNumber(rg.trackGain));
     if (rg.hasAlbumGain) q.push_back("rgAlbumGain=" + formatUriNumber(rg.albumGain));
@@ -171,6 +175,10 @@ inline TrackURI parseTrackURI(const std::string& uri) {
         else if (k == "disc")        t.tags.discNumber    = std::atoi(v.c_str());
         else if (k == "bpm")         t.tags.bpm           = std::atoi(v.c_str());
         else if (k == "mbid")        t.tags.musicBrainzId = v;
+        else if (k == "bitRate")     t.tags.bitRate       = std::atoi(v.c_str());
+        else if (k == "sampleRate")  t.tags.sampleRate    = std::atoi(v.c_str());
+        else if (k == "bitDepth")    t.tags.bitDepth      = std::atoi(v.c_str());
+        else if (k == "channels")    t.tags.channels      = std::atoi(v.c_str());
         else if (k == "rgTrackGain") { t.tags.replayGain.trackGain = std::atof(v.c_str()); t.tags.replayGain.hasTrackGain = true; }
         else if (k == "rgAlbumGain") { t.tags.replayGain.albumGain = std::atof(v.c_str()); t.tags.replayGain.hasAlbumGain = true; }
         else if (k == "rgTrackPeak") { t.tags.replayGain.trackPeak = std::atof(v.c_str()); t.tags.replayGain.hasTrackPeak = true; }

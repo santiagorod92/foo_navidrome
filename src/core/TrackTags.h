@@ -37,6 +37,10 @@ struct TrackTags {
     std::string              musicBrainzId;
     int                      discNumber = 0;
     int                      bpm        = 0;
+    int                      bitRate    = 0;
+    int                      sampleRate = 0;
+    int                      bitDepth   = 0;
+    int                      channels   = 0;
     ReplayGain               replayGain;
 };
 
@@ -51,6 +55,15 @@ inline std::vector<std::pair<std::string, std::string>> trackTagMetaFields(const
     if (t.discNumber > 0)         out.emplace_back("discnumber", std::to_string(t.discNumber));
     if (t.bpm > 0)                out.emplace_back("bpm", std::to_string(t.bpm));
     if (!t.musicBrainzId.empty()) out.emplace_back(kMusicBrainzTrackIdTag, t.musicBrainzId);
+    return out;
+}
+
+inline std::vector<std::pair<std::string, std::string>> trackTechInfoFields(const TrackTags& t) {
+    std::vector<std::pair<std::string, std::string>> out;
+    if (t.bitRate > 0)    out.emplace_back("bitrate", std::to_string(t.bitRate));
+    if (t.sampleRate > 0) out.emplace_back("samplerate", std::to_string(t.sampleRate));
+    if (t.bitDepth > 0)   out.emplace_back("bitspersample", std::to_string(t.bitDepth));
+    if (t.channels > 0)   out.emplace_back("channels", std::to_string(t.channels));
     return out;
 }
 }
