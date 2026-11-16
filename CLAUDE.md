@@ -74,6 +74,9 @@ installed.
 - **`js_panel_notify_api`** (not this repo's: foo_js_panel's `src/core/js_panel_api.h`, vendored in
   foo_ui_panels) — Panels UI skins → JS Panel scripts (`JSPANEL:` actions, skin variable changes).
   Listed here so the cross-component list stays complete; see Shared conventions › Hosting.
+- **`js_panel_windowless_api`** (not this repo's: the same `js_panel_api.h`) — Panels UI draws a
+  JS Panel into its own frame for `panel.<name>.windowless = 1`; see Shared conventions ›
+  Windowless panels.
 
 Adding a new cross-component interface: follow the same shape, and add a bullet here naming the
 interface, what it's for, and every known consumer — keeps both repos' CLAUDE.md honest about
@@ -118,6 +121,17 @@ anything repo-specific stays in the repo's own sections.
   ones); JS Panel hands them to every panel as `on_notify_data` / `on_panelsui_variable_changed`.
   `js_panel_notify_api_v2::state_changed(name, value)` (`mini_mode`, `zoom`; sent after a render
   that changed them) becomes `on_panelsui_mini_mode` / `on_panelsui_zoom`.
+- **Windowless panels:** `js_panel_windowless_api` (same header, published by JS Panel) creates a
+  JS Panel with no window of its own for a `panel.<name>.windowless = 1` skin panel. Panels UI
+  calls `paint(pargb, w, h, scale)` at the `$panel` call's place in the frame, with the skin drawn
+  so far in the caller's buffer, and puts the result back, so later skin drawing lands on top. It
+  forwards mouse, wheel, focus and the native key event (`MSG*` / `NSEvent*`, so the VK mapping
+  stays JS Panel's) and answers the panel through `js_panel_windowless_host` (invalidate, cursor,
+  tooltip, `to_native` for menus). Drag and drop is `js_panel_windowless_v2::drag(kind, x, y,
+  keys, effects, native)`: Panels UI's main window is the drop target (Windows: an OLE
+  `IDropTarget` passing the `IDataObject*`, which hands drops outside a windowless panel on as
+  `WM_DROPFILES`; macOS: the root view also registers `js_panel::drag_type_tracks` and passes the
+  `NSDraggingInfo`) and JS Panel inserts the tracks.
 - **Script → skin panels:** `panels_ui_api_v2` (queried from the v1 service) names a hosted JS
   Panel's slot from its native view (HWND / NSView), gives panel rects and, for a
   `panel.<name>.transparent = 1` panel, the skin pixels beneath it (`get_backdrop`, PARGB into the
