@@ -169,6 +169,14 @@ static initquit_factory_t<NavidromeLogInit> g_navidrome_log_init;
 
 std::string navidrome::componentLogPath() { return dbg::Logger::get().path(); }
 
+bool navidrome::verboseLoggingEnabled() { return cfg_verbose_log.get(); }
+
+void navidrome::setVerboseLogging(bool on) {
+    if (cfg_verbose_log.get() == on) return;
+    cfg_verbose_log.set(on);
+    NAVIDROME_NOTE("Env", std::string("verbose logging ") + (on ? "on" : "off"));
+}
+
 void navidrome::warnAuthRejectedOnce() {
     static std::once_flag once;
     std::call_once(once, [] { console::print(tr(kAuthRejectedMessage)); });

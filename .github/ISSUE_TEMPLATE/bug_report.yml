@@ -49,7 +49,8 @@ body:
         ## Diagnostics
 
         **1. Turn on verbose logging** (recommended, so the log has the full detail):
-        *Preferences › Advanced › Tools › Navidrome: verbose logging (for bug reports)*.
+        *Preferences › Tools › Navidrome* › *Logs and Troubleshooting* › tick
+        **Verbose logging (for bug reports)** (on Windows, click **Apply**).
         It applies immediately, no restart needed.
 
         **2. Reproduce the problem** once more, right away.

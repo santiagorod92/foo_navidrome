@@ -1,3 +1,18 @@
+## [1.43.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.42.0...v1.43.0) (2026-11-17)
+
+### Added
+- **Verbose logging switch in Preferences** ([#57](https://github.com/santiagorod92/foo_navidrome/issues/57)):
+  *Preferences › Tools › Navidrome › Logs and Troubleshooting* now has a **Verbose logging (for bug
+  reports)** checkbox, so you no longer have to find it under *Advanced*. It takes effect right
+  away (on Windows after **Apply**) and the log notes when it was turned on or off.
+
+### Fixed
+- **Preferences page cut off at the bottom** ([#57](https://github.com/santiagorod92/foo_navidrome/issues/57)):
+  the main *Navidrome* page had grown taller than the Preferences window, so on Windows **Rescan**,
+  **Copy Diagnostics** and **Open Log Folder** could end up out of view with no way to reach them.
+  The page now scrolls (scrollbar, mouse wheel, and Tab brings the next control into view), on
+  macOS too.
+
 ## [1.42.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.41.0...v1.42.0) (2026-11-14)
 
 ### Added

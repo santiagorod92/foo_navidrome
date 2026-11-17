@@ -179,7 +179,8 @@ private:
     }
 };
 
-class NavidromePrefsInstance : public CWindowImpl<NavidromePrefsInstance>,
+class NavidromePrefsInstance : public CWindowImpl<NavidromePrefsInstance, CWindow,
+                                   CWinTraits<WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | WS_VSCROLL>>,
                                public preferences_page_instance {
 public:
     DECLARE_WND_CLASS(L"foo_navidrome_PrefsWnd")
@@ -204,6 +205,7 @@ public:
         SetDlgItemText(IDC_USER, L"");
         SetDlgItemText(IDC_PASS, L"");
         CheckDlgButton(IDC_SCROBBLE, BST_CHECKED);
+        CheckDlgButton(IDC_VERBOSE, BST_UNCHECKED);
         m_format.SetCurSel(0);
         m_bitrate.SetCurSel(0);
         m_language.SetCurSel(0);
@@ -215,6 +217,9 @@ public:
         MSG_WM_ERASEBKGND(OnEraseBkgnd)
         MSG_WM_CREATE(OnCreate)
         MSG_WM_SIZE(OnSize)
+        MSG_WM_VSCROLL(OnVScroll)
+        MSG_WM_MOUSEWHEEL(OnMouseWheel)
+        MESSAGE_HANDLER(WM_COMMAND, OnChildFocus)
         MESSAGE_HANDLER_EX(WM_CTLCOLORSTATIC, OnCtlColorStatic)
         MESSAGE_HANDLER_EX(WM_TEST_RESULT, OnTestResult)
         MESSAGE_HANDLER_EX(WM_SCAN_STATUS, OnScanStatus)
@@ -228,6 +233,7 @@ public:
         COMMAND_HANDLER_EX(IDC_TEST, BN_CLICKED, OnTest)
         COMMAND_HANDLER_EX(IDC_HEADERS, BN_CLICKED, OnHeaders)
         COMMAND_HANDLER_EX(IDC_SCROBBLE, BN_CLICKED, OnChanged)
+        COMMAND_HANDLER_EX(IDC_VERBOSE, BN_CLICKED, OnChanged)
         COMMAND_HANDLER_EX(IDC_FORMAT,  CBN_SELCHANGE, OnChanged)
         COMMAND_HANDLER_EX(IDC_BITRATE, CBN_SELCHANGE, OnChanged)
         COMMAND_HANDLER_EX(IDC_LANGUAGE, CBN_SELCHANGE, OnChanged)
@@ -245,12 +251,96 @@ public:
         const UiScale s(*this);
         const int lineH = lineHeight(*this, uiFont(*this));
         const int pad = s(8);
-        int y = (std::max)(m_minCreditY, static_cast<int>(sz.cy) - pad - 2 * lineH);
+        const int creditY = (std::max)(m_minCreditY, static_cast<int>(sz.cy) - pad - 2 * lineH);
+        m_contentH = creditY + 2 * lineH + pad;
+        scrollTo(m_scrollY);
+        int y = creditY - m_scrollY;
         for (HWND h : m_credit) {
             ::SetWindowPos(h, nullptr, pad, y, textWidth(h) + s(4), lineH, SWP_NOZORDER);
             y += lineH;
         }
     }
+
+    void scrollTo(int pos) {
+        CRect rc;
+        GetClientRect(&rc);
+        pos = (std::max)(0, (std::min)(pos, m_contentH - rc.Height()));
+        SCROLLINFO si{ sizeof(si), SIF_RANGE | SIF_PAGE | SIF_POS };
+        si.nMax = (std::max)(0, m_contentH - 1);
+        si.nPage = static_cast<UINT>(rc.Height());
+        si.nPos = pos;
+        SetScrollInfo(SB_VERT, &si, TRUE);
+        if (pos == m_scrollY) return;
+        const int dy = m_scrollY - pos;
+        m_scrollY = pos;
+        ScrollWindowEx(0, dy, nullptr, nullptr, nullptr, nullptr, SW_SCROLLCHILDREN | SW_INVALIDATE | SW_ERASE);
+    }
+
+    int scrollStep() {
+        return navidrome::win::lineHeight(*this, navidrome::win::uiFont(*this)) * 2;
+    }
+
+    void OnVScroll(UINT code, UINT, CScrollBar) {
+        CRect rc;
+        GetClientRect(&rc);
+        SCROLLINFO si{ sizeof(si), SIF_TRACKPOS };
+        switch (code) {
+            case SB_LINEUP:        scrollTo(m_scrollY - scrollStep()); break;
+            case SB_LINEDOWN:      scrollTo(m_scrollY + scrollStep()); break;
+            case SB_PAGEUP:        scrollTo(m_scrollY - rc.Height()); break;
+            case SB_PAGEDOWN:      scrollTo(m_scrollY + rc.Height()); break;
+            case SB_TOP:           scrollTo(0); break;
+            case SB_BOTTOM:        scrollTo(m_contentH); break;
+            case SB_THUMBTRACK:
+            case SB_THUMBPOSITION: GetScrollInfo(SB_VERT, &si); scrollTo(si.nTrackPos); break;
+            default: break;
+        }
+    }
+
+    BOOL OnMouseWheel(UINT, short delta, CPoint) {
+        scrollTo(m_scrollY - delta * scrollStep() * 3 / (2 * WHEEL_DELTA));
+        return TRUE;
+    }
+
+    CRect childRect(HWND child) {
+        CRect rc;
+        ::GetWindowRect(child, &rc);
+        ScreenToClient(&rc);
+        return rc;
+    }
+
+    void ensureVisible(HWND child) {
+        CRect page;
+        GetClientRect(&page);
+        const CRect rc = childRect(child);
+        const int margin = navidrome::win::UiScale(*this)(8);
+        if (rc.top < margin)
+            scrollTo(m_scrollY + rc.top - margin);
+        else if (rc.bottom > page.bottom - margin)
+            scrollTo(m_scrollY + rc.bottom - page.bottom + margin);
+    }
+
+    void scrollIntoView(HWND child) {
+        const int top = childRect(child).top;
+        if (HWND next = GetNextDlgTabItem(child, FALSE); next && childRect(next).top > top) ensureVisible(next);
+        if (HWND prev = GetNextDlgTabItem(child, TRUE); prev && childRect(prev).top < top) ensureVisible(prev);
+        ensureVisible(child);
+    }
+
+    LRESULT OnChildFocus(UINT, WPARAM wp, LPARAM lp, BOOL& handled) {
+        handled = FALSE;
+        const UINT code = HIWORD(wp);
+        if (lp && (code == EN_SETFOCUS || code == CBN_SETFOCUS || code == BN_SETFOCUS))
+            scrollIntoView(reinterpret_cast<HWND>(lp));
+        return 0;
+    }
+
+    void refreshScrollbarTheme() {
+        bool dark = false;
+        if (auto cfg = ui_config_manager::tryGet(); cfg.is_valid()) dark = cfg->is_dark_mode();
+        ::SetWindowTheme(*this, dark ? L"DarkMode_Explorer" : L"Explorer", nullptr);
+    }
+
 
     LRESULT OnCtlColorStatic(UINT msg, WPARAM wp, LPARAM lp) {
         LRESULT brush = DefWindowProc(msg, wp, lp);
@@ -265,7 +355,7 @@ private:
            IDC_HEADERS=1006, IDC_SCROBBLE=1007, IDC_FORMAT=1008, IDC_BITRATE=1009,
            IDC_RESCAN=1010, IDC_SCAN_STATUS=1011, IDC_DIAG=1012, IDC_LOGDIR=1013,
            IDC_DIAG_STATUS=1014, IDC_LANGUAGE=1015, IDC_PROFILE=1016, IDC_PROFILE_ADD=1017,
-           IDC_PROFILE_REMOVE=1018, IDC_LASTFM_KEY=1019 };
+           IDC_PROFILE_REMOVE=1018, IDC_LASTFM_KEY=1019, IDC_VERBOSE=1020 };
 
     static constexpr UINT WM_TEST_RESULT = WM_USER + 200;
     static constexpr UINT WM_SCAN_STATUS = WM_USER + 201;
@@ -283,6 +373,7 @@ private:
         const UiScale s(*this);
         const HFONT f = uiFont(*this);
         auto make = [&](const wchar_t* cls, const wchar_t* text, DWORD style, int id = 0) {
+            if (std::wcscmp(cls, L"BUTTON") == 0) style |= BS_NOTIFY;
             HWND h = CreateWindowW(cls, text, WS_CHILD|WS_VISIBLE|style, 0,0,0,0, *this,
                 reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), nullptr, nullptr);
             setFont(h, f);
@@ -356,6 +447,8 @@ private:
         const auto librarySection = makeSection(trw("Rescan Navidrome Library").c_str());
         const auto logsSection    = makeSection(trw("Logs and Troubleshooting").c_str());
 
+        HWND verbose = make(L"BUTTON", trw("Verbose logging (for bug reports)").c_str(),
+                            WS_TABSTOP|BS_AUTOCHECKBOX, IDC_VERBOSE);
         HWND diag    = make(L"BUTTON", trw("Copy Diagnostics").c_str(), WS_TABSTOP|BS_PUSHBUTTON, IDC_DIAG);
         HWND logDir  = make(L"BUTTON", trw("Open Log Folder").c_str(), WS_TABSTOP|BS_PUSHBUTTON, IDC_LOGDIR);
         HWND diagSt  = make(L"STATIC", L"", SS_LEFT|SS_ENDELLIPSIS, IDC_DIAG_STATUS);
@@ -412,6 +505,7 @@ private:
         section(librarySection, y);                           y += step;
         buttonWithStatus(rescan, scanSt, y);                  y += step + s(6);
         section(logsSection, y);                              y += step;
+        place(verbose, x, y, fitWidth(verbose, s, 24), rowH); y += step;
         {
             const int diagW = fitWidth(diag, s, 24, 100);
             place(diag, x, y, diagW, rowH);
@@ -427,6 +521,7 @@ private:
         loadSettings();
         loadProfiles();
         m_darkMode.AddDialogWithControls(*this);
+        refreshScrollbarTheme();
         return 0;
     }
 
@@ -502,6 +597,7 @@ private:
         SetDlgItemText(IDC_USER, pfc::stringcvt::string_wide_from_utf8(navidrome::cfg_username.get().c_str()));
         SetDlgItemText(IDC_PASS, pfc::stringcvt::string_wide_from_utf8(navidrome::cfg_password.get().c_str()));
         CheckDlgButton(IDC_SCROBBLE, navidrome::cfg_scrobble.get() ? BST_CHECKED : BST_UNCHECKED);
+        CheckDlgButton(IDC_VERBOSE, navidrome::verboseLoggingEnabled() ? BST_CHECKED : BST_UNCHECKED);
 
         std::string format = navidrome::cfg_stream_format.get().c_str();
         const auto& formats = navidrome::streamFormatOptions();
@@ -531,6 +627,7 @@ private:
         navidrome::cfg_username.set(getText(IDC_USER).c_str());
         navidrome::cfg_password.set(getText(IDC_PASS).c_str());
         navidrome::cfg_scrobble.set(IsDlgButtonChecked(IDC_SCROBBLE) == BST_CHECKED);
+        navidrome::setVerboseLogging(IsDlgButtonChecked(IDC_VERBOSE) == BST_CHECKED);
         navidrome::cfg_lastfm_api_key.set(navidrome::lastfm::trimSpaces(getText(IDC_LASTFM_KEY)).c_str());
 
         const auto& formats = navidrome::streamFormatOptions();
@@ -663,6 +760,8 @@ private:
     HWND m_credit[2] = {};
     CFont m_sectionFont;
     int  m_minCreditY = 0;
+    int  m_contentH = 0;
+    int  m_scrollY = 0;
     fb2k::CCoreDarkModeHooks m_darkMode;
     preferences_page_callback::ptr m_cb;
     bool m_changed = false;

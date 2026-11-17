@@ -776,8 +776,10 @@ foo_navidrome/
 
 foo_navidrome keeps its own log, `foo_navidrome.log`, in your foobar2000 profile
 folder. It records warnings and errors by default. To get more detail while you
-reproduce a problem, enable *Preferences › Advanced › Tools › Navidrome: verbose
-logging*. The change applies immediately, and you can turn it back off afterwards.
+reproduce a problem, tick **Verbose logging (for bug reports)** under *Logs and
+Troubleshooting* in *Preferences › Tools › Navidrome* (on Windows, click **Apply**;
+the same switch is also in *Preferences › Advanced › Tools*). It takes effect right
+away, no restart needed, and you can turn it back off afterwards.
 
 When you report a bug, open *Preferences › Tools › Navidrome* and click **Copy
 Diagnostics**, then paste the result into the issue. It contains the component,

@@ -71,6 +71,8 @@ inline std::string redactHost(std::string text, const std::string& host) {
 std::string collectDiagnostics();
 void warnAuthRejectedOnce();
 std::string componentLogPath();
+bool verboseLoggingEnabled();
+void setVerboseLogging(bool on);
 
 inline std::string buildDiagnostics(const DiagnosticsInfo& d) {
     const std::string host = urlHost(d.serverUrl);

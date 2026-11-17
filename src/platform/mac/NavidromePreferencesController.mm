@@ -138,6 +138,13 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
 
 @end
 
+@interface NavidromePrefsDocumentView : NSView
+@end
+
+@implementation NavidromePrefsDocumentView
+- (BOOL)isFlipped { return YES; }
+@end
+
 @interface NavidromePreferencesController ()
 @property (nonatomic, strong) NSPopUpButton      *profilePopup;
 @property (nonatomic, strong) NSButton           *profileAddButton;
@@ -151,6 +158,7 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
 @property (nonatomic, strong) NSButton           *scrobbleCheckbox;
 @property (nonatomic, strong) NSButton           *rescanButton;
 @property (nonatomic, strong) NSTextField        *scanStatusLabel;
+@property (nonatomic, strong) NSButton           *verboseCheckbox;
 @property (nonatomic, strong) NSButton           *diagButton;
 @property (nonatomic, strong) NSButton           *logFolderButton;
 @property (nonatomic, strong) NSTextField        *diagStatusLabel;
@@ -168,7 +176,7 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
 }
 
 - (void)loadView {
-    NSView *root = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 400, 260)];
+    NSView *root = [[NavidromePrefsDocumentView alloc] initWithFrame:NSMakeRect(0, 0, 400, 260)];
 
     auto makeLabel = ^NSTextField *(NSString *text) {
         NSTextField *lbl = [NSTextField labelWithString:text];
@@ -331,6 +339,12 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
     NSTextField *logsSection    = makeSection(NDTr("Logs and Troubleshooting"));
     NSBox       *logsLine       = makeLine();
 
+    _verboseCheckbox = [NSButton checkboxWithTitle:NDTr("Verbose logging (for bug reports)")
+                                            target:self
+                                            action:@selector(verboseToggled:)];
+    _verboseCheckbox.translatesAutoresizingMaskIntoConstraints = NO;
+    [root addSubview:_verboseCheckbox];
+
     _diagButton = [NSButton buttonWithTitle:NDTr("Copy Diagnostics")
                                      target:self
                                      action:@selector(copyDiagnostics:)];
@@ -492,7 +506,10 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
         [logsLine.leadingAnchor constraintEqualToAnchor:logsSection.trailingAnchor constant:8],
         [logsLine.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-pad],
 
-        [_diagButton.topAnchor constraintEqualToAnchor:logsSection.bottomAnchor constant:vGap],
+        [_verboseCheckbox.topAnchor constraintEqualToAnchor:logsSection.bottomAnchor constant:vGap],
+        [_verboseCheckbox.leadingAnchor constraintEqualToAnchor:_rescanButton.leadingAnchor],
+        [_verboseCheckbox.trailingAnchor constraintLessThanOrEqualToAnchor:root.trailingAnchor constant:-pad],
+        [_diagButton.topAnchor constraintEqualToAnchor:_verboseCheckbox.bottomAnchor constant:vGap],
         [_diagButton.leadingAnchor constraintEqualToAnchor:_rescanButton.leadingAnchor],
         [_logFolderButton.centerYAnchor constraintEqualToAnchor:_diagButton.centerYAnchor],
         [_logFolderButton.leadingAnchor constraintEqualToAnchor:_diagButton.trailingAnchor constant:8],
@@ -503,10 +520,7 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
         [creditLabel.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:pad],
         [creditLabel.topAnchor constraintGreaterThanOrEqualToAnchor:_diagButton.bottomAnchor constant:vGap * 2],
     ]];
-    NSLayoutConstraint *creditBottom =
-        [creditLabel.bottomAnchor constraintEqualToAnchor:root.bottomAnchor constant:-pad];
-    creditBottom.priority = NSLayoutPriorityDefaultLow;
-    creditBottom.active = YES;
+    [creditLabel.bottomAnchor constraintEqualToAnchor:root.bottomAnchor constant:-pad].active = YES;
 
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(fieldChanged:)
@@ -525,7 +539,25 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
                                                  name:NSControlTextDidChangeNotification
                                                object:_lastFmKeyField];
 
-    self.view = root;
+    NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:root.frame];
+    scroll.hasVerticalScroller = YES;
+    scroll.autohidesScrollers = YES;
+    scroll.drawsBackground = NO;
+    scroll.borderType = NSNoBorder;
+    root.translatesAutoresizingMaskIntoConstraints = NO;
+    scroll.documentView = root;
+    NSClipView *clip = scroll.contentView;
+    NSLayoutConstraint *fitHeight = [root.heightAnchor constraintEqualToAnchor:clip.heightAnchor];
+    fitHeight.priority = NSLayoutPriorityDefaultLow;
+    [NSLayoutConstraint activateConstraints:@[
+        [root.topAnchor constraintEqualToAnchor:clip.topAnchor],
+        [root.leadingAnchor constraintEqualToAnchor:clip.leadingAnchor],
+        [root.widthAnchor constraintEqualToAnchor:clip.widthAnchor],
+        [root.heightAnchor constraintGreaterThanOrEqualToAnchor:clip.heightAnchor],
+        fitHeight,
+    ]];
+
+    self.view = scroll;
 }
 
 - (void)viewDidLoad {
@@ -585,6 +617,8 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
     _passwordField.stringValue = [NSString stringWithUTF8String:navidrome::cfg_password.get().c_str()];
     _scrobbleCheckbox.state    = navidrome::cfg_scrobble.get() ? NSControlStateValueOn
                                                                : NSControlStateValueOff;
+    _verboseCheckbox.state     = navidrome::verboseLoggingEnabled() ? NSControlStateValueOn
+                                                                    : NSControlStateValueOff;
 
     NSString *format = [NSString stringWithUTF8String:navidrome::cfg_stream_format.get().c_str()];
     NSArray<NSArray *> *formats = NavidromeStreamFormats();
@@ -615,6 +649,10 @@ static NavidromeHeadersEditor *gHeadersEditor = nil;
     const char *value = langs[(std::size_t)li].value;
     NAVIDROME_NOTE("Env", std::string("UI language set to \"") + value + "\" (applies after restart)");
     navidrome::cfg_ui_language.set(value);
+}
+
+- (IBAction)verboseToggled:(id)sender {
+    navidrome::setVerboseLogging(_verboseCheckbox.state == NSControlStateValueOn);
 }
 
 - (IBAction)scrobbleToggled:(id)sender {
