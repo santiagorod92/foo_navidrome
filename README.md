@@ -9,6 +9,23 @@ A [foobar2000](https://www.foobar2000.org/) component that lets you browse and s
 3. Restart foobar2000
 4. Go to **Preferences › Tools › Navidrome** and enter your server URL and credentials
 
+## How it fits with Panels UI and JS Panel
+
+foo_navidrome only brings your server's music into foobar2000; it doesn't change how the player
+looks. Two sister components, each in its own repository and each optional, do that:
+
+- **[Panels UI](https://github.com/santiagorod92/foo_ui_panels)** replaces foobar2000's whole
+  window with a *skin* (a folder with a small script and its images). Its album browser, library
+  tree, lyrics and star ratings show your Navidrome music next to your local files.
+- **[JS Panel](https://github.com/santiagorod92/foo_js_panel)** adds panels written in JavaScript
+  (the "JS" in its name), which is what themes like Eole are made of. Scripts see the server's
+  library through its `navidrome` object.
+
+Want the classic **fooAvA** skin or a theme like **Eole** with your server's music? Install
+foo_navidrome, then follow Panels UI's
+[Start here](https://github.com/santiagorod92/foo_ui_panels#start-here) table: every step happens
+inside foobar2000, no Python or command line.
+
 ## Features
 
 - Browse your entire music library: Artists → Albums → Songs
