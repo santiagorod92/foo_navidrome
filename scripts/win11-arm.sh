@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/win11-arm.sh <prepare|up|open|provision|deploy|fb2k|seed|cfg|run|push|ssh|shot|key|click|move|tap|logs|down|status|reset>
+Usage: scripts/win11-arm.sh <prepare|up|open|provision|deploy|fb2k|seed|cfg|run|push|ssh|shot|capture|key|click|move|tap|logs|down|status|reset>
 
 Windows 11 ARM test VM on an Apple Silicon Mac, driven like the Linux Win11 VM:
 one command to start it, its screen in a browser tab (noVNC), ssh in.
@@ -46,6 +46,9 @@ once, by prepare, to download Windows and build its unattended setup.
            a folder of the same name already there is replaced
   ssh      ssh into the guest as tester/tester (port 2223)
   shot     save the VM screen to FILE (default build/ui-test/win11-arm-<time>.png)
+  capture  capture start FILE | capture stop: record what the guest plays to a
+           48 kHz 16-bit stereo WAV (QEMU wavcapture); with WIN11_ARM_AUDIO=none
+           the VM plays nothing on the Mac and the capture still runs
   key      send KEY... to the foreground window through the QEMU monitor (sendkey
            names: ret, esc, down, up, right, left, shift-f10, alt-f4, ...), 0.4 s apart
   click    click [X Y [right|double]]: one left click where the last move left the
@@ -67,7 +70,8 @@ once, by prepare, to download Windows and build its unattended setup.
 Env: WIN11_ARM_DIR (default ~/.local/share/foo_navidrome-win11-arm), WIN11_ARM_VERSION (11:
      dockur's VERSION for prepare, e.g. 11l = LTSC 2024, build 26100 like 24H2; give each
      version its own WIN11_ARM_DIR, one VM runs at a time), WIN11_ARM_CPUS (6),
-     WIN11_ARM_MEMORY (6G), WIN11_ARM_DISK (64G), FB2K_VERSION (2.26.1),
+     WIN11_ARM_MEMORY (6G), WIN11_ARM_AUDIO (coreaudio, or none: the QEMU audio backend up
+     starts with), WIN11_ARM_DISK (64G), FB2K_VERSION (2.26.1),
      FB2K_ARCH (arm64ec | x86: which foobar2000 install deploy/fb2k/cfg/seed use),
      SEED_CONFIG (~/Library/foobar2000-v2/config.sqlite). Files go in and out with scp over ssh.
 USAGE
@@ -77,6 +81,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DIR="${WIN11_ARM_DIR:-$HOME/.local/share/foo_navidrome-win11-arm}"
 CPUS="${WIN11_ARM_CPUS:-6}"
 MEM="${WIN11_ARM_MEMORY:-6G}"
+AUDIO="${WIN11_ARM_AUDIO:-coreaudio}"
 DISK_SIZE="${WIN11_ARM_DISK:-64G}"
 WEB_PORT=8006
 VNC_DISPLAY=5
@@ -161,7 +166,7 @@ qemu_args() {
     -device scsi-hd,drive=data3,bus=data3.0,channel=0,scsi-id=0,lun=0,rotation_rate=1,bootindex=3 \
     -drive "file=$DIR/setup.img,id=setup,format=raw,media=disk,if=none" \
     -device usb-storage,drive=setup,removable=on \
-    -audiodev coreaudio,id=snd0 -device intel-hda -device hda-output,audiodev=snd0 \
+    -audiodev "$AUDIO",id=snd0 -device intel-hda -device hda-output,audiodev=snd0 \
     -rtc base=localtime \
     -fw_cfg name=opt/org.tianocore/UninstallMemAttrProtocol,string=y
 }
@@ -455,6 +460,14 @@ case "${1:-}" in
   shot)
     f="${2:-$ROOT/build/ui-test/win11-arm-$(date +%H%M%S).png}"; mkdir -p "$(dirname "$f")"
     echo "screendump $f -f png" | nc -U -w 2 "$MONITOR" >/dev/null && sleep 1 && [ -f "$f" ] && echo "$f"
+    ;;
+  capture)
+    case "${2:-}" in
+      start) f="${3:?usage: capture start FILE}"; case "$f" in /*) ;; *) f="$PWD/$f" ;; esac
+             rm -f "$f"; echo "wavcapture $f snd0 48000 16 2" | nc -U -w 2 "$MONITOR" >/dev/null; echo "$f" ;;
+      stop)  echo "stopcapture 0" | nc -U -w 2 "$MONITOR" >/dev/null ;;
+      *)     echo "usage: capture start FILE | capture stop" >&2; exit 2 ;;
+    esac
     ;;
   logs)    exec tail -f "$LOG" "$DIR/serial.log" ;;
   down)    down ;;

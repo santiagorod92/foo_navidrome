@@ -5,7 +5,7 @@
 	mac-vm mac-vm-vnc mac-vm-open mac-vm-smoke mac-vm-ui mac-vm-test mac-vm-release mac-vm-build mac-vm-build-test \
 	win11 win11-vnc win11-open win11-test win11-release win11-seed win11-smoke win11-ui win11-logs \
 	win11-arm win11-arm-vnc win11-arm-web win11-arm-up win11-arm-open win11-arm-ssh win11-arm-logs win11-arm-down win11-arm-status win11-arm-prepare win11-arm-reset win11-arm-shot \
-	win11-arm-provision win11-arm-deploy win11-arm-seed win11-arm-fb2k win11-arm-log win11-arm-test win11-arm-cfg win11-arm-key win11-arm-click \
+	win11-arm-provision win11-arm-deploy win11-arm-seed win11-arm-fb2k win11-arm-log win11-arm-test win11-arm-cfg win11-arm-key win11-arm-click win11-arm-capture \
 	audiomuse-up audiomuse-analyze audiomuse-status audiomuse-search audiomuse-logs audiomuse-down clean
 
 XWIN_SDK ?= $(HOME)/.local/share/xwin/sdk
@@ -78,6 +78,7 @@ help:
 	@echo "  win11-arm-logs        follow the QEMU + serial log"
 	@echo "  win11-arm-status      VM, screen and ssh state"
 	@echo "  win11-arm-shot        save the VM screen to build/ui-test/ [ARGS=file.png]"
+	@echo "  win11-arm-capture     record the guest's audio: ARGS='start file.wav' / ARGS=stop (WIN11_ARM_AUDIO=none at up: silent on the Mac)"
 	@echo "  win11-arm-provision   one-time after the install: ssh key + foobar2000 (ARM) in the guest"
 	@echo "  win11-arm-deploy      build the DLL (win-build-mac) and install it in the guest's foobar2000"
 	@echo "  win11-arm-seed        copy this Mac's foo_navidrome settings (server, account) into the guest"
@@ -332,6 +333,9 @@ win11-arm-reset:
 
 win11-arm-shot:
 	./scripts/win11-arm.sh shot $(ARGS)
+
+win11-arm-capture:
+	./scripts/win11-arm.sh capture $(ARGS)
 
 win11-arm-provision:
 	./scripts/win11-arm.sh provision
