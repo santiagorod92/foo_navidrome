@@ -1,3 +1,22 @@
+## [1.45.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.44.0...v1.45.0) (2026-11-19)
+
+### Added
+- **Smart Fade beat-matched mix** ([#58](https://github.com/santiagorod92/foo_navidrome/issues/58)):
+  a new DSP, **Navidrome Smart Fade (AudioMuse-AI)**, plays Smart Fade playlists the way
+  AudioMuse-AI's own player does. Add it in *Preferences › Playback › DSP Manager* and remove any
+  other crossfading DSP (Crossfader, crossmix…). While a Smart Fade song plays, foo_navidrome asks
+  AudioMuse-AI where it should hand over to the next one on the beat (about 15 seconds of work on
+  the AudioMuse server, done in the background). The two songs then overlap for 8 beats with an
+  equal-power crossfade, and the next song is time-stretched during the overlap, pitch kept, so its
+  beats land on the first one's. When AudioMuse can't match the beat, or the next song isn't the
+  one the playlist planned (shuffle, a song picked by hand), it fades instead. Only Smart Fade
+  playlists are affected; build them again after updating so their tracks carry the new mark.
+
+### Fixed
+- **Offline prefetch picked the wrong next track**: after an automatic track change foobar2000
+  could still report the previous track as playing, so the prefetch fetched the song that had just
+  started instead of the one after it.
+
 ## [1.44.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.43.0...v1.44.0) (2026-11-19)
 
 ### Added
