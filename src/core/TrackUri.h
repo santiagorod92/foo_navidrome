@@ -79,8 +79,31 @@ struct TrackURI {
     int    rating   = 0;
     double duration = 0.0;
     bool   starred  = false;
+    double clipStart = 0.0;
+    double clipEnd   = 0.0;
     TrackTags tags;
 };
+
+constexpr double kClipFadeSeconds = 4.0;
+
+inline bool isClipped(const TrackURI& t) { return t.clipStart > 0.0 || t.clipEnd > 0.0; }
+
+inline double playableLength(const TrackURI& t) {
+    if (t.clipEnd > t.clipStart) return t.clipEnd - t.clipStart;
+    if (t.duration <= t.clipStart) return 0.0;
+    return t.duration - t.clipStart;
+}
+
+inline double clipGain(const TrackURI& t, double seconds) {
+    double g = 1.0;
+    if (t.clipStart > 0.0 && seconds < t.clipStart + kClipFadeSeconds)
+        g = (seconds - t.clipStart) / kClipFadeSeconds;
+    if (t.clipEnd > 0.0 && seconds > t.clipEnd - kClipFadeSeconds) {
+        const double out = (t.clipEnd - seconds) / kClipFadeSeconds;
+        if (out < g) g = out;
+    }
+    return g < 0.0 ? 0.0 : (g > 1.0 ? 1.0 : g);
+}
 
 inline std::string formatUriNumber(double v) {
     char b[32];
@@ -108,6 +131,8 @@ inline std::string buildTrackURI(const TrackURI& t) {
     if (t.rating > 0)          q.push_back("rating="   + std::to_string(t.rating));
     if (t.starred)             q.push_back("starred=1");
     if (!t.albumId.empty())    q.push_back("albumId=" + percentEncode(t.albumId));
+    if (t.clipStart > 0.0)     q.push_back("clipStart=" + formatUriNumber(t.clipStart));
+    if (t.clipEnd > 0.0)       q.push_back("clipEnd=" + formatUriNumber(t.clipEnd));
 
     const TrackTags& g = t.tags;
     if (!g.albumArtist.empty())   q.push_back("albumArtist=" + percentEncode(g.albumArtist));
@@ -169,6 +194,8 @@ inline TrackURI parseTrackURI(const std::string& uri) {
         else if (k == "rating")      t.rating      = std::atoi(v.c_str());
         else if (k == "starred")     t.starred     = (std::atoi(v.c_str()) != 0);
         else if (k == "albumId")     t.albumId     = v;
+        else if (k == "clipStart")   t.clipStart   = std::atof(v.c_str());
+        else if (k == "clipEnd")     t.clipEnd     = std::atof(v.c_str());
         else if (k == "albumArtist") t.tags.albumArtist   = v;
         else if (k == "composer")    t.tags.composer      = v;
         else if (k == "genre")       { if (!v.empty()) t.tags.genres.push_back(v); }

@@ -16,10 +16,14 @@ struct FakePoster : am::IJsonPoster {
     int timeoutMs = 0;
     int calls = 0;
     navidrome::HttpResult answer;
+    std::vector<navidrome::HttpResult> queued;
+    std::vector<std::string> urls, bodies;
 
     navidrome::HttpResult postJson(const std::string& u, const std::string& b,
                                    const std::string& t, int timeout) override {
         ++calls; url = u; body = b; token = t; timeoutMs = timeout;
+        urls.push_back(u); bodies.push_back(b);
+        if (static_cast<std::size_t>(calls) <= queued.size()) return queued[calls - 1];
         return answer;
     }
 };
@@ -197,5 +201,75 @@ TEST_CASE(testAudioMuseInstantMixFallback) {
     check(am::noSimilarMessage(am::MixFallback::Empty, {}).find("Neither") == 0, "empty on both sides");
     check(am::noSimilarMessage(am::MixFallback::Unsupported, {}).find("artist") != std::string::npos,
           "album: suggests a song or the artist");
+}
+
+navidrome::HttpResult okBody(const std::string& body) {
+    navidrome::HttpResult r;
+    r.body = body;
+    return r;
+}
+
+TEST_CASE(testAudioMuseSmartFade) {
+    check(am::byTrackBody("s1", 25, "") == "{\"item_id\":\"s1\",\"n_results\":25}", "by_track body");
+    check(am::smartFadeBody({ "a", "", "b" }, "nd") == "{\"item_ids\":[\"a\",\"b\"],\"server\":\"nd\"}",
+          "smart_fade body skips blank ids, carries the server");
+
+    FakePoster http;
+    std::string err;
+    http.queued = {
+        okBody("{\"item_id\":\"seed\",\"results\":[{\"item_id\":\"x\"},{\"item_id\":\"seed\"},{\"item_id\":\"y\"}]}"),
+        okBody("{\"count\":3,\"results\":["
+               "{\"item_id\":\"seed\",\"fade_in_seconds\":0.0,\"fade_out_seconds\":280.5,\"duration_seconds\":281.5},"
+               "{\"item_id\":\"y\",\"fade_in_seconds\":4.0,\"fade_out_seconds\":115.0,\"duration_seconds\":130.0},"
+               "{\"item_id\":\"x\",\"fade_in_seconds\":null,\"fade_out_seconds\":null,\"duration_seconds\":200.0}]}"),
+    };
+    auto points = am::smartFade(http, configured(), { "seed" }, err);
+    check(err.empty() && http.calls == 2, "one seed: by_track then smart_fade");
+    check(http.urls.size() == 2 && http.urls[0] == "http://am.local:8000/api/recording_search/by_track" &&
+          http.urls[1] == "http://am.local:8000/api/recording_search/smart_fade", "recording search endpoints");
+    check(http.bodies.size() == 2 && http.bodies[1] == "{\"item_ids\":[\"seed\",\"x\",\"y\"]}",
+          "seed first, echoed seed dropped from the results");
+    check(points.size() == 3 && points[0].id == "seed" && points[1].id == "y" && points[1].timed &&
+          points[1].fadeIn == 4.0 && points[1].fadeOut == 115.0 && !points[2].timed,
+          "server order and fade times kept, null times untimed");
+
+    FakePoster many;
+    many.answer = okBody("{\"results\":[{\"item_id\":\"b\"},{\"item_id\":\"a\"}]}");
+    auto ordered = am::smartFade(many, configured(), { "a", "b" }, err);
+    check(err.empty() && many.calls == 1 && many.url == "http://am.local:8000/api/recording_search/smart_fade" &&
+          ordered.size() == 2 && ordered[0].id == "b", "several songs: smart_fade only");
+
+    FakePoster lonely;
+    lonely.answer = okBody("{\"results\":[]}");
+    am::smartFade(lonely, configured(), { "seed" }, err);
+    check(!err.empty() && lonely.calls == 1, "no similar recordings: smart_fade isn't sent");
+
+    using navidrome::BrowserNode;
+    auto node = [](const char* id, double duration) {
+        auto n = std::make_shared<BrowserNode>();
+        n->type = BrowserNode::Song; n->id = id; n->duration = duration;
+        return n;
+    };
+    std::vector<navidrome::BrowserNodePtr> nodes = { node("seed", 281), node("y", 130), node("x", 200) };
+    am::applyFadePoints(nodes, points);
+    check(nodes[0]->clipStart == 0.0 && nodes[0]->clipEnd == 280.5, "first song starts at 0, cut at its fade out");
+    check(nodes[1]->clipStart == 4.0 && nodes[1]->clipEnd == 115.0, "middle song cut at both points");
+    check(nodes[2]->clipStart == 0.0 && nodes[2]->clipEnd == 0.0, "untimed song plays whole");
+
+    am::FadePoint last;
+    last.id = "z"; last.timed = true; last.fadeIn = 10.0; last.fadeOut = 239.8; last.duration = 240.0;
+    auto z = node("z", 240);
+    am::applyFadePoint(*z, last);
+    check(z->clipStart == 10.0 && z->clipEnd == 0.0, "fade out at the very end leaves the end alone");
+
+    std::string label;
+    std::vector<navidrome::BrowserNodePtr> sel = { node("s1", 1), node("s2", 1) };
+    sel[0]->displayName = "First";
+    auto album = std::make_shared<BrowserNode>();
+    album->type = BrowserNode::Album; album->id = "al";
+    sel.push_back(album);
+    auto ids = am::smartFadeIdsFromNodes(sel, label);
+    check(ids.size() == 2 && ids[1] == "s2" && label == "First + 1 more", "smart fade takes songs only");
+    check(am::playlistName(am::Kind::SmartFade, "First") == "AudioMuse Smart Fade: First", "smart fade playlist name");
 }
 }

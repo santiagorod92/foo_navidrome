@@ -36,6 +36,14 @@ struct Track {
     std::string album;
 };
 
+struct FadePoint {
+    std::string id;
+    bool   timed    = false;
+    double fadeIn   = 0.0;
+    double fadeOut  = 0.0;
+    double duration = 0.0;
+};
+
 struct AlchemySeed {
     std::string id;
     bool artist   = false;
@@ -107,7 +115,22 @@ inline std::string alchemyBody(const std::vector<AlchemySeed>& seeds, int n,
            serverField(server) + "}";
 }
 
-enum class Kind { TextSearch, InstantPlaylist, Alchemy, InstantMix };
+inline std::string byTrackBody(const std::string& id, int n, const std::string& server) {
+    return "{\"item_id\":" + jsonQuote(id) + ",\"n_results\":" + std::to_string(clampCount(n)) +
+           serverField(server) + "}";
+}
+
+inline std::string smartFadeBody(const std::vector<std::string>& ids, const std::string& server) {
+    std::string items;
+    for (const auto& id : ids) {
+        if (id.empty()) continue;
+        if (!items.empty()) items += ',';
+        items += jsonQuote(id);
+    }
+    return "{\"item_ids\":[" + items + "]" + serverField(server) + "}";
+}
+
+enum class Kind { TextSearch, InstantPlaylist, Alchemy, InstantMix, SmartFade };
 
 inline const char* kindName(Kind k) {
     switch (k) {
@@ -115,6 +138,7 @@ inline const char* kindName(Kind k) {
         case Kind::InstantPlaylist: return N_("Instant Playlist");
         case Kind::Alchemy:         return N_("Song Alchemy");
         case Kind::InstantMix:      return N_("Instant Mix");
+        case Kind::SmartFade:       return N_("Smart Fade");
     }
     return "?";
 }
@@ -172,16 +196,13 @@ inline std::vector<Track> parseTracks(const std::string& body, Kind kind, std::s
     return out;
 }
 
-inline std::vector<Track> request(IJsonPoster& http, const Settings& settings, Kind kind,
-                                  const std::string& body, std::string& outError) {
+inline bool post(IJsonPoster& http, const Settings& settings, Kind kind, const char* path,
+                 const std::string& body, std::string& outBody, std::string& outError) {
     outError.clear();
     if (!settings.configured()) {
         outError = tr("AudioMuse-AI is not configured (Preferences > Tools > Navidrome > AudioMuse-AI)");
-        return {};
+        return false;
     }
-    const char* path = kind == Kind::TextSearch      ? "/api/clap/search"
-                     : kind == Kind::InstantPlaylist ? "/chat/api/chatPlaylist"
-                                                     : "/api/alchemy";
     const std::string url = endpointURL(settings.url, path);
     const int timeout = kind == Kind::InstantPlaylist ? kPlaylistTimeoutMs : kSearchTimeoutMs;
 
@@ -191,9 +212,21 @@ inline std::vector<Track> request(IJsonPoster& http, const Settings& settings, K
         outError = std::string(tr(kindName(kind))) + ": " + errorMessage(r);
         NAVIDROME_WARN("AudioMuse", outError + " (" + errorKindName(r.error.kind) +
                        ", HTTP " + std::to_string(r.error.http) + ")");
-        return {};
+        return false;
     }
-    auto tracks = parseTracks(r.body, kind, outError);
+    outBody = r.body;
+    return true;
+}
+
+inline std::vector<Track> request(IJsonPoster& http, const Settings& settings, Kind kind,
+                                  const std::string& body, std::string& outError) {
+    const char* path = kind == Kind::TextSearch      ? "/api/clap/search"
+                     : kind == Kind::InstantPlaylist ? "/chat/api/chatPlaylist"
+                     : kind == Kind::SmartFade       ? "/api/recording_search/by_track"
+                                                     : "/api/alchemy";
+    std::string response;
+    if (!post(http, settings, kind, path, body, response, outError)) return {};
+    auto tracks = parseTracks(response, kind, outError);
     if (!outError.empty()) NAVIDROME_WARN("AudioMuse", std::string(kindName(kind)) + ": " + outError);
     else NAVIDROME_LOG("AudioMuse", std::string(kindName(kind)) + ": " +
                        std::to_string(tracks.size()) + " tracks");
@@ -238,6 +271,93 @@ inline std::vector<Track> similarTo(IJsonPoster& http, const Settings& s, const 
     seed.id = seedId;
     seed.artist = seedType == BrowserNode::Artist;
     return request(http, s, Kind::InstantMix, alchemyBody({ seed }, s.count, s.server), outError);
+}
+
+inline std::vector<FadePoint> parseFadePoints(const std::string& body, std::string& outError) {
+    outError.clear();
+    std::string parseErr;
+    const json::Value root = json::parse(body, parseErr);
+    if (!root.isObject()) { outError = tr("AudioMuse-AI returned an invalid response"); return {}; }
+    std::vector<FadePoint> out;
+    for (const json::Value* row : root["results"].items()) {
+        FadePoint p;
+        p.id = (*row)["item_id"].asString();
+        if (p.id.empty()) continue;
+        const json::Value& in = (*row)["fade_in_seconds"];
+        const json::Value& fadeOut = (*row)["fade_out_seconds"];
+        p.timed = in.type() == json::Value::Number && fadeOut.type() == json::Value::Number;
+        if (p.timed) {
+            p.fadeIn  = in.asNumber();
+            p.fadeOut = fadeOut.asNumber();
+        }
+        if ((*row)["duration_seconds"].type() == json::Value::Number)
+            p.duration = (*row)["duration_seconds"].asNumber();
+        out.push_back(std::move(p));
+    }
+    if (out.empty()) outError = tr("AudioMuse-AI found no songs");
+    return out;
+}
+
+inline std::vector<FadePoint> smartFade(IJsonPoster& http, const Settings& s,
+                                        std::vector<std::string> ids, std::string& outError) {
+    outError.clear();
+    if (ids.empty()) { outError = tr("Smart Fade needs songs"); return {}; }
+    if (ids.size() == 1) {
+        NAVIDROME_LOG("AudioMuse", "Smart Fade: seed=" + ids.front());
+        const auto similar = request(http, s, Kind::SmartFade, byTrackBody(ids.front(), s.count, s.server), outError);
+        if (!outError.empty()) return {};
+        for (const auto& t : similar)
+            if (t.id != ids.front()) ids.push_back(t.id);
+        if (ids.size() == 1) { outError = tr("AudioMuse-AI found no songs"); return {}; }
+    }
+    std::string response;
+    if (!post(http, s, Kind::SmartFade, "/api/recording_search/smart_fade",
+              smartFadeBody(ids, s.server), response, outError)) return {};
+    auto points = parseFadePoints(response, outError);
+    if (!outError.empty()) NAVIDROME_WARN("AudioMuse", "Smart Fade: " + outError);
+    else NAVIDROME_LOG("AudioMuse", "Smart Fade: " + std::to_string(points.size()) + " tracks ordered");
+    return points;
+}
+
+inline void applyFadePoint(BrowserNode& node, const FadePoint& p) {
+    node.clipStart = 0.0;
+    node.clipEnd = 0.0;
+    if (!p.timed) return;
+    const double length = p.duration > 0.0 ? p.duration : node.duration;
+    if (p.fadeIn > 0.0 && (length <= 0.0 || p.fadeIn < length)) node.clipStart = p.fadeIn;
+    if (length > 0.0 && p.fadeOut > node.clipStart && p.fadeOut < length - 0.5) node.clipEnd = p.fadeOut;
+}
+
+inline std::vector<Track> fadeTracks(const std::vector<FadePoint>& points) {
+    std::vector<Track> out;
+    out.reserve(points.size());
+    for (const auto& p : points) {
+        Track t;
+        t.id = p.id;
+        out.push_back(std::move(t));
+    }
+    return out;
+}
+
+inline void applyFadePoints(std::vector<BrowserNodePtr>& nodes, const std::vector<FadePoint>& points) {
+    for (auto& n : nodes) {
+        if (!n) continue;
+        for (const auto& p : points)
+            if (p.id == n->id) { applyFadePoint(*n, p); break; }
+    }
+}
+
+inline std::vector<std::string> smartFadeIdsFromNodes(const std::vector<BrowserNodePtr>& nodes,
+                                                      std::string& label) {
+    std::vector<std::string> ids;
+    label.clear();
+    for (const auto& n : nodes) {
+        if (!n || n->id.empty() || n->type != BrowserNode::Song) continue;
+        if (ids.empty()) label = n->displayName;
+        ids.push_back(n->id);
+    }
+    if (ids.size() > 1) label += trf(" + {0} more", { std::to_string(ids.size() - 1) });
+    return ids;
 }
 
 inline std::string noSimilarMessage(MixFallback fallback, const std::string& audioMuseError) {
@@ -297,7 +417,8 @@ inline std::vector<AlchemySeed> seedsFromNodes(const std::vector<BrowserNodePtr>
 }
 
 inline std::string playlistName(Kind kind, const std::string& subject) {
-    const std::string prefix = kind == Kind::Alchemy ? "AudioMuse Alchemy" : "AudioMuse";
+    const std::string prefix = kind == Kind::Alchemy   ? "AudioMuse Alchemy"
+                             : kind == Kind::SmartFade ? "AudioMuse Smart Fade" : "AudioMuse";
     if (subject.empty()) return prefix;
     std::string s = subject;
     if (s.size() > 60) {

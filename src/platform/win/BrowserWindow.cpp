@@ -736,6 +736,14 @@ void BrowserWindow::OnAlchemy(UINT, int, HWND) {
     navidrome::audioMuseAlchemy(std::move(seeds), std::move(label));
 }
 
+void BrowserWindow::OnSmartFade(UINT, int, HWND) {
+    dbgLog("OnSmartFade fired");
+    std::string label;
+    auto ids = navidrome::audiomuse::smartFadeIdsFromNodes(selectedNodes(), label);
+    if (ids.empty()) { setStatus(tr("Smart Fade needs songs")); return; }
+    navidrome::audioMuseSmartFade(std::move(ids), std::move(label));
+}
+
 void BrowserWindow::OnArtistInfo(UINT, int, HWND) {
     dbgLog("OnArtistInfo fired");
     auto selected = selectedNodes();
@@ -849,8 +857,10 @@ void BrowserWindow::OnContextMenu(CWindow wnd, CPoint point) {
     menu.AppendMenu(MF_STRING, IDC_PLAY, trw("Play Now").c_str());
     menu.AppendMenu(MF_STRING, IDC_ADD,  trw("Add to Playlist").c_str());
     menu.AppendMenu(MF_STRING, IDC_PLAY_SIMILAR, trw("Instant Mix").c_str());
-    if (navidrome::audioMuseSettings().configured())
+    if (navidrome::audioMuseSettings().configured()) {
         menu.AppendMenu(MF_STRING, IDC_ALCHEMY, trw("Song Alchemy (AudioMuse-AI)").c_str());
+        menu.AppendMenu(MF_STRING, IDC_SMART_FADE, trw("Smart Fade (AudioMuse-AI)").c_str());
+    }
     menu.AppendMenu(MF_STRING, IDC_ARTIST_INFO,  trw("Artist Info").c_str());
     menu.AppendMenu(MF_STRING, IDC_ALBUM_INFO,   trw("Album Info").c_str());
 

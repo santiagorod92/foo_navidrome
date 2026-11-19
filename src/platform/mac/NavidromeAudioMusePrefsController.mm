@@ -20,8 +20,8 @@
     NSView *root = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 420, 240)];
 
     NSTextField *intro = [NSTextField wrappingLabelWithString:
-        NDTr("AudioMuse-AI analyses your Navidrome library for Text Search, Instant Playlist and "
-             "Song Alchemy (File › AudioMuse-AI, and the Navidrome submenu on tracks).")];
+        NDTr("AudioMuse-AI analyses your Navidrome library for Text Search, Instant Playlist, "
+             "Song Alchemy and Smart Fade (File › AudioMuse-AI, and the Navidrome submenu on tracks).")];
     intro.translatesAutoresizingMaskIntoConstraints = NO;
     [root addSubview:intro];
 

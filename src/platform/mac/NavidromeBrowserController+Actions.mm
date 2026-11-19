@@ -286,6 +286,7 @@
 - (void)menuNeedsUpdate:(NSMenu *)menu {
     if (menu == _alchemyItem.menu) {
         _alchemyItem.hidden = !navidrome::audioMuseSettings().configured();
+        _smartFadeItem.hidden = _alchemyItem.hidden;
         return;
     }
     if (menu != _playlistsMenu) return;

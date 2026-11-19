@@ -19,6 +19,7 @@ void startInstantMix(const BrowserNodePtr& seed);
 void audioMuseTextSearchPrompt();
 void audioMuseInstantPlaylistPrompt();
 void audioMuseAlchemy(std::vector<audiomuse::AlchemySeed> seeds, std::string label);
+void audioMuseSmartFade(std::vector<std::string> ids, std::string label);
 
 audiomuse::IJsonPoster& audioMusePoster();
 

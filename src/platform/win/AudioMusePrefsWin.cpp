@@ -70,7 +70,7 @@ private:
         };
         HWND intro = make(L"STATIC",
             trw("AudioMuse-AI analyses your Navidrome library for Text Search, Instant "
-                "Playlist and Song Alchemy (File › AudioMuse-AI, track context menu).").c_str(), SS_LEFT);
+                "Playlist, Song Alchemy and Smart Fade (File › AudioMuse-AI, track context menu).").c_str(), SS_LEFT);
         const DWORD editSty = WS_BORDER|WS_TABSTOP|ES_AUTOHSCROLL;
         const std::pair<HWND, HWND> rows[] = {
             { make(L"STATIC", trw("Server URL:").c_str(),  0), make(L"EDIT", L"", editSty, IDC_AM_URL) },

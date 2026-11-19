@@ -197,3 +197,24 @@ TEST_CASE(testPlayStats) {
     check(empty.playCount.empty() && empty.lastPlayed.empty(),
           "playStatsMeta: a never-played song writes no fields");
 }
+
+TEST_CASE(testTrackClip) {
+    navidrome::TrackURI t;
+    t.id = "s"; t.duration = 130.0;
+    check(!navidrome::isClipped(t) && navidrome::playableLength(t) == 130.0, "unclipped: full length");
+    check(navidrome::buildTrackURI(t).find("clip") == std::string::npos, "unclipped URI has no clip keys");
+    check(navidrome::clipGain(t, 0.0) == 1.0 && navidrome::clipGain(t, 129.9) == 1.0, "unclipped: no fades");
+
+    t.clipStart = 4.0; t.clipEnd = 115.0;
+    const navidrome::TrackURI back = navidrome::parseTrackURI(navidrome::buildTrackURI(t));
+    check(back.clipStart == 4.0 && back.clipEnd == 115.0, "clip points round-trip");
+    check(navidrome::playableLength(t) == 111.0, "clipped length");
+    check(navidrome::clipGain(t, 4.0) == 0.0 && navidrome::clipGain(t, 6.0) == 0.5 &&
+          navidrome::clipGain(t, 8.0) == 1.0, "fade in from the start point");
+    check(navidrome::clipGain(t, 111.0) == 1.0 && navidrome::clipGain(t, 113.0) == 0.5 &&
+          navidrome::clipGain(t, 115.0) == 0.0, "fade out to the end point");
+
+    t.clipEnd = 0.0;
+    check(navidrome::playableLength(t) == 126.0 && navidrome::clipGain(t, 129.0) == 1.0,
+          "start only: plays to the end without a fade out");
+}

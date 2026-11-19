@@ -165,6 +165,29 @@ void navidrome::audioMuseAlchemy(std::vector<audiomuse::AlchemySeed> seeds, std:
     });
 }
 
+void navidrome::audioMuseSmartFade(std::vector<std::string> ids, std::string label) {
+    namespace am = audiomuse;
+    if (!audioMuseSettings().configured()) {
+        reportError("AudioMuse-AI", tr("Set the AudioMuse-AI server URL first:\n"
+                    "Preferences > Tools > Navidrome > AudioMuse-AI."));
+        return;
+    }
+    const std::string name = am::playlistName(am::Kind::SmartFade, label);
+    runWithProgress(tr(am::kindName(am::Kind::SmartFade)), tr(am::kindName(am::Kind::SmartFade)) + std::string(": ") + label,
+        [ids = std::move(ids)](threaded_process_status& status, abort_callback& abort, std::string& err) {
+            const auto points = am::smartFade(audioMusePoster(), audioMuseSettings(), ids, err);
+            abort.check();
+            if (points.empty()) return std::vector<BrowserNodePtr>();
+            auto nodes = resolveWithProgress(am::fadeTracks(points), status, abort, err);
+            am::applyFadePoints(nodes, points);
+            return nodes;
+        },
+        [name](std::vector<BrowserNodePtr> nodes) {
+            const std::size_t n = playNodesInNewPlaylist(nodes, name);
+            NAVIDROME_LOG("AudioMuse", "playlist \"" + name + "\": " + std::to_string(n) + " tracks");
+        });
+}
+
 namespace {
 
 constexpr const char* kInstantMixPlaylist = navidrome::N_("Instant Mix");
@@ -285,41 +308,61 @@ void navidrome::startInstantMix(const BrowserNodePtr& seed) {
 
 namespace {
 
-void startAlchemy(metadb_handle_list_cref data) {
-    std::vector<navidrome::audiomuse::AlchemySeed> seeds;
-    std::string label;
+std::vector<std::string> trackIdsWithLabel(metadb_handle_list_cref data, std::string& label) {
+    std::vector<std::string> ids;
+    label.clear();
     for (t_size i = 0; i < data.get_count(); ++i) {
-        navidrome::audiomuse::AlchemySeed s;
-        s.id = navidrome::trackIdFromURI(data[i]->get_path());
-        if (s.id.empty()) continue;
+        std::string id = navidrome::trackIdFromURI(data[i]->get_path());
+        if (id.empty()) continue;
         if (label.empty()) {
             file_info_impl info;
             if (data[i]->get_info(info) && info.meta_get_count_by_name("title") > 0)
                 label = info.meta_get("title", 0);
         }
+        ids.push_back(std::move(id));
+    }
+    if (ids.size() > 1) label += navidrome::trf(" + {0} more", { std::to_string(ids.size() - 1) });
+    return ids;
+}
+
+void startAlchemy(metadb_handle_list_cref data) {
+    std::string label;
+    std::vector<navidrome::audiomuse::AlchemySeed> seeds;
+    for (auto& id : trackIdsWithLabel(data, label)) {
+        navidrome::audiomuse::AlchemySeed s;
+        s.id = std::move(id);
         seeds.push_back(std::move(s));
     }
     if (seeds.empty()) return;
-    if (seeds.size() > 1) label += navidrome::trf(" + {0} more", { std::to_string(seeds.size() - 1) });
     navidrome::audioMuseAlchemy(std::move(seeds), std::move(label));
+}
+
+void startSmartFade(metadb_handle_list_cref data) {
+    std::string label;
+    auto ids = trackIdsWithLabel(data, label);
+    if (ids.empty()) return;
+    navidrome::audioMuseSmartFade(std::move(ids), std::move(label));
 }
 
 constexpr unsigned kItemInstantMix = 0;
 constexpr unsigned kItemAlchemy    = 1;
+constexpr unsigned kItemSmartFade  = 2;
 
 class navidrome_mix_context_menu : public contextmenu_item_simple {
 public:
     GUID get_parent() override { return navidrome::guids::contextMenuGroup; }
-    unsigned get_num_items() override { return 2; }
+    unsigned get_num_items() override { return 3; }
 
     void get_item_name(unsigned index, pfc::string_base& out) override {
-        out = navidrome::tr(index == kItemInstantMix ? "Instant Mix" : "Song Alchemy (AudioMuse-AI)");
+        out = navidrome::tr(index == kItemInstantMix ? "Instant Mix"
+                          : index == kItemAlchemy    ? "Song Alchemy (AudioMuse-AI)"
+                                                     : "Smart Fade (AudioMuse-AI)");
     }
 
     bool get_item_description(unsigned index, pfc::string_base& out) override {
-        out = index == kItemInstantMix
-            ? navidrome::tr("Inserts songs similar to this track after it and plays them.")
-            : navidrome::tr("Blends the selected tracks into a new AudioMuse-AI playlist.");
+        out = index == kItemInstantMix ? navidrome::tr("Inserts songs similar to this track after it and plays them.")
+            : index == kItemAlchemy    ? navidrome::tr("Blends the selected tracks into a new AudioMuse-AI playlist.")
+            : navidrome::tr("Orders similar songs, or the selected ones, so each flows into the next, cut at AudioMuse-AI's fade points.");
         return true;
     }
 
@@ -336,15 +379,16 @@ public:
         for (t_size i = 0; i < data.get_count() && !anyOurs; ++i)
             anyOurs = !navidrome::trackIdFromURI(data[i]->get_path()).empty();
         if (!anyOurs) return false;
-        if (index == kItemAlchemy && !navidrome::audioMuseSettings().configured()) return false;
+        if (index != kItemInstantMix && !navidrome::audioMuseSettings().configured()) return false;
         get_item_name(index, out);
         return true;
     }
 
     void context_command(unsigned index, metadb_handle_list_cref data, const GUID& caller) override {
         (void)caller;
-        if (index == kItemInstantMix) startInstantMix(data);
-        else                          startAlchemy(data);
+        if (index == kItemInstantMix)   startInstantMix(data);
+        else if (index == kItemAlchemy) startAlchemy(data);
+        else                            startSmartFade(data);
     }
 };
 

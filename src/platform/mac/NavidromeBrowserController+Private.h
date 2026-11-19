@@ -28,6 +28,7 @@ inline std::string NBCStr(NSString *x) {
     BOOL _playlistsLoading;
     NSArray<SubsonicRadioStation *> *_radioStations;
     NSMenuItem *_alchemyItem;
+    NSMenuItem *_smartFadeItem;
 }
 @property (nonatomic, strong) NSMutableArray<NavidromeNode *> *rootNodes;
 @property (nonatomic, assign) long long treeLoadedAtMs;
@@ -46,6 +47,7 @@ inline std::string NBCStr(NSString *x) {
 @property (nonatomic, assign) BOOL playlistsLoading;
 @property (nonatomic, strong) NSArray<SubsonicRadioStation *> *radioStations;
 @property (nonatomic, strong) NSMenuItem *alchemyItem;
+@property (nonatomic, strong) NSMenuItem *smartFadeItem;
 - (NSArray<NavidromeNode *> *)selectedNodes;
 - (NSMutableArray<NavidromeNode *> *)collectSelectionSongs:(NSArray<NavidromeNode *> *)nodes
                                                      error:(NSError **)outError;

@@ -57,6 +57,8 @@ struct BrowserNode {
     bool         starred    = false;
     int          rating     = 0;
     double       bookmarkPositionMs = 0.0;
+    double       clipStart  = 0.0;
+    double       clipEnd    = 0.0;
     std::string  infoText;
     TrackTags    tags;
     PlayStats    plays;
@@ -141,6 +143,8 @@ inline TrackURI trackURIFromNode(const BrowserNode& n) {
     t.rating     = n.rating;
     t.duration   = n.duration;
     t.starred    = n.starred;
+    t.clipStart  = n.clipStart;
+    t.clipEnd    = n.clipEnd;
     t.tags       = n.tags;
     return t;
 }

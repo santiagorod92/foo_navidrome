@@ -219,6 +219,10 @@ NSNotificationName const NavidromeBrowserSectionsDidChangeNotification =
                                       action:@selector(alchemySelection:)
                                keyEquivalent:@""];
     _alchemyItem.target = self;
+    _smartFadeItem = [rowMenu addItemWithTitle:NDTr("Smart Fade (AudioMuse-AI)")
+                                        action:@selector(smartFadeSelection:)
+                                 keyEquivalent:@""];
+    _smartFadeItem.target = self;
     rowMenu.delegate = self;
     NSMenuItem *artistInfoItem = [rowMenu addItemWithTitle:NDTr("Artist Info")
                                                      action:@selector(showArtistInfo:)
@@ -728,6 +732,19 @@ static BOOL isArtistSubCategoryNode(NavidromeNode *n) {
         return;
     }
     navidrome::audioMuseAlchemy(std::move(seeds), std::move(label));
+}
+
+- (IBAction)smartFadeSelection:(id)sender {
+    std::vector<navidrome::BrowserNodePtr> core;
+    for (NavidromeNode *n in [self selectedNodes])
+        core.push_back(std::make_shared<navidrome::BrowserNode>([n coreNode]));
+    std::string label;
+    auto ids = navidrome::audiomuse::smartFadeIdsFromNodes(core, label);
+    if (ids.empty()) {
+        _statusLabel.stringValue = NDTr("Smart Fade needs songs");
+        return;
+    }
+    navidrome::audioMuseSmartFade(std::move(ids), std::move(label));
 }
 
 - (IBAction)showArtistInfo:(id)sender {

@@ -37,7 +37,8 @@
 
 void navidrome::applyTrackInfo(const TrackURI& t, file_info& info) {
     for (const auto& f : trackMetaFields(t)) info.meta_add(f.first.c_str(), f.second.c_str());
-    if (t.duration > 0) info.set_length(t.duration);
+    const double length = playableLength(t);
+    if (length > 0) info.set_length(length);
     if (!t.suffix.empty()) info.info_set("codec", t.suffix.c_str());
     for (const auto& f : trackTechInfoFields(t.tags)) info.info_set(f.first.c_str(), f.second.c_str());
     if (t.rating > 0) info.meta_set(kRatingTag, pfc::format_int(t.rating));
@@ -77,12 +78,21 @@ void navidrome::TrackDecoder::open(const TrackURI& track, unsigned flags, abort_
     m_track = track;
     m_flags = flags;
     m_seekByReopen = false;
-    if (openCached(abort)) return;
-    openAt(0.0, abort);
-    if (!m_decoder->can_seek()) {
-        m_seekByReopen = libraryCore().canSeekByTimeOffset();
-        NAVIDROME_LOG("Input", std::string("stream not seekable; seek by timeOffset ")
-                      + (m_seekByReopen ? "enabled (transcodeOffset)" : "unavailable"));
+    m_skipSeconds = 0.0;
+    m_position = 0.0;
+    if (!openCached(abort)) {
+        openAt(0.0, abort);
+        if (!m_decoder->can_seek()) {
+            m_seekByReopen = libraryCore().canSeekByTimeOffset();
+            NAVIDROME_LOG("Input", std::string("stream not seekable; seek by timeOffset ")
+                          + (m_seekByReopen ? "enabled (transcodeOffset)" : "unavailable"));
+        }
+    }
+    if (m_track.clipStart > 0.0) {
+        NAVIDROME_LOG("Input", "id=" + m_track.id + " clip " + std::to_string(m_track.clipStart) + "s.."
+                      + (m_track.clipEnd > 0.0 ? std::to_string(m_track.clipEnd) + "s" : std::string("end")));
+        if (m_decoder->can_seek() || m_seekByReopen) seekAbsolute(m_track.clipStart, abort);
+        else { m_skipSeconds = m_track.clipStart; m_position = m_track.clipStart; }
     }
 }
 
@@ -172,19 +182,48 @@ void navidrome::TrackDecoder::captureStreamInfo(abort_callback& abort) {
 bool navidrome::TrackDecoder::run(audio_chunk& chunk, abort_callback& abort) {
     if (m_decoder.is_empty()) return false;
     while (m_decoder->run(chunk, abort)) {
-        if (m_skipSeconds <= 0.0) return true;
+        if (m_skipSeconds <= 0.0) return clipChunk(chunk);
         const double dur = chunk.get_duration();
         if (dur <= m_skipSeconds) { m_skipSeconds -= dur; continue; }
         const auto skip = static_cast<t_size>(m_skipSeconds * chunk.get_srate());
         m_skipSeconds = 0.0;
         chunk.skip_first_samples(skip);
-        return true;
+        return clipChunk(chunk);
     }
     return false;
 }
 
+bool navidrome::TrackDecoder::clipChunk(audio_chunk& chunk) {
+    if (!isClipped(m_track)) return true;
+    const double start = m_position;
+    const unsigned rate = chunk.get_srate();
+    if (rate == 0) return true;
+    if (m_track.clipEnd > 0.0) {
+        if (start >= m_track.clipEnd) return false;
+        const double room = (m_track.clipEnd - start) * rate;
+        if (room < static_cast<double>(chunk.get_sample_count()))
+            chunk.set_sample_count(static_cast<t_size>(room));
+    }
+    const t_size frames = chunk.get_sample_count();
+    const unsigned channels = chunk.get_channels();
+    m_position = start + static_cast<double>(frames) / rate;
+    if (clipGain(m_track, start) >= 1.0 && clipGain(m_track, m_position) >= 1.0) return frames > 0;
+    audio_sample* data = chunk.get_data();
+    for (t_size f = 0; f < frames; ++f) {
+        const auto gain = static_cast<audio_sample>(clipGain(m_track, start + static_cast<double>(f) / rate));
+        for (unsigned c = 0; c < channels; ++c) data[f * channels + c] *= gain;
+    }
+    return frames > 0;
+}
+
 void navidrome::TrackDecoder::seek(double seconds, abort_callback& abort) {
+    seekAbsolute(seconds + m_track.clipStart, abort);
+}
+
+void navidrome::TrackDecoder::seekAbsolute(double seconds, abort_callback& abort) {
     if (m_decoder.is_empty()) return;
+    m_position = seconds;
+    m_skipSeconds = 0.0;
     if (!m_seekByReopen) {
         NAVIDROME_LOG("Input", "seek to " + std::to_string(seconds) + "s (decoder)");
         m_decoder->seek(seconds, abort);
@@ -217,7 +256,8 @@ bool navidrome::TrackDecoder::getDynamicInfo(file_info& out, double& delta) {
 
 bool navidrome::TrackDecoder::getDynamicInfoTrack(file_info& out, double& delta) {
     if (!m_decoder.is_valid() || !m_decoder->get_dynamic_info_track(out, delta)) return false;
-    if (out.get_length() <= 0 && m_track.duration > 0) out.set_length(m_track.duration);
+    const double length = playableLength(m_track);
+    if ((isClipped(m_track) || out.get_length() <= 0) && length > 0) out.set_length(length);
     return true;
 }
 
