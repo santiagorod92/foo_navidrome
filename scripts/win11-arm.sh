@@ -64,7 +64,9 @@ once, by prepare, to download Windows and build its unattended setup.
   status   VM, screen and ssh state
   reset    down, then delete the Windows disk (the next up installs again)
 
-Env: WIN11_ARM_DIR (default ~/.local/share/foo_navidrome-win11-arm), WIN11_ARM_CPUS (6),
+Env: WIN11_ARM_DIR (default ~/.local/share/foo_navidrome-win11-arm), WIN11_ARM_VERSION (11:
+     dockur's VERSION for prepare, e.g. 11l = LTSC 2024, build 26100 like 24H2; give each
+     version its own WIN11_ARM_DIR, one VM runs at a time), WIN11_ARM_CPUS (6),
      WIN11_ARM_MEMORY (6G), WIN11_ARM_DISK (64G), FB2K_VERSION (2.26.1),
      FB2K_ARCH (arm64ec | x86: which foobar2000 install deploy/fb2k/cfg/seed use),
      SEED_CONFIG (~/Library/foobar2000-v2/config.sqlite). Files go in and out with scp over ssh.
@@ -101,7 +103,7 @@ prepare() {
   local d=(docker --context colima)
   "${d[@]}" rm -f "$PREP" >/dev/null 2>&1 || true
   echo "==> dockur: downloading Windows 11 ARM and building the setup image (no VM is installed here)"
-  "${d[@]}" run -d --name "$PREP" -e VERSION=11 -e USERNAME=tester -e PASSWORD=tester -e KVM=N \
+  "${d[@]}" run -d --name "$PREP" -e VERSION="${WIN11_ARM_VERSION:-11}" -e USERNAME=tester -e PASSWORD=tester -e KVM=N \
     -v "$PREP_VOL:/storage" -v "$ROOT/dev/win11-arm/oem:/oem" dockurr/windows-arm >/dev/null
   until "${d[@]}" logs "$PREP" 2>&1 | grep -qE "Booting Windows|ERROR"; do
     "${d[@]}" ps -q -f "name=^$PREP$" | grep -q . || { "${d[@]}" logs --tail 20 "$PREP"; exit 1; }
@@ -111,7 +113,7 @@ prepare() {
   "${d[@]}" stop -t 5 "$PREP" >/dev/null
   echo "==> copying the ISO, setup image and noVNC out"
   "${d[@]}" run --rm -v "$PREP_VOL:/s:ro" -v "$DIR:/out" alpine sh -c \
-    'cp /s/win11arm64.iso /out/win11-arm64.iso && cp /s/setup.img /out/setup.img'
+    'cp /s/*.iso /out/win11-arm64.iso && cp /s/setup.img /out/setup.img'
   rm -rf "$DIR/novnc"; "${d[@]}" cp "$PREP:/usr/share/novnc" "$DIR/novnc"
   "${d[@]}" rm "$PREP" >/dev/null
   "${d[@]}" volume rm "$PREP_VOL" >/dev/null
