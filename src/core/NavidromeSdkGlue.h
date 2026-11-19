@@ -13,6 +13,8 @@ metadb_handle_list makeTrackHandles(const std::vector<BrowserNodePtr>& nodes,
 
 void playFrom(t_size playlist, t_size first);
 
+bool nextTrack(const metadb_handle_ptr& playing, metadb_handle_ptr& out, std::string& why);
+
 void reportError(const char* title, const std::string& msg);
 
 void showConfirmation(const char* title, const std::string& msg);

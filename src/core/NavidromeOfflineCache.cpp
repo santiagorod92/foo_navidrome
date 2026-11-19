@@ -122,16 +122,27 @@ void prefetch(navidrome::offline::Item item) {
     }).detach();
 }
 
-bool nextTrack(const metadb_handle_ptr& playing, metadb_handle_ptr& out, std::string& why) {
+bool findPlayingFrom(playlist_manager::ptr pm, t_size pl, const metadb_handle_ptr& playing, t_size from, t_size& idx) {
+    const t_size count = pm->playlist_get_item_count(pl);
+    for (t_size n = 0; n < count; ++n) {
+        const t_size i = (from + n) % count;
+        if (pm->playlist_get_item_handle(pl, i) == playing) { idx = i; return true; }
+    }
+    return false;
+}
+
+bool predictNextTrack(const metadb_handle_ptr& playing, metadb_handle_ptr& out, std::string& why) {
     auto pm = playlist_manager::get();
     pfc::list_t<t_playback_queue_item> queue;
     pm->queue_get_contents(queue);
     if (queue.get_count() > 0) { out = queue[0].m_handle; why = "playback queue"; return out.is_valid(); }
 
     t_size pl = pfc_infinite, idx = pfc_infinite;
-    if (!pm->get_playing_item_location(&pl, &idx)) {
-        pl = pm->get_playing_playlist();
-        if (pl == pfc_infinite || playing.is_empty() || !pm->playlist_find_item(pl, playing, idx)) {
+    const bool located = pm->get_playing_item_location(&pl, &idx);
+    if (!located || (playing.is_valid() && pm->playlist_get_item_handle(pl, idx) != playing)) {
+        const t_size from = located ? idx + 1 : 0;
+        if (!located) pl = pm->get_playing_playlist();
+        if (pl == pfc_infinite || playing.is_empty() || !findPlayingFrom(pm, pl, playing, from, idx)) {
             why = "playing item not in a playlist";
             return false;
         }
@@ -170,7 +181,7 @@ public:
         if (!navidrome::prefetchEnabled() || !navidrome::libraryCore().isConfigured()) return;
         metadb_handle_ptr next;
         std::string why;
-        if (!nextTrack(playing, next, why)) { NAVIDROME_LOG("Offline", "prefetch: nothing to do, " + why); return; }
+        if (!predictNextTrack(playing, next, why)) { NAVIDROME_LOG("Offline", "prefetch: nothing to do, " + why); return; }
         const navidrome::TrackURI t = navidrome::parseTrackURI(next->get_path());
         if (t.id.empty() || t.suffix.empty()) { NAVIDROME_LOG("Offline", "prefetch: next track isn't from Navidrome"); return; }
         const std::string suffix = streamSuffix(t.suffix);
@@ -390,4 +401,8 @@ void navidrome::removeNodesOfflineCopies(const std::vector<BrowserNodePtr>& song
     std::vector<std::string> ids;
     for (const auto& it : itemsFromNodes(songs)) ids.push_back(it.id);
     if (!ids.empty()) removeOfflineCopies(ids);
+}
+
+bool navidrome::nextTrack(const metadb_handle_ptr& playing, metadb_handle_ptr& out, std::string& why) {
+    return predictNextTrack(playing, out, why);
 }
