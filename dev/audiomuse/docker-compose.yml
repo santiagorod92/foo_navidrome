@@ -41,6 +41,7 @@ x-audiomuse-env: &audiomuse-env
   API_TOKEN: ${AUDIOMUSE_API_TOKEN:-foo-navidrome-dev-token}
   JWT_SECRET: ${AUDIOMUSE_JWT_SECRET:-foo-navidrome-dev-jwt-secret-change-me}
   CLAP_ENABLED: "true"
+  NEURAL_FINGERPRINT_ENABLED: "true"
   # Instant Playlist's LLM: the host's own Ollama (OLLAMA_URL to use another).
   AI_MODEL_PROVIDER: OLLAMA
   OLLAMA_SERVER_URL: ${OLLAMA_URL:-http://127.0.0.1:11434/api/generate}
