@@ -1,3 +1,19 @@
+## [1.44.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.43.0...v1.44.0) (2026-11-19)
+
+### Added
+- **AudioMuse-AI Smart Fade** ([#58](https://github.com/santiagorod92/foo_navidrome/issues/58)):
+  right-click a track in a playlist (**Navidrome › Smart Fade (AudioMuse-AI)**) or a song in the
+  Navidrome browser. AudioMuse-AI finds the songs that sound closest to it, orders them so each
+  one flows into the next, and the new playlist (*AudioMuse Smart Fade: …*) plays every song only
+  between the start and end points AudioMuse picks, fading in over the first 4 seconds and out
+  over the last 4. Select several tracks instead and Smart Fade orders just those (the first one
+  stays first). The Duration column and the seekbar show the trimmed length. foobar2000 plays one
+  track at a time, so on its own you hear a fade out and then a fade in; a crossfading DSP that
+  overlaps tracks by about 4 seconds (*Preferences › Playback › DSP Manager*) blends them. Songs
+  AudioMuse hasn't fingerprinted play whole, at the end. Needs AudioMuse-AI 3.7.2 or newer with
+  its neural fingerprint analysis turned on, and the AudioMuse-AI server URL set in
+  *Preferences › Tools › Navidrome › AudioMuse-AI*.
+
 ## [1.43.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.42.0...v1.43.0) (2026-11-17)
 
 ### Added
