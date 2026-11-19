@@ -28,6 +28,7 @@ private:
     void openAt(double offsetSeconds, abort_callback& abort);
     void seekAbsolute(double seconds, abort_callback& abort);
     bool clipChunk(audio_chunk& chunk);
+    void applyOutgoingMix();
     bool openCached(abort_callback& abort);
     void captureStreamInfo(abort_callback& abort);
 
@@ -36,6 +37,9 @@ private:
     bool                         m_seekByReopen = false;
     double                       m_skipSeconds = 0.0;
     double                       m_position = 0.0;
+    bool                         m_rampIn = true;
+    bool                         m_rampOut = true;
+    bool                         m_mixOut = false;
     service_ptr_t<input_decoder> m_decoder;
     std::vector<std::pair<std::string, std::string>> m_streamInfo;
     bool                         m_streamInfoPending = false;

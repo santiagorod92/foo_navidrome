@@ -49,13 +49,24 @@ struct WinHttpTransport : navidrome::IHttpTransport {
 struct WinJsonPoster : navidrome::audiomuse::IJsonPoster {
     navidrome::HttpResult postJson(const std::string& urlStr, const std::string& body,
                                    const std::string& bearerToken, int timeoutMs) override {
+        return send(L"POST", urlStr, &body, bearerToken, timeoutMs);
+    }
+
+    navidrome::HttpResult getJson(const std::string& urlStr, const std::string& bearerToken,
+                                  int timeoutMs) override {
+        return send(L"GET", urlStr, nullptr, bearerToken, timeoutMs);
+    }
+
+    static navidrome::HttpResult send(const wchar_t* method, const std::string& urlStr, const std::string* body,
+                                      const std::string& bearerToken, int timeoutMs) {
         using navidrome::ErrorKind;
         namespace w = navidrome::win;
         navidrome::HttpResult out;
 
-        std::string headers = "Content-Type: application/json\nAccept: application/json";
+        std::string headers = body ? "Content-Type: application/json\nAccept: application/json"
+                                   : "Accept: application/json";
         if (!bearerToken.empty()) headers += "\nAuthorization: Bearer " + bearerToken;
-        auto http = w::openWinHttpRequest(urlStr, L"POST", w::WinHttpTimeouts{15000, 30000, timeoutMs},
+        auto http = w::openWinHttpRequest(urlStr, method, w::WinHttpTimeouts{15000, 30000, timeoutMs},
                                           headers);
         if (!http.ok()) {
             out.error = { http.errorKind, 0, 0,
@@ -67,7 +78,7 @@ struct WinJsonPoster : navidrome::audiomuse::IJsonPoster {
         WinHttpSetOption(http.request, WINHTTP_OPTION_RECEIVE_RESPONSE_TIMEOUT,
                          &responseTimeout, sizeof(responseTimeout));
         DWORD e = 0;
-        if (!w::sendWinHttpRequest(http.request, &body, e)) {
+        if (!w::sendWinHttpRequest(http.request, body, e)) {
             ErrorKind kind = w::classifyWinHttpError(e);
             out.error = { kind, 0, 0, std::string(navidrome::errorKindName(kind)) +
                           " (winhttp err=" + std::to_string(e) + ")" };

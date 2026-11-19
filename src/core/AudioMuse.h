@@ -2,6 +2,7 @@
 #include "NavidromeBrowserModel.h"
 #include "SubsonicCore.h"
 #include "NavidromeDebugLog.h"
+#include "SmartFade.h"
 
 #include <cstdio>
 #include <string>
@@ -15,6 +16,7 @@ constexpr int kDefaultCount = 50;
 constexpr int kMaxCount     = 500;
 constexpr int kSearchTimeoutMs   = 60000;
 constexpr int kPlaylistTimeoutMs = 300000;
+constexpr int kTransitionTimeoutMs = 120000;
 
 inline int clampCount(int n) {
     if (n < 1) return kDefaultCount;
@@ -54,6 +56,7 @@ struct IJsonPoster {
     virtual ~IJsonPoster() = default;
     virtual HttpResult postJson(const std::string& url, const std::string& body,
                                 const std::string& bearerToken, int timeoutMs) = 0;
+    virtual HttpResult getJson(const std::string& url, const std::string& bearerToken, int timeoutMs) = 0;
 };
 
 inline std::string jsonQuote(const std::string& s) {
@@ -319,9 +322,53 @@ inline std::vector<FadePoint> smartFade(IJsonPoster& http, const Settings& s,
     return points;
 }
 
+inline std::string transitionURL(const Settings& s, const std::string& fromId, const std::string& toId,
+                                 double outSeconds, double inSeconds) {
+    const std::string base = endpointURL(s.url, "/api/recording_search/transition");
+    if (base.empty()) return {};
+    return base + "?from_id=" + percentEncode(fromId) + "&to_id=" + percentEncode(toId) +
+           "&out=" + formatUriNumber(outSeconds) + "&in=" + formatUriNumber(inSeconds);
+}
+
+inline bool parseTransition(const std::string& body, const std::string& fromId, const std::string& toId,
+                            smartfade::Transition& out, std::string& outError) {
+    outError.clear();
+    std::string parseErr;
+    const json::Value root = json::parse(body, parseErr);
+    if (!root.isObject()) { outError = "invalid response"; return false; }
+    const char* keys[] = { "mix_at", "mix_seconds", "in_at", "resume_at" };
+    for (const char* k : keys)
+        if (root[k].type() != json::Value::Number) { outError = std::string("missing ") + k; return false; }
+    out = smartfade::Transition{};
+    out.fromId = fromId;
+    out.toId = toId;
+    out.mixAt = root["mix_at"].asNumber();
+    out.mixSeconds = root["mix_seconds"].asNumber();
+    out.inAt = root["in_at"].asNumber();
+    out.resumeAt = root["resume_at"].asNumber();
+    if (root["stretch"].type() == json::Value::Number) out.stretch = root["stretch"].asNumber();
+    if (!out.valid()) { outError = "transition out of range"; return false; }
+    return true;
+}
+
+inline bool transition(IJsonPoster& http, const Settings& s, const std::string& fromId, const std::string& toId,
+                       double outSeconds, double inSeconds, smartfade::Transition& out, std::string& outError) {
+    outError.clear();
+    if (!s.configured()) { outError = "AudioMuse-AI is not configured"; return false; }
+    const std::string url = transitionURL(s, fromId, toId, outSeconds, inSeconds);
+    NAVIDROME_LOG("AudioMuse", "Smart Fade transition GET " + dbg::scrubAuth(url));
+    const HttpResult r = http.getJson(url, s.token, kTransitionTimeoutMs);
+    if (!r.error.ok()) {
+        outError = errorMessage(r);
+        return false;
+    }
+    return parseTransition(r.body, fromId, toId, out, outError);
+}
+
 inline void applyFadePoint(BrowserNode& node, const FadePoint& p) {
     node.clipStart = 0.0;
     node.clipEnd = 0.0;
+    node.smartFade = p.timed;
     if (!p.timed) return;
     const double length = p.duration > 0.0 ? p.duration : node.duration;
     if (p.fadeIn > 0.0 && (length <= 0.0 || p.fadeIn < length)) node.clipStart = p.fadeIn;

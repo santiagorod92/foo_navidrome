@@ -154,6 +154,7 @@
     <ClCompile Include="..\..\core\NavidromeBrowserEnqueue.cpp" />
     <ClCompile Include="..\..\core\NavidromeMenus.cpp" />
     <ClCompile Include="..\..\core\NavidromeAudioMuse.cpp" />
+    <ClCompile Include="..\..\core\NavidromeSmartFade.cpp" />
     <ClCompile Include="..\..\core\NavidromePlayQueue.cpp" />
     <ClCompile Include="..\..\core\NavidromeOfflineCache.cpp" />
     <ClCompile Include="..\..\core\NavidromeLastFm.cpp" />

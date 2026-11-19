@@ -477,6 +477,16 @@ namespace {
 struct MacJsonPoster : navidrome::audiomuse::IJsonPoster {
     navidrome::HttpResult postJson(const std::string &url, const std::string &body,
                                    const std::string &bearerToken, int timeoutMs) override {
+        return send(@"POST", url, &body, bearerToken, timeoutMs);
+    }
+
+    navidrome::HttpResult getJson(const std::string &url, const std::string &bearerToken,
+                                  int timeoutMs) override {
+        return send(@"GET", url, nullptr, bearerToken, timeoutMs);
+    }
+
+    static navidrome::HttpResult send(NSString *method, const std::string &url, const std::string *body,
+                                      const std::string &bearerToken, int timeoutMs) {
         navidrome::HttpResult out;
         @autoreleasepool {
             NSURL *nsurl = [NSURL URLWithString:@(url.c_str())];
@@ -490,10 +500,12 @@ struct MacJsonPoster : navidrome::audiomuse::IJsonPoster {
                 return [NSURLSession sessionWithConfiguration:config];
             }();
             NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:nsurl];
-            request.HTTPMethod = @"POST";
+            request.HTTPMethod = method;
             request.timeoutInterval = timeoutMs / 1000.0;
-            request.HTTPBody = [NSData dataWithBytes:body.data() length:body.size()];
-            [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+            if (body) {
+                request.HTTPBody = [NSData dataWithBytes:body->data() length:body->size()];
+                [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+            }
             [request setValue:@"application/json" forHTTPHeaderField:@"Accept"];
             if (!bearerToken.empty())
                 [request setValue:[@"Bearer " stringByAppendingString:@(bearerToken.c_str())]

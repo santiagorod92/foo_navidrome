@@ -81,6 +81,7 @@ struct TrackURI {
     bool   starred  = false;
     double clipStart = 0.0;
     double clipEnd   = 0.0;
+    bool   smartFade = false;
     TrackTags tags;
 };
 
@@ -94,11 +95,11 @@ inline double playableLength(const TrackURI& t) {
     return t.duration - t.clipStart;
 }
 
-inline double clipGain(const TrackURI& t, double seconds) {
+inline double clipGain(const TrackURI& t, double seconds, bool rampIn = true, bool rampOut = true) {
     double g = 1.0;
-    if (t.clipStart > 0.0 && seconds < t.clipStart + kClipFadeSeconds)
+    if (rampIn && t.clipStart > 0.0 && seconds < t.clipStart + kClipFadeSeconds)
         g = (seconds - t.clipStart) / kClipFadeSeconds;
-    if (t.clipEnd > 0.0 && seconds > t.clipEnd - kClipFadeSeconds) {
+    if (rampOut && t.clipEnd > 0.0 && seconds > t.clipEnd - kClipFadeSeconds) {
         const double out = (t.clipEnd - seconds) / kClipFadeSeconds;
         if (out < g) g = out;
     }
@@ -133,6 +134,7 @@ inline std::string buildTrackURI(const TrackURI& t) {
     if (!t.albumId.empty())    q.push_back("albumId=" + percentEncode(t.albumId));
     if (t.clipStart > 0.0)     q.push_back("clipStart=" + formatUriNumber(t.clipStart));
     if (t.clipEnd > 0.0)       q.push_back("clipEnd=" + formatUriNumber(t.clipEnd));
+    if (t.smartFade)           q.push_back("smartFade=1");
 
     const TrackTags& g = t.tags;
     if (!g.albumArtist.empty())   q.push_back("albumArtist=" + percentEncode(g.albumArtist));
@@ -196,6 +198,7 @@ inline TrackURI parseTrackURI(const std::string& uri) {
         else if (k == "albumId")     t.albumId     = v;
         else if (k == "clipStart")   t.clipStart   = std::atof(v.c_str());
         else if (k == "clipEnd")     t.clipEnd     = std::atof(v.c_str());
+        else if (k == "smartFade")   t.smartFade   = (std::atoi(v.c_str()) != 0);
         else if (k == "albumArtist") t.tags.albumArtist   = v;
         else if (k == "composer")    t.tags.composer      = v;
         else if (k == "genre")       { if (!v.empty()) t.tags.genres.push_back(v); }

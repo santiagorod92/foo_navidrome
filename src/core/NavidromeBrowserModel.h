@@ -59,6 +59,7 @@ struct BrowserNode {
     double       bookmarkPositionMs = 0.0;
     double       clipStart  = 0.0;
     double       clipEnd    = 0.0;
+    bool         smartFade  = false;
     std::string  infoText;
     TrackTags    tags;
     PlayStats    plays;
@@ -145,6 +146,7 @@ inline TrackURI trackURIFromNode(const BrowserNode& n) {
     t.starred    = n.starred;
     t.clipStart  = n.clipStart;
     t.clipEnd    = n.clipEnd;
+    t.smartFade  = n.smartFade;
     t.tags       = n.tags;
     return t;
 }

@@ -2,6 +2,7 @@
 #include "../src/core/AudioMuse.h"
 #include "FakeBrowserClient.h"
 
+#include <cmath>
 #include <memory>
 #include <string>
 #include <tuple>
@@ -25,6 +26,10 @@ struct FakePoster : am::IJsonPoster {
         urls.push_back(u); bodies.push_back(b);
         if (static_cast<std::size_t>(calls) <= queued.size()) return queued[calls - 1];
         return answer;
+    }
+
+    navidrome::HttpResult getJson(const std::string& u, const std::string& t, int timeout) override {
+        return postJson(u, std::string(), t, timeout);
     }
 };
 
@@ -271,5 +276,42 @@ TEST_CASE(testAudioMuseSmartFade) {
     auto ids = am::smartFadeIdsFromNodes(sel, label);
     check(ids.size() == 2 && ids[1] == "s2" && label == "First + 1 more", "smart fade takes songs only");
     check(am::playlistName(am::Kind::SmartFade, "First") == "AudioMuse Smart Fade: First", "smart fade playlist name");
+}
+
+TEST_CASE(testAudioMuseTransition) {
+    const am::Settings s = configured();
+    check(am::transitionURL(s, "a b", "c", 216.5, 21.0) ==
+          "http://am.local:8000/api/recording_search/transition?from_id=a%20b&to_id=c&out=216.5&in=21",
+          "transition URL carries both ids and points");
+
+    FakePoster http;
+    http.answer.body = "{\"mix_at\":213.7788,\"mix_seconds\":2.6222,\"in_at\":21.1495,\"resume_at\":23.7397,"
+                       "\"stretch\":0.9878,\"tempo_from\":183.1,\"tempo_to\":92.7}";
+    navidrome::smartfade::Transition t;
+    std::string err;
+    check(am::transition(http, s, "a", "b", 216.5, 21.0, t, err) && err.empty(), "transition parsed");
+    check(http.token == "tok" && http.timeoutMs == am::kTransitionTimeoutMs, "transition sends the token, long timeout");
+    check(t.fromId == "a" && t.toId == "b" && t.mixAt == 213.7788 && t.mixSeconds == 2.6222 &&
+          t.inAt == 21.1495 && t.resumeAt == 23.7397 && t.stretch == 0.9878, "transition fields");
+    check(std::abs(t.mixEnd() - 216.401) < 1e-9, "mix ends at mix_at + mix_seconds");
+
+    http.answer.body = "{\"mix_at\":1,\"mix_seconds\":30,\"in_at\":1,\"resume_at\":31}";
+    check(!am::transition(http, s, "a", "b", 1, 1, t, err) && !err.empty(), "a mix past the limit is refused");
+    http.answer.body = "{\"mix_at\":1}";
+    check(!am::transition(http, s, "a", "b", 1, 1, t, err) && !err.empty(), "missing fields refused");
+    http.answer.error = { navidrome::ErrorKind::Unknown, 400, 0, "HTTP 400" };
+    http.answer.body = "{\"error\":\"No steady beat to match.\"}";
+    check(!am::transition(http, s, "a", "b", 1, 1, t, err) && !err.empty(), "no steady beat is an error");
+    check(!am::transition(http, am::Settings{}, "a", "b", 1, 1, t, err), "unconfigured refused");
+
+    navidrome::BrowserNode n;
+    n.duration = 130.0;
+    am::FadePoint p;
+    p.id = "x"; p.timed = true; p.fadeIn = 4.0; p.fadeOut = 115.0; p.duration = 130.0;
+    am::applyFadePoint(n, p);
+    check(n.smartFade && navidrome::trackURIFromNode(n).smartFade, "a timed point marks the track for the mix");
+    p.timed = false;
+    am::applyFadePoint(n, p);
+    check(!n.smartFade, "an untimed song isn't mixed");
 }
 }

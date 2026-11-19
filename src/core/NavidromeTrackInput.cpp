@@ -11,6 +11,7 @@
 #include "SubsonicTypes.h"
 #include "NavidromeSettings.h"
 #include "NavidromeOfflineCache.h"
+#include "NavidromeSmartFade.h"
 #include <SDK/cfg_var.h>
 #include <SDK/http_client.h>
 #include <SDK/metadb.h>
@@ -80,6 +81,17 @@ void navidrome::TrackDecoder::open(const TrackURI& track, unsigned flags, abort_
     m_seekByReopen = false;
     m_skipSeconds = 0.0;
     m_position = 0.0;
+    m_rampIn = true;
+    m_rampOut = true;
+    m_mixOut = false;
+    if (m_track.smartFade && smartFadeMixActive()) {
+        if (const auto in = smartfade::transitions().incoming(m_track.id)) {
+            NAVIDROME_LOG("Input", "id=" + m_track.id + " Smart Fade mix in from " + in->fromId
+                          + " at " + std::to_string(in->inAt) + "s");
+            m_track.clipStart = in->inAt;
+            m_rampIn = false;
+        }
+    }
     if (!openCached(abort)) {
         openAt(0.0, abort);
         if (!m_decoder->can_seek()) {
@@ -193,7 +205,19 @@ bool navidrome::TrackDecoder::run(audio_chunk& chunk, abort_callback& abort) {
     return false;
 }
 
+void navidrome::TrackDecoder::applyOutgoingMix() {
+    if (m_mixOut || !m_track.smartFade || !smartFadeMixActive()) return;
+    const auto out = smartfade::transitions().outgoing(m_track.id);
+    if (!out) return;
+    NAVIDROME_LOG("Input", "id=" + m_track.id + " Smart Fade mix out to " + out->toId
+                  + ", ends at " + std::to_string(out->mixEnd()) + "s");
+    m_track.clipEnd = out->mixEnd();
+    m_rampOut = false;
+    m_mixOut = true;
+}
+
 bool navidrome::TrackDecoder::clipChunk(audio_chunk& chunk) {
+    applyOutgoingMix();
     if (!isClipped(m_track)) return true;
     const double start = m_position;
     const unsigned rate = chunk.get_srate();
@@ -207,10 +231,12 @@ bool navidrome::TrackDecoder::clipChunk(audio_chunk& chunk) {
     const t_size frames = chunk.get_sample_count();
     const unsigned channels = chunk.get_channels();
     m_position = start + static_cast<double>(frames) / rate;
-    if (clipGain(m_track, start) >= 1.0 && clipGain(m_track, m_position) >= 1.0) return frames > 0;
+    if (clipGain(m_track, start, m_rampIn, m_rampOut) >= 1.0 && clipGain(m_track, m_position, m_rampIn, m_rampOut) >= 1.0)
+        return frames > 0;
     audio_sample* data = chunk.get_data();
     for (t_size f = 0; f < frames; ++f) {
-        const auto gain = static_cast<audio_sample>(clipGain(m_track, start + static_cast<double>(f) / rate));
+        const auto gain = static_cast<audio_sample>(
+            clipGain(m_track, start + static_cast<double>(f) / rate, m_rampIn, m_rampOut));
         for (unsigned c = 0; c < channels; ++c) data[f * channels + c] *= gain;
     }
     return frames > 0;

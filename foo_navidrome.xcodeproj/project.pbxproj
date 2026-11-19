@@ -37,6 +37,7 @@
 		FE0BADC80000000000000002 /* NavidromeBrowserEnqueue.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADC80000000000000001 /* NavidromeBrowserEnqueue.cpp */; };
 		FE0BADC90000000000000002 /* NavidromeMenus.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADC90000000000000001 /* NavidromeMenus.cpp */; };
 		FE0BADCA0000000000000002 /* NavidromeAudioMuse.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADCA0000000000000001 /* NavidromeAudioMuse.cpp */; };
+		FE5F0DE50000000000000002 /* NavidromeSmartFade.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE5F0DE50000000000000001 /* NavidromeSmartFade.cpp */; };
 		FE0BADCB0000000000000002 /* NavidromePlayQueue.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADCB0000000000000001 /* NavidromePlayQueue.cpp */; };
 		FE0BADD00000000000000002 /* NavidromeOfflineCache.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADD00000000000000001 /* NavidromeOfflineCache.cpp */; };
 		FE0BADD40000000000000002 /* NavidromeLastFm.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FE0BADD40000000000000001 /* NavidromeLastFm.cpp */; };
@@ -90,6 +91,7 @@
 		FE0BADC80000000000000001 /* NavidromeBrowserEnqueue.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = NavidromeBrowserEnqueue.cpp; sourceTree = "<group>"; };
 		FE0BADC90000000000000001 /* NavidromeMenus.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = NavidromeMenus.cpp; sourceTree = "<group>"; };
 		FE0BADCA0000000000000001 /* NavidromeAudioMuse.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = NavidromeAudioMuse.cpp; sourceTree = "<group>"; };
+		FE5F0DE50000000000000001 /* NavidromeSmartFade.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = NavidromeSmartFade.cpp; sourceTree = "<group>"; };
 		FE0BADCB0000000000000001 /* NavidromePlayQueue.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = NavidromePlayQueue.cpp; sourceTree = "<group>"; };
 		FE0BADD00000000000000001 /* NavidromeOfflineCache.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = NavidromeOfflineCache.cpp; sourceTree = "<group>"; };
 		FE0BADD40000000000000001 /* NavidromeLastFm.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = NavidromeLastFm.cpp; sourceTree = "<group>"; };
@@ -184,6 +186,7 @@
 				FE0BADD20000000000000001 /* I18n.cpp */,
 				FE0BADD30000000000000001 /* I18nTable.cpp */,
 				FE0BADCA0000000000000001 /* NavidromeAudioMuse.cpp */,
+				FE5F0DE50000000000000001 /* NavidromeSmartFade.cpp */,
 				FE0BADC90000000000000001 /* NavidromeMenus.cpp */,
 				FE0BADC80000000000000001 /* NavidromeBrowserEnqueue.cpp */,
 				FE0BADC70000000000000001 /* NavidromeTrackInput.cpp */,
@@ -316,6 +319,7 @@
 				FE0BADD20000000000000002 /* I18n.cpp in Sources */,
 				FE0BADD30000000000000002 /* I18nTable.cpp in Sources */,
 				FE0BADCA0000000000000002 /* NavidromeAudioMuse.cpp in Sources */,
+				FE5F0DE50000000000000002 /* NavidromeSmartFade.cpp in Sources */,
 				FE0BADC90000000000000002 /* NavidromeMenus.cpp in Sources */,
 				FE0BADC80000000000000002 /* NavidromeBrowserEnqueue.cpp in Sources */,
 				FE0BADC70000000000000002 /* NavidromeTrackInput.cpp in Sources */,

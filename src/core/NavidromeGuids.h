@@ -56,5 +56,6 @@ inline constexpr GUID advPrefetch               = make(0x07, 0x01);
 inline constexpr GUID advPrefetchLimit          = make(0x07, 0x02);
 inline constexpr GUID cfgUiLanguage             = make(0x08, 0x01);
 inline constexpr GUID cfgLastFmApiKey           = make(0x09, 0x01);
+inline constexpr GUID dspSmartFade              = make(0x0a, 0x01);
 
 }

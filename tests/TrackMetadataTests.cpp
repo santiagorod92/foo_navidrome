@@ -217,4 +217,11 @@ TEST_CASE(testTrackClip) {
     t.clipEnd = 0.0;
     check(navidrome::playableLength(t) == 126.0 && navidrome::clipGain(t, 129.0) == 1.0,
           "start only: plays to the end without a fade out");
+
+    t.clipEnd = 115.0;
+    check(navidrome::clipGain(t, 4.0, false, true) == 1.0 && navidrome::clipGain(t, 115.0, true, false) == 1.0,
+          "a mixed edge has no ramp of its own");
+    check(!back.smartFade && navidrome::buildTrackURI(t).find("smartFade") == std::string::npos, "plain clip has no Smart Fade flag");
+    t.smartFade = true;
+    check(navidrome::parseTrackURI(navidrome::buildTrackURI(t)).smartFade, "Smart Fade flag round-trips");
 }
