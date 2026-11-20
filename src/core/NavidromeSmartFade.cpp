@@ -20,6 +20,14 @@ namespace {
 using Mix = navidrome::smartfade::BasicMixer<audio_sample>;
 
 std::atomic<bool> g_dspInChain{ false };
+std::atomic<bool> g_mixActive{ false };
+
+void refreshMixActive() {
+    const bool on = g_dspInChain && navidrome::audioMuseSettings().configured();
+    if (g_mixActive.exchange(on) != on)
+        NAVIDROME_LOG("AudioMuse", std::string("Smart Fade mixing ") + (on ? "on" : "off")
+                      + " (DSP in the chain and an AudioMuse-AI URL set)");
+}
 
 void updateChainState(const dsp_chain_config& chain) {
     bool on = false;
@@ -27,6 +35,7 @@ void updateChainState(const dsp_chain_config& chain) {
         if (chain.get_item(i).get_owner() == navidrome::guids::dspSmartFade) on = true;
     if (g_dspInChain.exchange(on) != on)
         NAVIDROME_LOG("AudioMuse", std::string("Smart Fade DSP ") + (on ? "added to" : "removed from") + " the playback chain");
+    refreshMixActive();
 }
 
 navidrome::TrackURI navidromeTrack(const metadb_handle_ptr& h) {
@@ -59,6 +68,13 @@ public:
         const unsigned channels = chunk->get_channels();
         const metadb_handle_ptr track = get_cur_file();
         if (track != m_track) beginTrack(track, rate, channels);
+        if (m_mix.idle()) {
+            const auto out = m_id.empty() ? std::nullopt : navidrome::smartfade::transitions().outgoing(m_id);
+            if (!out) {
+                if (rate != m_mix.rate() || channels != m_mix.channels()) m_mix.configure(rate, channels);
+                return true;
+            }
+        }
         if (rate != m_mix.rate() || channels != m_mix.channels()) {
             m_mix.drain(m_out);
             emit();
@@ -105,12 +121,12 @@ public:
         return m_mix.rate() ? static_cast<double>(m_mix.latencyFrames()) / m_mix.rate() : 0.0;
     }
 
-    bool need_track_change_mark() override { return true; }
+    bool need_track_change_mark() override { return g_mixActive || !m_mix.idle(); }
 
 private:
     void beginTrack(const metadb_handle_ptr& track, unsigned rate, unsigned channels) {
         m_track = track;
-        m_id = smartFadeTrack(track).id;
+        m_id = g_mixActive ? smartFadeTrack(track).id : std::string();
         const auto in = m_id.empty() ? std::nullopt : navidrome::smartfade::transitions().incoming(m_id);
         const std::size_t fade = in ? navidrome::smartfade::framesFor(in->mixSeconds, rate) : 0;
         if (m_mix.state() != Mix::State::Tail) {
@@ -173,9 +189,12 @@ static initquit_factory_t<navidrome_smart_fade_init> g_smart_fade_init;
 
 class navidrome_smart_fade_prefetch : public play_callback_static {
 public:
-    unsigned get_flags() override { return flag_on_playback_new_track; }
+    unsigned get_flags() override { return flag_on_playback_starting | flag_on_playback_new_track; }
+
+    void on_playback_starting(play_control::t_track_command, bool) override { refreshMixActive(); }
 
     void on_playback_new_track(metadb_handle_ptr playing) override {
+        refreshMixActive();
         if (!g_dspInChain) return;
         const navidrome::TrackURI a = smartFadeTrack(playing);
         if (a.id.empty()) {
@@ -230,7 +249,6 @@ public:
         }).detach();
     }
 
-    void on_playback_starting(play_control::t_track_command, bool) override {}
     void on_playback_stop(play_control::t_stop_reason) override {}
     void on_playback_seek(double) override {}
     void on_playback_pause(bool) override {}
@@ -245,4 +263,4 @@ static play_callback_static_factory_t<navidrome_smart_fade_prefetch> g_smart_fad
 
 }
 
-bool navidrome::smartFadeMixActive() { return g_dspInChain; }
+bool navidrome::smartFadeMixActive() { return g_mixActive; }

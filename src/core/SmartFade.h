@@ -271,6 +271,9 @@ public:
     unsigned channels() const { return m_channels; }
     State state() const { return m_state; }
     std::size_t hold() const { return m_hold; }
+    bool idle() const {
+        return m_state == State::Live && m_hold == 0 && bufFrames() == 0 && m_fadeInDone >= m_fadeIn;
+    }
 
     void setHold(std::size_t frames, std::vector<T>& out) {
         m_hold = frames;

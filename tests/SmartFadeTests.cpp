@@ -95,11 +95,13 @@ TEST_CASE(testSmartFadeMixerHold) {
     m.configure(1000, 2);
     std::vector<float> out;
     const auto in = constant(100, 2, 0.25f);
+    check(m.idle(), "a fresh mixer is idle");
     m.process(in.data(), 100, out);
-    check(out == in, "no hold passes audio through");
+    check(out == in && m.idle(), "no hold passes audio through");
 
     out.clear();
     m.setHold(30, out);
+    check(!m.idle(), "a hold means work to do");
     m.process(in.data(), 100, out);
     check(out.size() == 70 * 2 && m.latencyFrames() == 30, "hold keeps the last frames back");
     out.clear();
@@ -176,6 +178,7 @@ TEST_CASE(testSmartFadeMixerFallback) {
     const auto b = constant(200, 1, 1.0f);
     m.process(b.data(), 200, out);
     check(out.size() == 700 && out[500] < 0.05f && out[560] == 1.0f, "and fades in itself");
+    check(m.idle(), "idle again once the fade in is done");
 
     m.flush();
     out.clear();
