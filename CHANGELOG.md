@@ -1,3 +1,18 @@
+## [1.45.2](https://github.com/santiagorod92/foo_navidrome/compare/v1.45.1...v1.45.2) (2026-11-20)
+
+### Fixed
+- **Smart Fade mixes with AudioMuse-AI 3.7.3** ([#58](https://github.com/santiagorod92/foo_navidrome/issues/58)):
+  AudioMuse-AI 3.7.3 changed how it describes a transition, so with 1.45 every transition failed
+  (`missing mix_at` in the log) and songs only played one after the other. The **Navidrome Smart
+  Fade (AudioMuse-AI)** DSP now plays the new plans exactly: on a *beat mix* both songs play
+  together for 15-20 s while the tempo glides from one to the other and the highs, mids and bass
+  pass from one song to the other one band after the other; on a *beat rise* the louder next
+  song's bass comes in through an opening high-pass; other pairs get a crossfade of about 10 s.
+  AudioMuse's per-song loudness levelling is applied too, unless foobar2000's ReplayGain is on.
+  When AudioMuse doesn't answer, the songs now crossfade over 10 s instead of only fading.
+  AudioMuse-AI 3.7.2 keeps working with its shorter mix. An answer foo_navidrome can't read is
+  now quoted in the log, and so is a next song that is the same song again (playback queue).
+
 ## [1.45.1](https://github.com/santiagorod92/foo_navidrome/compare/v1.45.0...v1.45.1) (2026-11-20)
 
 ### Fixed
