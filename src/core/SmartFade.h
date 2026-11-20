@@ -61,6 +61,11 @@ public:
         if (it != m_out.end() && it->second.toId == toId) return false;
         return m_pending.insert(fromId + '\n' + toId).second;
     }
+    bool pendingFrom(const std::string& fromId) const {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        const auto it = m_pending.lower_bound(fromId + '\n');
+        return it != m_pending.end() && it->compare(0, fromId.size() + 1, fromId + '\n') == 0;
+    }
     void end(const std::string& fromId, const std::string& toId) {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_pending.erase(fromId + '\n' + toId);

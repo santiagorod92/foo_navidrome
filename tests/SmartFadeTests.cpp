@@ -45,6 +45,8 @@ TEST_CASE(testSmartFadeTransitionCache) {
     sf::TransitionCache cache;
     check(cache.begin("a", "b"), "first request for a pair starts");
     check(!cache.begin("a", "b"), "a pair in flight isn't requested twice");
+    check(cache.pendingFrom("a") && !cache.pendingFrom("b") && !cache.pendingFrom(""), "pending by the song that ends");
+    check(!cache.pendingFrom("ab"), "pending matches the whole id");
     cache.put(t);
     cache.end("a", "b");
     check(!cache.begin("a", "b"), "a cached pair isn't requested again");

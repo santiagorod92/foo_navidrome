@@ -16,7 +16,7 @@ constexpr int kDefaultCount = 50;
 constexpr int kMaxCount     = 500;
 constexpr int kSearchTimeoutMs   = 60000;
 constexpr int kPlaylistTimeoutMs = 300000;
-constexpr int kTransitionTimeoutMs = 120000;
+constexpr int kTransitionTimeoutMs = 300000;
 
 inline int clampCount(int n) {
     if (n < 1) return kDefaultCount;

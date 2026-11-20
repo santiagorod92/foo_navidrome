@@ -11,6 +11,7 @@
 #include <SDK/play_callback.h>
 #include <SDK/initquit.h>
 #include <atomic>
+#include <chrono>
 #include <cstring>
 #include <thread>
 
@@ -28,14 +29,25 @@ void updateChainState(const dsp_chain_config& chain) {
         NAVIDROME_LOG("AudioMuse", std::string("Smart Fade DSP ") + (on ? "added to" : "removed from") + " the playback chain");
 }
 
-navidrome::TrackURI smartFadeTrack(const metadb_handle_ptr& h) {
+navidrome::TrackURI navidromeTrack(const metadb_handle_ptr& h) {
     if (h.is_empty()) return {};
     const char* path = h->get_path();
     if (path == nullptr || std::strncmp(path, "navidrome://", 12) != 0) return {};
-    navidrome::TrackURI t = navidrome::parseTrackURI(path);
+    return navidrome::parseTrackURI(path);
+}
+
+navidrome::TrackURI smartFadeTrack(const metadb_handle_ptr& h) {
+    navidrome::TrackURI t = navidromeTrack(h);
     if (!t.smartFade) t.id.clear();
     return t;
 }
+
+void warnOnce(std::atomic<bool>& flag, const std::string& message) {
+    if (!flag.exchange(true)) NAVIDROME_WARN("AudioMuse", message);
+}
+
+std::atomic<bool> g_warnedOldPlaylist{ false };
+std::atomic<bool> g_warnedNotConfigured{ false };
 
 class navidrome_smart_fade_dsp : public dsp_impl_base {
 public:
@@ -68,6 +80,10 @@ public:
     }
 
     void on_endoftrack(abort_callback&) override {
+        if (!m_id.empty() && m_mix.state() == Mix::State::Live && m_mix.hold() == 0
+            && navidrome::smartfade::transitions().pendingFrom(m_id))
+            NAVIDROME_WARN("AudioMuse", "Smart Fade: " + m_id + " ended while AudioMuse-AI was still working out its "
+                           "transition, so it fades instead of mixing");
         m_mix.endTrack(m_out);
         emit();
         m_tailId = m_mix.state() == Mix::State::Tail ? m_id : std::string();
@@ -105,8 +121,14 @@ private:
         const std::size_t piece = match ? navidrome::smartfade::framesFor(in->pieceSeconds(), rate) : 0;
         if (match) NAVIDROME_LOG("AudioMuse", "Smart Fade: mixing " + m_tailId + " into " + m_id + " over "
                                  + std::to_string(in->mixSeconds) + "s, stretch " + std::to_string(in->stretch));
-        else NAVIDROME_LOG("AudioMuse", "Smart Fade: " + (m_id.empty() ? std::string("next track") : m_id)
-                           + " doesn't follow " + m_tailId + ", fading instead of mixing");
+        else {
+            const std::string reason = !in ? std::string("no transition into it is known")
+                : in->fromId != m_tailId ? "its transition comes from " + in->fromId
+                : "the sample rate or channel count changes (" + std::to_string(m_mix.rate()) + " Hz -> "
+                  + std::to_string(rate) + " Hz)";
+            NAVIDROME_WARN("AudioMuse", "Smart Fade: " + (m_id.empty() ? std::string("the next track") : m_id)
+                           + " doesn't mix with " + m_tailId + " (" + reason + "), fading instead");
+        }
         m_mix.beginNext(piece, match ? 0 : fade, m_out);
         emit();
         m_tailId.clear();
@@ -156,17 +178,33 @@ public:
     void on_playback_new_track(metadb_handle_ptr playing) override {
         if (!g_dspInChain) return;
         const navidrome::TrackURI a = smartFadeTrack(playing);
-        if (a.id.empty()) return;
+        if (a.id.empty()) {
+            const navidrome::TrackURI plain = navidromeTrack(playing);
+            if (!plain.id.empty() && navidrome::isClipped(plain))
+                warnOnce(g_warnedOldPlaylist, "Smart Fade: the playing track comes from a Smart Fade playlist made "
+                         "before 1.45.0, which the DSP can't mix; create the playlist again");
+            return;
+        }
         const navidrome::audiomuse::Settings settings = navidrome::audioMuseSettings();
-        if (!settings.configured()) return;
+        if (!settings.configured()) {
+            warnOnce(g_warnedNotConfigured, "Smart Fade: no AudioMuse-AI server URL is set, so the DSP can't mix");
+            return;
+        }
         metadb_handle_ptr next;
         std::string why;
         if (!navidrome::nextTrack(playing, next, why)) {
-            NAVIDROME_LOG("AudioMuse", "Smart Fade: no transition after " + a.id + ", " + why);
+            const std::string line = "Smart Fade: no transition after " + a.id + ", " + why;
+            if (why.rfind("last track", 0) == 0) NAVIDROME_LOG("AudioMuse", line);
+            else NAVIDROME_WARN("AudioMuse", line);
             return;
         }
         const navidrome::TrackURI b = smartFadeTrack(next);
-        if (b.id.empty() || b.id == a.id) return;
+        if (b.id == a.id) return;
+        if (b.id.empty()) {
+            NAVIDROME_WARN("AudioMuse", "Smart Fade: the track after " + a.id + " isn't part of a 1.45.0 Smart Fade "
+                           "playlist, so there is nothing to mix into");
+            return;
+        }
         const double outSeconds = a.clipEnd > 0.0 ? a.clipEnd : a.duration;
         const double inSeconds = b.clipStart;
         if (!navidrome::smartfade::transitions().begin(a.id, b.id)) return;
@@ -174,14 +212,18 @@ public:
             navidrome::dbg::runGuarded("AudioMuse", "Smart Fade transition", [&] {
                 navidrome::smartfade::Transition t;
                 std::string err;
-                if (navidrome::audiomuse::transition(navidrome::audioMusePoster(), settings, from, to,
-                                                     outSeconds, inSeconds, t, err)) {
+                const auto started = std::chrono::steady_clock::now();
+                const bool ok = navidrome::audiomuse::transition(navidrome::audioMusePoster(), settings, from, to,
+                                                                 outSeconds, inSeconds, t, err);
+                const std::string took = " (" + std::to_string(std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::steady_clock::now() - started).count()) + " s)";
+                if (ok) {
                     navidrome::smartfade::transitions().put(t);
                     NAVIDROME_LOG("AudioMuse", "Smart Fade transition " + from + " -> " + to + ": mix at "
                                   + std::to_string(t.mixAt) + "s for " + std::to_string(t.mixSeconds) + "s, in at "
-                                  + std::to_string(t.inAt) + "s, resume at " + std::to_string(t.resumeAt) + "s");
+                                  + std::to_string(t.inAt) + "s, resume at " + std::to_string(t.resumeAt) + "s" + took);
                 } else {
-                    NAVIDROME_WARN("AudioMuse", "Smart Fade transition " + from + " -> " + to + " failed: " + err);
+                    NAVIDROME_WARN("AudioMuse", "Smart Fade transition " + from + " -> " + to + " failed: " + err + took);
                 }
                 navidrome::smartfade::transitions().end(from, to);
             });
