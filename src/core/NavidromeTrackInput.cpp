@@ -87,8 +87,8 @@ void navidrome::TrackDecoder::open(const TrackURI& track, unsigned flags, abort_
     if (m_track.smartFade && smartFadeMixActive()) {
         if (const auto in = smartfade::transitions().incoming(m_track.id)) {
             NAVIDROME_LOG("Input", "id=" + m_track.id + " Smart Fade mix in from " + in->fromId
-                          + " at " + std::to_string(in->inAt) + "s");
-            m_track.clipStart = in->inAt;
+                          + " at " + std::to_string(in->toStart) + "s");
+            m_track.clipStart = in->toStart;
             m_rampIn = false;
         }
     }

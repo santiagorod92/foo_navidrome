@@ -330,24 +330,69 @@ inline std::string transitionURL(const Settings& s, const std::string& fromId, c
            "&out=" + formatUriNumber(outSeconds) + "&in=" + formatUriNumber(inSeconds);
 }
 
+inline std::vector<double> numberList(const json::Value& v) {
+    std::vector<double> out;
+    for (const json::Value* item : v.items())
+        if (item->type() == json::Value::Number) out.push_back(item->asNumber());
+    return out;
+}
+
+inline void parseSongCurves(const json::Value& v, smartfade::SongCurves& out) {
+    if (v["gain"].type() == json::Value::Number) out.gain = v["gain"].asNumber();
+    out.speed = numberList(v["speed"]);
+    out.volume = numberList(v["volume"]);
+    out.highDb = numberList(v["high_db"]);
+    out.midDb = numberList(v["mid_db"]);
+    out.bassDb = numberList(v["bass_db"]);
+    if (v["highpass_hz"].isArray()) out.highpassHz = numberList(v["highpass_hz"]);
+}
+
+inline std::string bodyExcerpt(const std::string& body) {
+    std::string s = body.substr(0, 200);
+    for (char& c : s)
+        if (c == '\n' || c == '\r' || c == '\t') c = ' ';
+    return body.size() > 200 ? s + "..." : s;
+}
+
 inline bool parseTransition(const std::string& body, const std::string& fromId, const std::string& toId,
                             smartfade::Transition& out, std::string& outError) {
     outError.clear();
     std::string parseErr;
     const json::Value root = json::parse(body, parseErr);
-    if (!root.isObject()) { outError = "invalid response"; return false; }
-    const char* keys[] = { "mix_at", "mix_seconds", "in_at", "resume_at" };
-    for (const char* k : keys)
-        if (root[k].type() != json::Value::Number) { outError = std::string("missing ") + k; return false; }
-    out = smartfade::Transition{};
-    out.fromId = fromId;
-    out.toId = toId;
-    out.mixAt = root["mix_at"].asNumber();
-    out.mixSeconds = root["mix_seconds"].asNumber();
-    out.inAt = root["in_at"].asNumber();
-    out.resumeAt = root["resume_at"].asNumber();
-    if (root["stretch"].type() == json::Value::Number) out.stretch = root["stretch"].asNumber();
-    if (!out.valid()) { outError = "transition out of range"; return false; }
+    if (!root.isObject()) { outError = "not a JSON object: " + bodyExcerpt(body); return false; }
+    if (root["type"].type() == json::Value::String) {
+        const char* keys[] = { "start", "duration", "step" };
+        for (const char* k : keys)
+            if (root[k].type() != json::Value::Number) { outError = std::string("missing ") + k + ": " + bodyExcerpt(body); return false; }
+        const json::Value& to = root["to"];
+        if (to["start"].type() != json::Value::Number || to["continue_from"].type() != json::Value::Number) {
+            outError = "missing to.start or to.continue_from: " + bodyExcerpt(body);
+            return false;
+        }
+        out = smartfade::Transition{};
+        out.fromId = fromId;
+        out.toId = toId;
+        out.type = root["type"].asString();
+        out.start = root["start"].asNumber();
+        out.duration = root["duration"].asNumber();
+        out.step = root["step"].asNumber();
+        const json::Value& f = root["filters"];
+        out.highHz = f["high_hz"].asNumber(out.highHz);
+        out.midHz = f["mid_hz"].asNumber(out.midHz);
+        out.midQ = f["mid_q"].asNumber(out.midQ);
+        out.bassHz = f["bass_hz"].asNumber(out.bassHz);
+        parseSongCurves(root["from"], out.from);
+        parseSongCurves(to, out.to);
+        out.toStart = to["start"].asNumber();
+        out.continueFrom = to["continue_from"].asNumber();
+    } else {
+        const char* keys[] = { "mix_at", "mix_seconds", "in_at", "resume_at" };
+        for (const char* k : keys)
+            if (root[k].type() != json::Value::Number) { outError = "unexpected answer: " + bodyExcerpt(body); return false; }
+        out = smartfade::legacyTransition(fromId, toId, root["mix_at"].asNumber(), root["mix_seconds"].asNumber(),
+                                          root["in_at"].asNumber(), root["resume_at"].asNumber());
+    }
+    if (!out.valid()) { outError = "transition out of range: " + bodyExcerpt(body); return false; }
     return true;
 }
 

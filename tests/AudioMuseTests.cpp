@@ -285,23 +285,49 @@ TEST_CASE(testAudioMuseTransition) {
           "transition URL carries both ids and points");
 
     FakePoster http;
-    http.answer.body = "{\"mix_at\":213.7788,\"mix_seconds\":2.6222,\"in_at\":21.1495,\"resume_at\":23.7397,"
-                       "\"stretch\":0.9878,\"tempo_from\":183.1,\"tempo_to\":92.7}";
+    http.answer.body =
+        "{\"type\":\"beat_mix\",\"start\":147.3626,\"duration\":16.0875,\"middle\":8.0216,\"step\":8.04375,"
+        "\"filters\":{\"high_hz\":4000.0,\"mid_hz\":1000.0,\"mid_q\":0.5,\"bass_hz\":180.0},"
+        "\"from\":{\"gain\":0.4728,\"speed\":[0.9998,0.9950,0.9893],\"volume\":[1.0,1.0,0.0],"
+        "\"high_db\":[0.0,-2.0,-40.0],\"mid_db\":[0.0,0.0,-27.0],\"bass_db\":[0.0,-40.0,-40.0]},"
+        "\"to\":{\"gain\":0.5445,\"start\":23.6997,\"speed\":[1.0109,1.0050,1.0002],\"volume\":[0.0,1.0,1.0],"
+        "\"high_db\":[-40.0,-2.0,0.0],\"mid_db\":[-27.0,0.0,0.0],\"bass_db\":[-40.0,0.0,0.0],"
+        "\"highpass_hz\":null,\"continue_from\":39.8759},"
+        "\"info\":{\"tempo_from\":90.0,\"tempo_to\":89.0,\"confidence\":\"high\"}}";
     navidrome::smartfade::Transition t;
     std::string err;
-    check(am::transition(http, s, "a", "b", 216.5, 21.0, t, err) && err.empty(), "transition parsed");
+    check(am::transition(http, s, "a", "b", 163.5, 25.0, t, err) && err.empty(), "transition parsed");
     check(http.token == "tok" && http.timeoutMs == am::kTransitionTimeoutMs, "transition sends the token, long timeout");
-    check(t.fromId == "a" && t.toId == "b" && t.mixAt == 213.7788 && t.mixSeconds == 2.6222 &&
-          t.inAt == 21.1495 && t.resumeAt == 23.7397 && t.stretch == 0.9878, "transition fields");
-    check(std::abs(t.mixEnd() - 216.401) < 1e-9, "mix ends at mix_at + mix_seconds");
+    check(t.fromId == "a" && t.toId == "b" && t.type == "beat_mix" && t.start == 147.3626 && t.duration == 16.0875 &&
+          t.step == 8.04375 && t.toStart == 23.6997 && t.continueFrom == 39.8759, "transition timing");
+    check(t.highHz == 4000.0 && t.midHz == 1000.0 && t.midQ == 0.5 && t.bassHz == 180.0, "transition filters");
+    check(t.from.gain == 0.4728 && t.to.gain == 0.5445 && t.from.speed.size() == 3 && t.to.volume.back() == 1.0 &&
+          t.from.bassDb[1] == -40.0 && t.to.midDb[0] == -27.0 && t.to.highpassHz.empty(), "transition curves");
+    check(t.filtered() && std::abs(t.fromSeconds() - 16.0875 * 0.9948) < 0.01, "song A plays at its gliding speed");
 
-    http.answer.body = "{\"mix_at\":1,\"mix_seconds\":30,\"in_at\":1,\"resume_at\":31}";
-    check(!am::transition(http, s, "a", "b", 1, 1, t, err) && !err.empty(), "a mix past the limit is refused");
-    http.answer.body = "{\"mix_at\":1}";
-    check(!am::transition(http, s, "a", "b", 1, 1, t, err) && !err.empty(), "missing fields refused");
+    http.answer.body =
+        "{\"type\":\"beat_rise\",\"start\":10,\"duration\":4,\"step\":2,"
+        "\"from\":{\"gain\":1,\"volume\":[1,1,0]},"
+        "\"to\":{\"gain\":1,\"start\":5,\"volume\":[0,1,1],\"highpass_hz\":[800,90,10],\"continue_from\":9}}";
+    check(am::transition(http, s, "a", "b", 14, 5, t, err) && t.type == "beat_rise" && t.to.highpassHz.size() == 3,
+          "beat_rise brings its high-pass curve");
+
+    http.answer.body = "{\"mix_at\":213.7788,\"mix_seconds\":2.6222,\"in_at\":21.1495,\"resume_at\":23.7397,"
+                       "\"stretch\":0.9878,\"tempo_from\":183.1,\"tempo_to\":92.7}";
+    check(am::transition(http, s, "a", "b", 216.5, 21.0, t, err) && t.type == "legacy" && t.start == 213.7788 &&
+          t.duration == 2.6222 && t.toStart == 21.1495 && t.continueFrom == 23.7397, "AudioMuse 3.7's answer still works");
+    check(std::abs(t.mixEnd() - 216.401) < 1e-9, "legacy mix ends at mix_at + mix_seconds");
+
+    http.answer.body = "{\"mix_at\":1,\"mix_seconds\":60,\"in_at\":1,\"resume_at\":61}";
+    check(!am::transition(http, s, "a", "b", 1, 1, t, err) && err.find("out of range") != std::string::npos, "a mix past the limit is refused");
+    http.answer.body = "{\"surprise\":1}";
+    check(!am::transition(http, s, "a", "b", 1, 1, t, err) && err.find("{\"surprise\":1}") != std::string::npos,
+          "an unknown answer is quoted in the error");
+    http.answer.body = "{\"type\":\"beat_mix\",\"start\":1}";
+    check(!am::transition(http, s, "a", "b", 1, 1, t, err) && err.find("missing duration") == 0, "missing fields refused");
     http.answer.error = { navidrome::ErrorKind::Unknown, 400, 0, "HTTP 400" };
     http.answer.body = "{\"error\":\"No steady beat to match.\"}";
-    check(!am::transition(http, s, "a", "b", 1, 1, t, err) && !err.empty(), "no steady beat is an error");
+    check(!am::transition(http, s, "a", "b", 1, 1, t, err) && !err.empty(), "an HTTP error is an error");
     check(!am::transition(http, am::Settings{}, "a", "b", 1, 1, t, err), "unconfigured refused");
 
     navidrome::BrowserNode n;
