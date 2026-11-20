@@ -1,3 +1,20 @@
+## [1.45.1](https://github.com/santiagorod92/foo_navidrome/compare/v1.45.0...v1.45.1) (2026-11-20)
+
+### Fixed
+- **Smart Fade explains in the log why it didn't mix** ([#58](https://github.com/santiagorod92/foo_navidrome/issues/58)):
+  with the **Navidrome Smart Fade (AudioMuse-AI)** DSP on, `foo_navidrome.log` now always says
+  why a song faded instead of mixing: a Smart Fade playlist made before 1.45.0 (create it again),
+  no AudioMuse-AI URL set, a playback order like Shuffle that can't predict the next song, a next
+  song that isn't part of the mix, a song that ended before AudioMuse-AI had worked out its
+  transition, or a change of sample rate. Each transition line also says how long AudioMuse-AI
+  took. foobar2000 now waits up to 5 minutes for a transition instead of 2, for slower
+  AudioMuse-AI servers.
+
+### Changed
+- **The Smart Fade DSP stays out of the way unless it can mix**: it only does anything when an
+  AudioMuse-AI URL is set, and even then only around Smart Fade transitions. The rest of the time
+  audio passes through untouched and gapless playback of other DSPs is no longer affected.
+
 ## [1.45.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.44.0...v1.45.0) (2026-11-19)
 
 ### Added
