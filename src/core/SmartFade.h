@@ -111,12 +111,12 @@ inline Transition legacyTransition(const std::string& fromId, const std::string&
 }
 
 inline Transition fallbackCrossfade(const std::string& fromId, const std::string& toId, double outSeconds,
-                                    double inSeconds) {
+                                    double inSeconds, double seconds = kFallbackMixSeconds) {
     Transition t;
     t.fromId = fromId;
     t.toId = toId;
     t.type = "fallback";
-    t.duration = (std::min)(kFallbackMixSeconds, (std::max)(0.0, outSeconds));
+    t.duration = (std::min)((std::max)(0.0, seconds), (std::max)(0.0, outSeconds));
     t.start = outSeconds - t.duration;
     t.step = t.duration > 0.0 ? t.duration / 64.0 : 0.0;
     t.toStart = inSeconds;

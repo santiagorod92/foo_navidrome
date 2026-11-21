@@ -30,7 +30,11 @@ public:
         navidrome::cfg_audiomuse_server.set(getText(IDC_AM_SERVER).c_str());
         navidrome::cfg_audiomuse_count.set(
             navidrome::audiomuse::clampCount(atoi(getText(IDC_AM_COUNT).c_str())));
-        NAVIDROME_LOG("UI", "AudioMuse-AI settings saved, url=" +
+        navidrome::cfg_smartfade_keep_going.set(IsDlgButtonChecked(IDC_SF_KEEP_GOING) == BST_CHECKED);
+        navidrome::cfg_smartfade_loudness.set(IsDlgButtonChecked(IDC_SF_LOUDNESS) == BST_CHECKED);
+        navidrome::cfg_smartfade_fallback.set(
+            navidrome::audiomuse::clampFallbackSeconds(atoi(getText(IDC_SF_FALLBACK).c_str())));
+        NAVIDROME_LOG("UI", std::string("AudioMuse-AI settings saved, Smart Fade keep going ") + (navidrome::cfg_smartfade_keep_going.get() ? "on" : "off") + ", loudness " + (navidrome::cfg_smartfade_loudness.get() ? "on" : "off") + ", fallback " + std::to_string(navidrome::cfg_smartfade_fallback.get()) + " s, url=" +
                       navidrome::dbg::scrubAuth(navidrome::cfg_audiomuse_url.get().c_str()));
         load();
         m_changed = false;
@@ -41,6 +45,9 @@ public:
         SetDlgItemText(IDC_AM_TOKEN, L"");
         SetDlgItemText(IDC_AM_SERVER, L"");
         SetDlgItemText(IDC_AM_COUNT, std::to_wstring(navidrome::audiomuse::kDefaultCount).c_str());
+        CheckDlgButton(IDC_SF_KEEP_GOING, BST_CHECKED);
+        CheckDlgButton(IDC_SF_LOUDNESS, BST_CHECKED);
+        SetDlgItemText(IDC_SF_FALLBACK, std::to_wstring(navidrome::audiomuse::kDefaultFallbackSeconds).c_str());
         m_changed = true; notifyCb();
     }
 
@@ -51,12 +58,16 @@ public:
         COMMAND_HANDLER_EX(IDC_AM_TOKEN,  EN_CHANGE, OnChanged)
         COMMAND_HANDLER_EX(IDC_AM_SERVER, EN_CHANGE, OnChanged)
         COMMAND_HANDLER_EX(IDC_AM_COUNT,  EN_CHANGE, OnChanged)
+        COMMAND_HANDLER_EX(IDC_SF_KEEP_GOING, BN_CLICKED, OnChanged)
+        COMMAND_HANDLER_EX(IDC_SF_LOUDNESS,   BN_CLICKED, OnChanged)
+        COMMAND_HANDLER_EX(IDC_SF_FALLBACK,   EN_CHANGE,  OnChanged)
     END_MSG_MAP()
 
     BOOL OnEraseBkgnd(CDCHandle dc) { navidrome::win::eraseLikeDialog(*this, dc); return TRUE; }
 
 private:
-    enum { IDC_AM_URL = 1101, IDC_AM_TOKEN = 1102, IDC_AM_SERVER = 1103, IDC_AM_COUNT = 1104 };
+    enum { IDC_AM_URL = 1101, IDC_AM_TOKEN = 1102, IDC_AM_SERVER = 1103, IDC_AM_COUNT = 1104,
+           IDC_SF_KEEP_GOING = 1105, IDC_SF_LOUDNESS = 1106, IDC_SF_FALLBACK = 1107 };
 
     LRESULT OnCreate(LPCREATESTRUCT) {
         using namespace navidrome::win;
@@ -100,6 +111,27 @@ private:
             y += rowH + s(8);
         }
         ::SetWindowPos(help, nullptr, pad, y + s(4), textW, 4 * lineH, SWP_NOZORDER);
+        y += s(4) + 4 * lineH + s(12);
+
+        HWND heading = make(L"STATIC", trw("Smart Fade").c_str(), SS_LEFT);
+        HWND keep = make(L"BUTTON", trw("Keep the mix going: add songs when a Smart Fade playlist nears its end").c_str(),
+                         BS_AUTOCHECKBOX|WS_TABSTOP, IDC_SF_KEEP_GOING);
+        HWND loud = make(L"BUTTON", trw("Even out loudness between songs (off while ReplayGain is on)").c_str(),
+                         BS_AUTOCHECKBOX|WS_TABSTOP, IDC_SF_LOUDNESS);
+        HWND fbLabel = make(L"STATIC", trw("Crossfade when AudioMuse-AI has no transition:").c_str(), 0);
+        HWND fbEdit = make(L"EDIT", L"", editSty|ES_NUMBER, IDC_SF_FALLBACK);
+        HWND fbUnit = make(L"STATIC", trw("seconds (0 = plain fade)").c_str(), 0);
+        ::SetWindowPos(heading, nullptr, pad, y, textW, lineH, SWP_NOZORDER);
+        y += lineH + s(6);
+        for (HWND box : { keep, loud }) {
+            ::SetWindowPos(box, nullptr, pad, y, fitWidth(box, s, 24), rowH, SWP_NOZORDER);
+            y += rowH + s(4);
+        }
+        const int fbW = textWidth(fbLabel);
+        ::SetWindowPos(fbLabel, nullptr, pad, y + (rowH - lineH) / 2, fbW, lineH, SWP_NOZORDER);
+        ::SetWindowPos(fbEdit, nullptr, pad + fbW + gap, y, s(40), rowH, SWP_NOZORDER);
+        ::SetWindowPos(fbUnit, nullptr, pad + fbW + gap + s(40) + gap, y + (rowH - lineH) / 2, textWidth(fbUnit), lineH,
+                       SWP_NOZORDER);
 
         load();
         m_darkMode.AddDialogWithControls(*this);
@@ -112,6 +144,10 @@ private:
         SetDlgItemText(IDC_AM_SERVER, pfc::stringcvt::string_wide_from_utf8(navidrome::cfg_audiomuse_server.get().c_str()));
         SetDlgItemText(IDC_AM_COUNT,  std::to_wstring(navidrome::audiomuse::clampCount(
                            static_cast<int>(navidrome::cfg_audiomuse_count.get()))).c_str());
+        CheckDlgButton(IDC_SF_KEEP_GOING, navidrome::cfg_smartfade_keep_going.get() ? BST_CHECKED : BST_UNCHECKED);
+        CheckDlgButton(IDC_SF_LOUDNESS, navidrome::cfg_smartfade_loudness.get() ? BST_CHECKED : BST_UNCHECKED);
+        SetDlgItemText(IDC_SF_FALLBACK, std::to_wstring(navidrome::audiomuse::clampFallbackSeconds(
+                           static_cast<int>(navidrome::cfg_smartfade_fallback.get()))).c_str());
     }
 
     void OnChanged(UINT, int, HWND) { m_changed = true; notifyCb(); }

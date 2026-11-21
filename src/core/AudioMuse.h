@@ -5,6 +5,7 @@
 #include "SmartFade.h"
 
 #include <cstdio>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -18,6 +19,15 @@ constexpr int kSearchTimeoutMs   = 60000;
 constexpr int kPlaylistTimeoutMs = 300000;
 constexpr int kTransitionTimeoutMs = 300000;
 
+constexpr int kDefaultFallbackSeconds = 10;
+constexpr int kMaxFallbackSeconds     = 30;
+constexpr int kContinueWhenLeft       = 2;
+
+inline int clampFallbackSeconds(int n) {
+    if (n < 0) return 0;
+    return n > kMaxFallbackSeconds ? kMaxFallbackSeconds : n;
+}
+
 inline int clampCount(int n) {
     if (n < 1) return kDefaultCount;
     return n > kMaxCount ? kMaxCount : n;
@@ -28,6 +38,9 @@ struct Settings {
     std::string token;
     std::string server;
     int         count = kDefaultCount;
+    bool        keepMixGoing = true;
+    bool        levelLoudness = true;
+    int         fallbackSeconds = kDefaultFallbackSeconds;
     bool configured() const { return !url.empty(); }
 };
 
@@ -301,8 +314,8 @@ inline std::vector<FadePoint> parseFadePoints(const std::string& body, std::stri
     return out;
 }
 
-inline std::vector<FadePoint> smartFade(IJsonPoster& http, const Settings& s,
-                                        std::vector<std::string> ids, std::string& outError) {
+inline std::vector<FadePoint> smartFade(IJsonPoster& http, const Settings& s, std::vector<std::string> ids,
+                                        std::string& outError, const std::set<std::string>& skip = {}) {
     outError.clear();
     if (ids.empty()) { outError = tr("Smart Fade needs songs"); return {}; }
     if (ids.size() == 1) {
@@ -310,7 +323,7 @@ inline std::vector<FadePoint> smartFade(IJsonPoster& http, const Settings& s,
         const auto similar = request(http, s, Kind::SmartFade, byTrackBody(ids.front(), s.count, s.server), outError);
         if (!outError.empty()) return {};
         for (const auto& t : similar)
-            if (t.id != ids.front()) ids.push_back(t.id);
+            if (t.id != ids.front() && !skip.count(t.id)) ids.push_back(t.id);
         if (ids.size() == 1) { outError = tr("AudioMuse-AI found no songs"); return {}; }
     }
     std::string response;
@@ -319,6 +332,14 @@ inline std::vector<FadePoint> smartFade(IJsonPoster& http, const Settings& s,
     auto points = parseFadePoints(response, outError);
     if (!outError.empty()) NAVIDROME_WARN("AudioMuse", "Smart Fade: " + outError);
     else NAVIDROME_LOG("AudioMuse", "Smart Fade: " + std::to_string(points.size()) + " tracks ordered");
+    return points;
+}
+
+inline std::vector<FadePoint> continueSmartFade(IJsonPoster& http, const Settings& s, const std::string& lastId,
+                                                const std::set<std::string>& playlistIds, std::string& outError) {
+    auto points = smartFade(http, s, { lastId }, outError, playlistIds);
+    if (!points.empty() && points.front().id == lastId) points.erase(points.begin());
+    if (outError.empty() && points.empty()) outError = tr("AudioMuse-AI found no songs");
     return points;
 }
 

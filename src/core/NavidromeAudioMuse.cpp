@@ -32,6 +32,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <mutex>
+#include <set>
 #include <thread>
 
 namespace navidrome {
@@ -40,6 +41,9 @@ cfg_string cfg_audiomuse_url(navidrome::guids::cfgAudioMuseUrl, "");
 cfg_string cfg_audiomuse_token(navidrome::guids::cfgAudioMuseToken, "");
 cfg_string cfg_audiomuse_server(navidrome::guids::cfgAudioMuseServer, "");
 cfg_var_modern::cfg_int cfg_audiomuse_count(navidrome::guids::cfgAudioMuseCount, audiomuse::kDefaultCount);
+cfg_var_modern::cfg_bool cfg_smartfade_keep_going(navidrome::guids::cfgSmartFadeKeepGoing, true);
+cfg_var_modern::cfg_bool cfg_smartfade_loudness(navidrome::guids::cfgSmartFadeLoudness, true);
+cfg_var_modern::cfg_int cfg_smartfade_fallback(navidrome::guids::cfgSmartFadeFallback, audiomuse::kDefaultFallbackSeconds);
 }
 
 navidrome::audiomuse::Settings navidrome::audioMuseSettings() {
@@ -48,6 +52,9 @@ navidrome::audiomuse::Settings navidrome::audioMuseSettings() {
     s.token  = cfg_audiomuse_token.get().c_str();
     s.server = cfg_audiomuse_server.get().c_str();
     s.count  = audiomuse::clampCount(static_cast<int>(cfg_audiomuse_count.get()));
+    s.keepMixGoing    = cfg_smartfade_keep_going.get();
+    s.levelLoudness   = cfg_smartfade_loudness.get();
+    s.fallbackSeconds = audiomuse::clampFallbackSeconds(static_cast<int>(cfg_smartfade_fallback.get()));
     return s;
 }
 
@@ -186,6 +193,54 @@ void navidrome::audioMuseSmartFade(std::vector<std::string> ids, std::string lab
             const std::size_t n = playNodesInNewPlaylist(nodes, name);
             NAVIDROME_LOG("AudioMuse", "playlist \"" + name + "\": " + std::to_string(n) + " tracks");
         });
+}
+
+void navidrome::audioMuseContinueSmartFade(metadb_handle_ptr last, t_size playlist) {
+    namespace am = audiomuse;
+    static std::atomic<bool> busy{ false };
+    static std::string lastSeed;
+    const TrackURI seed = last.is_valid() ? parseTrackURI(last->get_path()) : TrackURI{};
+    if (seed.id.empty() || seed.id == lastSeed || busy.exchange(true)) return;
+    lastSeed = seed.id;
+    auto pm = playlist_manager::get();
+    std::set<std::string> have;
+    for (t_size i = 0, n = pm->playlist_get_item_count(playlist); i < n; ++i) {
+        const metadb_handle_ptr h = pm->playlist_get_item_handle(playlist, i);
+        if (h.is_valid() && std::strncmp(h->get_path(), "navidrome://", 12) == 0)
+            have.insert(parseTrackURI(h->get_path()).id);
+    }
+    NAVIDROME_LOG("AudioMuse", "Smart Fade: the mix is near its end, asking AudioMuse-AI for songs after " + seed.id
+                  + " (" + std::to_string(have.size()) + " already in the playlist)");
+    std::thread([last, playlist, seedId = seed.id, have = std::move(have), settings = audioMuseSettings()] {
+        dbg::runGuarded("AudioMuse", "Smart Fade continue", [&] {
+            std::string err;
+            const auto points = am::continueSmartFade(audioMusePoster(), settings, seedId, have, err);
+            std::size_t unresolved = 0;
+            auto nodes = points.empty() ? std::vector<BrowserNodePtr>()
+                                        : am::resolveTracks(libraryClient(), am::fadeTracks(points), unresolved);
+            am::applyFadePoints(nodes, points);
+            if (nodes.empty()) {
+                NAVIDROME_WARN("AudioMuse", "Smart Fade: couldn't continue the mix after " + seedId + ": "
+                               + (err.empty() ? std::string("no playable songs") : err));
+                busy = false;
+                return;
+            }
+            fb2k::inMainThread([last, playlist, nodes = std::move(nodes), unresolved] {
+                busy = false;
+                auto pm = playlist_manager::get();
+                const t_size count = playlist < pm->get_playlist_count() ? pm->playlist_get_item_count(playlist) : 0;
+                if (count == 0 || pm->playlist_get_item_handle(playlist, count - 1) != last) {
+                    NAVIDROME_WARN("AudioMuse", "Smart Fade: the mix playlist changed while AudioMuse-AI was working, "
+                                   "so no songs were added");
+                    return;
+                }
+                const metadb_handle_list handles = makeTrackHandles(nodes, nullptr);
+                pm->playlist_add_items(playlist, handles, pfc::bit_array_false());
+                NAVIDROME_LOG("AudioMuse", "Smart Fade: added " + std::to_string(handles.get_count())
+                              + " songs to keep the mix going (" + std::to_string(unresolved) + " not on the server)");
+            });
+        });
+    }).detach();
 }
 
 namespace {

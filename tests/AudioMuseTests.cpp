@@ -249,6 +249,23 @@ TEST_CASE(testAudioMuseSmartFade) {
     am::smartFade(lonely, configured(), { "seed" }, err);
     check(!err.empty() && lonely.calls == 1, "no similar recordings: smart_fade isn't sent");
 
+    FakePoster more;
+    more.queued = {
+        okBody("{\"results\":[{\"item_id\":\"old\"},{\"item_id\":\"n1\"},{\"item_id\":\"last\"},{\"item_id\":\"n2\"}]}"),
+        okBody("{\"results\":[{\"item_id\":\"last\",\"fade_in_seconds\":3.0,\"fade_out_seconds\":200.0},"
+               "{\"item_id\":\"n2\",\"fade_in_seconds\":5.0,\"fade_out_seconds\":150.0},"
+               "{\"item_id\":\"n1\",\"fade_in_seconds\":2.0,\"fade_out_seconds\":90.0}]}"),
+    };
+    auto next = am::continueSmartFade(more, configured(), "last", { "old", "last" }, err);
+    check(err.empty() && more.bodies.size() == 2 && more.bodies[1] == "{\"item_ids\":[\"last\",\"n1\",\"n2\"]}",
+          "continuing a mix seeds from its last song and leaves out songs already in the playlist");
+    check(next.size() == 2 && next[0].id == "n2" && next[1].id == "n1", "the last song isn't added again");
+
+    FakePoster stale;
+    stale.answer = okBody("{\"results\":[{\"item_id\":\"old\"}]}");
+    check(am::continueSmartFade(stale, configured(), "last", { "old", "last" }, err).empty() && !err.empty()
+          && stale.calls == 1, "nothing new to add: no smart_fade request");
+
     using navidrome::BrowserNode;
     auto node = [](const char* id, double duration) {
         auto n = std::make_shared<BrowserNode>();

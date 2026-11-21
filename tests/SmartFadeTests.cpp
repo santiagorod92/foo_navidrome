@@ -87,6 +87,8 @@ TEST_CASE(testSmartFadeCurves) {
         sumsToOne &= std::fabs(sf::curveAt(fade.from.volume, fade.step, x, 0) + sf::curveAt(fade.to.volume, fade.step, x, 0) - 1.0) < 1e-6;
     check(sumsToOne, "the fallback's two S-curves add up to 1");
     check(sf::fallbackCrossfade("a", "b", 4.0, 0.0).duration == 4.0, "a short song gets a shorter fallback");
+    check(sf::fallbackCrossfade("a", "b", 200.0, 0.0, 6.0).duration == 6.0, "the fallback length is a setting");
+    check(!sf::fallbackCrossfade("a", "b", 200.0, 0.0, 0.0).valid(), "a fallback of 0 s means no crossfade");
 }
 
 TEST_CASE(testSmartFadeBiquads) {
