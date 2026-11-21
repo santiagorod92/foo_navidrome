@@ -1,3 +1,24 @@
+## [1.46.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.45.2...v1.46.0) (2026-11-21)
+
+### Added
+- **Smart Fade keeps the mix going** ([#58](https://github.com/santiagorod92/foo_navidrome/issues/58)):
+  when a Smart Fade playlist playing in *Default* order gets to its last two songs, foo_navidrome
+  asks AudioMuse-AI for songs similar to the last one, ordered for Smart Fade, and adds them to the
+  end, leaving out songs already in the playlist. On by default; switch it off under
+  *Preferences › Tools › Navidrome › AudioMuse-AI › Keep the mix going*.
+- **More Smart Fade settings** on the same page: **Even out loudness between songs** (AudioMuse's
+  loudness levelling, still skipped while ReplayGain is on) and **Crossfade when AudioMuse-AI has
+  no transition** (10 s by default, 0 to 30; 0 fades instead). *Tracks* already sets how many
+  songs a Smart Fade playlist gets (up to 500).
+
+### Fixed
+- **Seeking in a Smart Fade song still mixes into the next one**: transitions are now worked out
+  two songs ahead, so the next one is usually known before you seek, and a seek into the
+  transition itself picks the mix up from that point instead of squeezing the whole mix into what
+  was left of the song.
+- When two songs have different sample rates the log now suggests adding a Resampler before
+  Navidrome Smart Fade in the DSP chain, which lets them mix.
+
 ## [1.45.2](https://github.com/santiagorod92/foo_navidrome/compare/v1.45.1...v1.45.2) (2026-11-20)
 
 ### Fixed
