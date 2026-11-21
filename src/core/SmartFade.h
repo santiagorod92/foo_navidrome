@@ -413,18 +413,34 @@ private:
         m_total = (std::max)(framesFor(plan.duration, m_rate), std::size_t(1));
         m_tail = tail;
         m_piece = (std::max)(framesFor(plan.toSeconds(), m_rate), std::size_t(1));
+        const std::size_t planned = (std::max)(framesFor(plan.fromSeconds(), m_rate), std::size_t(1));
         const double sumA = rateSum(plan.from.speed), sumB = rateSum(plan.to.speed);
-        m_kA = sumA > 0.0 ? static_cast<double>(m_tail) / sumA : 1.0;
         m_kB = sumB > 0.0 ? static_cast<double>(m_piece) / sumB : 1.0;
         m_posA = 0.0;
         m_posB = 0.0;
         m_done = 0;
+        if (m_tail + framesFor(0.05, m_rate) < planned && sumA > 0.0) {
+            const double kA = static_cast<double>(planned) / sumA;
+            const double skip = static_cast<double>(planned - m_tail);
+            double a = 0.0;
+            while (m_done < m_total && a < skip) {
+                const double t = static_cast<double>(m_done) / m_rate;
+                a += kA * curveAt(plan.from.speed, plan.step, t, 1.0);
+                m_posB += m_kB * curveAt(plan.to.speed, plan.step, t, 1.0);
+                ++m_done;
+            }
+            m_kA = kA;
+            m_posA = (std::max)(0.0, a - skip);
+        } else {
+            m_kA = sumA > 0.0 ? static_cast<double>(m_tail) / sumA : 1.0;
+        }
         m_eq = plan.filtered();
         m_stateA.assign(static_cast<std::size_t>(m_channels) * 3, BiquadState{});
         m_stateB.assign(static_cast<std::size_t>(m_channels) * 3, BiquadState{});
         m_b.clear();
         m_gain = m_gainTarget = 1.0;
         m_state = State::Collect;
+        if (m_eq) coefficients(static_cast<double>(m_done) / m_rate);
     }
 
     void coefficients(double t) {

@@ -171,6 +171,28 @@ TEST_CASE(testSmartFadeMixerMix) {
     check(m.state() == sf::Mixer::State::Live && m.latencyFrames() == 0 && m.idle(), "back to idle after the mix");
 }
 
+TEST_CASE(testSmartFadeMixerSeekIntoMix) {
+    const unsigned rate = 1000;
+    sf::Mixer m;
+    m.configure(rate, 1);
+    std::vector<float> out;
+    m.setHold(200, out);
+    std::vector<float> a(1000);
+    for (std::size_t i = 0; i < a.size(); ++i) a[i] = static_cast<float>(i) / 1000.0f;
+    m.process(a.data() + 900, 100, out);
+    check(out.empty(), "after a seek into the mix the rest of A is held");
+    m.endTrack(out);
+    const sf::Transition plan = flatPlan(0.2, 0.2);
+    m.beginNext(&plan, 0, out);
+    const auto b = constant(1000, 1, 0.5f);
+    m.process(b.data(), 1000, out);
+    check(out.size() == 900, "the mix picks up halfway and B carries on from its continue point");
+    check(std::fabs(out[0] - (0.9 * std::cos(sf::kPi / 4) + 0.5 * std::sin(sf::kPi / 4))) < 0.02,
+          "a seek into the mix joins the plan where the seek landed, not compressed into what is left");
+    check(std::fabs(out[99] - 0.5f) < 0.02f && out[100] == 0.5f, "the mix ends on time");
+    check(m.idle(), "back to idle after the shortened mix");
+}
+
 TEST_CASE(testSmartFadeMixerSpeed) {
     const unsigned rate = 8000;
     sf::Mixer m;
