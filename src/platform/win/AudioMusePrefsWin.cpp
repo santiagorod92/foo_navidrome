@@ -120,7 +120,7 @@ private:
                          BS_AUTOCHECKBOX|WS_TABSTOP, IDC_SF_LOUDNESS);
         HWND fbLabel = make(L"STATIC", trw("Crossfade when AudioMuse-AI has no transition:").c_str(), 0);
         HWND fbEdit = make(L"EDIT", L"", editSty|ES_NUMBER, IDC_SF_FALLBACK);
-        HWND fbUnit = make(L"STATIC", trw("seconds (0 = plain fade)").c_str(), 0);
+        HWND fbUnit = make(L"STATIC", trw("seconds (0 = leave it to the other DSPs)").c_str(), 0);
         ::SetWindowPos(heading, nullptr, pad, y, textW, lineH, SWP_NOZORDER);
         y += lineH + s(6);
         for (HWND box : { keep, loud }) {

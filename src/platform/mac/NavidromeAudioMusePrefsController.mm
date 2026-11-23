@@ -75,7 +75,7 @@
     NSStackView *fallbackRow = [NSStackView stackViewWithViews:@[
         [NSTextField labelWithString:NDTr("Crossfade when AudioMuse-AI has no transition:")],
         _fallbackField,
-        [NSTextField labelWithString:NDTr("seconds (0 = plain fade)")],
+        [NSTextField labelWithString:NDTr("seconds (0 = leave it to the other DSPs)")],
     ]];
     fallbackRow.spacing = 6;
     for (NSView *v in @[_keepGoingBox, _loudnessBox, fallbackRow]) {

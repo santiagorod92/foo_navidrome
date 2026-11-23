@@ -2748,14 +2748,14 @@ const std::vector<Translation>& translationTable() {
             "Fondu enchaîné quand AudioMuse-AI n’a pas de transition :",
             "Überblendung, wenn AudioMuse-AI keinen Übergang hat:",
             "Кроссфейд, когда у AudioMuse-AI нет перехода:" } },
-        { "seconds (0 = plain fade)",
-          { "segundos (0 = fundido simple)",
-            "segundos (0 = fade simples)",
-            "秒（0 = 普通淡入淡出）",
-            "秒 (0 = 通常のフェード)",
-            "secondes (0 = simple fondu)",
-            "Sekunden (0 = einfaches Ausblenden)",
-            "секунд (0 = простое затухание)" } },
+        { "seconds (0 = leave it to the other DSPs)",
+          { "segundos (0 = dejarlo a los otros DSP)",
+            "segundos (0 = deixar para os outros DSPs)",
+            "秒（0 = 交给其他 DSP 处理）",
+            "秒 (0 = ほかの DSP に任せる)",
+            "secondes (0 = laisser faire les autres DSP)",
+            "Sekunden (0 = den anderen DSPs überlassen)",
+            "секунд (0 = оставить другим DSP)" } },
     };
     return k;
 }

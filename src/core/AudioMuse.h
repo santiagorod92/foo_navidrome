@@ -19,7 +19,7 @@ constexpr int kSearchTimeoutMs   = 60000;
 constexpr int kPlaylistTimeoutMs = 300000;
 constexpr int kTransitionTimeoutMs = 300000;
 
-constexpr int kDefaultFallbackSeconds = 10;
+constexpr int kDefaultFallbackSeconds = 0;
 constexpr int kMaxFallbackSeconds     = 30;
 constexpr int kContinueWhenLeft       = 2;
 

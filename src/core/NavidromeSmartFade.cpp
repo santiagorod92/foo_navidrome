@@ -115,10 +115,6 @@ public:
     }
 
     void on_endoftrack(abort_callback&) override {
-        if (!m_id.empty() && m_mix.state() == Mix::State::Live && m_mix.hold() == 0
-            && navidrome::smartfade::transitions().pendingFrom(m_id))
-            NAVIDROME_WARN("AudioMuse", "Smart Fade: " + m_id + " ended while AudioMuse-AI was still working out its "
-                           "transition, so it fades instead of mixing");
         m_mix.endTrack(m_out);
         emit();
         m_tailId = m_mix.state() == Mix::State::Tail ? m_id : std::string();
@@ -140,10 +136,13 @@ public:
         return m_mix.rate() ? static_cast<double>(m_mix.latencyFrames()) / m_mix.rate() : 0.0;
     }
 
-    bool need_track_change_mark() override { return g_mixActive || !m_mix.idle(); }
+    bool need_track_change_mark() override { return m_mix.hold() > 0 || m_mix.state() != Mix::State::Live; }
 
 private:
     void beginTrack(const metadb_handle_ptr& track, unsigned rate, unsigned channels) {
+        if (!m_id.empty() && m_mix.state() == Mix::State::Live && navidrome::smartfade::transitions().pendingFrom(m_id))
+            NAVIDROME_WARN("AudioMuse", "Smart Fade: " + m_id + " ended while AudioMuse-AI was still working out its "
+                           "transition, so it doesn't mix (a crossfading DSP before Navidrome Smart Fade handles it)");
         m_track = track;
         m_id = g_mixActive ? smartFadeTrack(track).id : std::string();
         const auto in = m_id.empty() ? std::nullopt : navidrome::smartfade::transitions().incoming(m_id);
@@ -247,7 +246,7 @@ void fetchTransitions(const navidrome::audiomuse::Settings& settings,
                     if (usable) navidrome::smartfade::transitions().put(fade);
                     NAVIDROME_WARN("AudioMuse", "Smart Fade transition " + from + " -> " + to + " failed: " + err + took
                                    + (usable ? "; crossfading over " + std::to_string(fade.duration) + "s instead"
-                                             : std::string("; fading instead (fallback crossfade set to 0 s)")));
+                                             : std::string("; leaving it to the DSPs before Navidrome Smart Fade (fallback crossfade set to 0 s)")));
                 }
                 navidrome::smartfade::transitions().end(from, to);
             });
