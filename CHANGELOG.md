@@ -1,3 +1,17 @@
+## [1.46.1](https://github.com/santiagorod92/foo_navidrome/compare/v1.46.0...v1.46.1) (2026-11-23)
+
+### Fixed
+- **Navidrome Smart Fade no longer switches off the crossfader before it**
+  ([#58](https://github.com/santiagorod92/foo_navidrome/issues/58)): with a crossfading DSP such as
+  Crossfader or Crossmix placed before *Navidrome Smart Fade (AudioMuse-AI)*, songs stopped
+  crossfading, local files included, because the DSP asked foobar2000 to mark every song change,
+  which flushes the DSPs before it. It now asks only for the song changes it actually mixes, so the
+  crossfader handles everything else: local files, other playlists, and Smart Fade songs AudioMuse-AI
+  has no transition for yet.
+- **Crossfade when AudioMuse-AI has no transition** is now off (0) by default, so those songs go to
+  your crossfader; set a length on *Preferences › Tools › Navidrome › AudioMuse-AI* to have
+  Navidrome Smart Fade crossfade them itself. The setting starts again at 0 after this update.
+
 ## [1.46.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.45.2...v1.46.0) (2026-11-21)
 
 ### Added
