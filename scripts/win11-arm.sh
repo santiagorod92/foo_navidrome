@@ -61,7 +61,8 @@ once, by prepare, to download Windows and build its unattended setup.
            (pixels, or X%,Y% of the screen), wait,MS, key,VK (a virtual-key code,
            e.g. key,13 for Enter), drag,X1,Y1,X2,Y2 (left button held from the first
            point to the second), hover,X,Y (move the pointer there, no click),
-           separated by ';'
+           wheel,X,Y,DELTA[,COUNT] (COUNT wheel events of DELTA at X,Y; 120 = one
+           notch up, -40 = a third of one down, as a touchpad sends), separated by ';'
   logs     follow the VM's serial/QEMU log
   down     stop the VM and the noVNC page (the disk is kept)
   status   VM, screen and ssh state
@@ -263,6 +264,7 @@ using System; using System.Runtime.InteropServices;
 public static class Tap {
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
   [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, uint d, IntPtr e);
+  [DllImport("user32.dll", EntryPoint = "mouse_event")] public static extern void wheel(uint f, uint dx, uint dy, int d, IntPtr e);
   [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint f, IntPtr e);
 }
 "@
@@ -274,6 +276,14 @@ foreach ($s in $steps.Split(';')) {
   if ($p[0] -eq 'hover') {
     [Tap]::SetCursorPos((At $p[1] $b.Width) - 3, (At $p[2] $b.Height)) | Out-Null; Start-Sleep -Milliseconds 100
     [Tap]::SetCursorPos((At $p[1] $b.Width), (At $p[2] $b.Height)) | Out-Null; Start-Sleep -Milliseconds 300
+    continue
+  }
+  if ($p[0] -eq 'wheel') {
+    [Tap]::SetCursorPos((At $p[1] $b.Width), (At $p[2] $b.Height)) | Out-Null; Start-Sleep -Milliseconds 200
+    for ($i = 0; $i -lt $(if ($p.Length -gt 4) { [int]$p[4] } else { 1 }); $i++) {
+      [Tap]::wheel(0x800, 0, 0, [int]$p[3], [IntPtr]::Zero); Start-Sleep -Milliseconds 60
+    }
+    Start-Sleep -Milliseconds 800
     continue
   }
   if ($p[0] -eq 'drag') {
@@ -455,7 +465,7 @@ case "${1:-}" in
     echo "$px $py" > "$DIR/pointer"
     printf 'mouse_move %d %d\n' $(( px * 32767 / 100 )) $(( py * 32767 / 100 )) | nc -U -w 1 "$MONITOR" >/dev/null
     ;;
-  tap)     shift; tap "${1:?usage: tap 'X,Y[,right|double];wait,MS;key,VK'}" ;;
+  tap)     shift; tap "${1:?usage: tap 'X,Y[,right|double];wait,MS;key,VK;wheel,X,Y,DELTA[,COUNT]'}" ;;
   ssh)     shift; exec ssh -p "$SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null tester@127.0.0.1 "$@" ;;
   shot)
     f="${2:-$ROOT/build/ui-test/win11-arm-$(date +%H%M%S).png}"; mkdir -p "$(dirname "$f")"
