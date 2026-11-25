@@ -1,3 +1,15 @@
+## [1.47.0](https://github.com/santiagorod92/foo_navidrome/compare/v1.46.1...v1.47.0) (2026-11-25)
+
+### Added
+- **Smart lists name the artist** ([#59](https://github.com/santiagorod92/foo_navidrome/issues/59)):
+  album rows in *Recently Added*, *Most Played*, *Recently Played* and *Random Albums* now read
+  *Artist — Album* with the year, the same as *Decades*, on Windows and macOS.
+- **Song rows name the artist on Windows** ([#59](https://github.com/santiagorod92/foo_navidrome/issues/59)):
+  in *★ Starred*, playlists, genres, bookmarks, *Now Playing* and search results a song reads
+  *Title — Artist*. Songs under their own album or an artist's *Top Songs* stay as they were, and
+  the title written to the playlist doesn't change. macOS already showed the artist in its second
+  column.
+
 ## [1.46.1](https://github.com/santiagorod92/foo_navidrome/compare/v1.46.0...v1.46.1) (2026-11-23)
 
 ### Fixed
