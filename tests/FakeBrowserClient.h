@@ -67,7 +67,7 @@ struct FakeBrowserClient : navidrome::IBrowserClient {
                         navidrome::albumListTypeName(t) + ":" + std::to_string(size));
         e = error;
         if (!error.empty()) return {};
-        navidrome::Album a; a.id = "al2"; a.name = "Newest"; return { a };
+        navidrome::Album a; a.id = "al2"; a.name = "Newest"; a.artist = "Band"; a.year = 2024; return { a };
     }
     std::vector<navidrome::Album> byYearAlbums;
     std::vector<navidrome::Album> getAlbumsByYear(int from, int to, int size, std::string& e) override {

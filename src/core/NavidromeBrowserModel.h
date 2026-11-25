@@ -458,9 +458,17 @@ inline NodeDisplay nodeDisplay(const BrowserNode& n) {
     return d;
 }
 
-inline std::string singleColumnLabel(const BrowserNode& n) {
+inline bool songRowShowsArtist(const BrowserNode& n, const BrowserNode* parent) {
+    if (n.type != BrowserNode::Song || n.subtitle.empty()) return false;
+    if (!parent) return true;
+    if (parent->type == BrowserNode::Album) return false;
+    return !(parent->type == BrowserNode::Category && parent->category == BrowserNode::CatArtistTopSongs);
+}
+
+inline std::string singleColumnLabel(const BrowserNode& n, const BrowserNode* parent) {
     NodeDisplay d = nodeDisplay(n);
     std::string label = d.name;
+    if (songRowShowsArtist(n, parent)) label += " \u2014 " + d.subtitle;
     if (!d.ratingStars.empty())  label += "  " + d.ratingStars;
     if (!d.bookmarkText.empty()) label += "  " + d.bookmarkText;
     if (!d.infoText.empty())     label += "  " + d.infoText;

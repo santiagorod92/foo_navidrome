@@ -229,9 +229,11 @@ TEST_CASE(testBrowserFetchDispatch) {
     }
     {
         FakeBrowserClient fc; std::string err;
-        navidrome::fetchChildren(fc, cat(BrowserNode::CatRecentlyAdded), err);
+        auto out = navidrome::fetchChildren(fc, cat(BrowserNode::CatRecentlyAdded), err);
         check(fc.calls[0] == std::string("getAlbumList:newest:100"),
               "Recently Added maps to getAlbumList2 newest");
+        check(out.size() == 1 && out[0]->displayName == "Band \u2014 Newest" && out[0]->infoText == "2024",
+              "smart-list album rows name the artist and show the year, like Decades");
     }
     {
         FakeBrowserClient fc; fc.error = "net";

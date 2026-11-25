@@ -193,7 +193,7 @@ private:
     std::vector<std::shared_ptr<NavidromeNode>>
             fetchChildren(const std::shared_ptr<NavidromeNode>& node, std::string& outError);
     void    applyStarred(bool starred);
-    std::string labelFor(const std::shared_ptr<NavidromeNode>& node) const;
+    std::string labelFor(const std::shared_ptr<NavidromeNode>& node, HTREEITEM hParent);
     void    refreshLabel(const std::shared_ptr<NavidromeNode>& node);
     void    enqueueNodes(std::vector<std::shared_ptr<NavidromeNode>> songs, bool play);
     std::vector<std::shared_ptr<NavidromeNode>> selectedNodes();

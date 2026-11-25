@@ -217,7 +217,7 @@ std::vector<BrowserNodePtr> fetchChildren(IBrowserClient& client,
                 default:
                     for (const auto& a : client.getAlbumList(
                             albumListTypeForCategory(node.category), 100, outError))
-                        out.push_back(makeAlbumNode(a));
+                        out.push_back(makeCrossArtistAlbumNode(a));
                     break;
             }
             break;

@@ -506,21 +506,20 @@ void BrowserWindow::clearTree() {
     m_selAnchor = nullptr;
 }
 
-std::string BrowserWindow::labelFor(const std::shared_ptr<NavidromeNode>& node) const {
-    std::string label = navidrome::singleColumnLabel(*node);
-    if (m_isSearching && node->type == NavidromeNode::Song && !node->subtitle.empty())
-        label += " \u2014 " + node->subtitle;
-    return label;
+std::string BrowserWindow::labelFor(const std::shared_ptr<NavidromeNode>& node, HTREEITEM hParent) {
+    auto parent = nodeForItem(hParent);
+    return navidrome::singleColumnLabel(*node, parent.get());
 }
 
 void BrowserWindow::refreshLabel(const std::shared_ptr<NavidromeNode>& node) {
     if (!node || !NodeItem(node)) return;
-    m_tree.SetItemText(NodeItem(node), u8ToWide(labelFor(node)).c_str());
+    m_tree.SetItemText(NodeItem(node),
+                       u8ToWide(labelFor(node, m_tree.GetParentItem(NodeItem(node)))).c_str());
 }
 
 HTREEITEM BrowserWindow::insertNode(HTREEITEM hParent,
                                     std::shared_ptr<NavidromeNode> node) {
-    std::string label = labelFor(node);
+    std::string label = labelFor(node, hParent);
 
     TVINSERTSTRUCT tvi    = {};
     tvi.hParent           = hParent;

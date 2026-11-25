@@ -61,7 +61,7 @@ TEST_CASE(testDecadeHelpers) {
     check(n->type == BrowserNode::Album && n->id == "al1" &&
           n->displayName == "AC/DC \u2014 Highway to Hell" && n->subtitle.empty() && n->infoText == "1979",
           "a decade album row names the artist and shows the year");
-    check(navidrome::singleColumnLabel(*n) == "AC/DC \u2014 Highway to Hell  1979",
+    check(navidrome::singleColumnLabel(*n, nullptr) == "AC/DC \u2014 Highway to Hell  1979",
           "the single-column (Windows) label carries artist, album and year");
     navidrome::Album noYear; noYear.id = "al2"; noYear.name = "Untitled";
     auto u = navidrome::makeCrossArtistAlbumNode(noYear);
@@ -209,7 +209,8 @@ TEST_CASE(testBrowserModel) {
           d.bookmarkText.find("0:42") != std::string::npos,
           "bookmark position renders as a clock glyph + M:SS");
 
-    check(navidrome::singleColumnLabel(*sn) ==
+    BrowserNode albumParent; albumParent.type = BrowserNode::Album;
+    check(navidrome::singleColumnLabel(*sn, &albumParent) ==
           "\xE2\x98\x85 4. Song  \xE2\x98\x85\xE2\x98\x85\xE2\x98\x85  " + d.bookmarkText,
           "singleColumnLabel joins name + rating + bookmark with two spaces");
     check(navidrome::nodeDisplay(*cats[1]).name == "\xE2\x98\x85 Starred",
@@ -221,7 +222,7 @@ TEST_CASE(testBrowserModel) {
     check(pd.name == "Plain" && pd.ratingStars.empty() && pd.bookmarkText.empty() &&
           pd.durationText.empty(),
           "an unrated, unbookmarked, zero-length song shows just its title");
-    check(navidrome::singleColumnLabel(*pn) == "Plain",
+    check(navidrome::singleColumnLabel(*pn, nullptr) == "Plain",
           "singleColumnLabel adds nothing when there are no markers");
 
     navidrome::PodcastEpisode pendingEp;
@@ -242,7 +243,21 @@ TEST_CASE(testBrowserModel) {
     navidrome::BrowserNode nowPlaying;
     nowPlaying.type = BrowserNode::Song;
     nowPlaying.infoText = "alice \xC2\xB7 3m ago";
-    check(navidrome::singleColumnLabel(nowPlaying) == "  alice \xC2\xB7 3m ago",
+    check(navidrome::singleColumnLabel(nowPlaying, nullptr) == "  alice \xC2\xB7 3m ago",
           "singleColumnLabel appends infoText (Now Playing's user/time annotation)");
+
+    navidrome::Song cs; cs.id = "c1"; cs.title = "Thunderstruck"; cs.artist = "AC/DC"; cs.track = 1;
+    auto csn = navidrome::makeSongNode(cs);
+    BrowserNode playlistParent; playlistParent.type = BrowserNode::Playlist;
+    BrowserNode topSongs; topSongs.type = BrowserNode::Category; topSongs.category = BrowserNode::CatArtistTopSongs;
+    BrowserNode starred; starred.type = BrowserNode::Category; starred.category = BrowserNode::CatStarred;
+    check(navidrome::singleColumnLabel(*csn, &playlistParent) == "1. Thunderstruck \u2014 AC/DC" &&
+          navidrome::singleColumnLabel(*csn, &starred) == "1. Thunderstruck \u2014 AC/DC" &&
+          navidrome::singleColumnLabel(*csn, nullptr) == "1. Thunderstruck \u2014 AC/DC",
+          "a song row in a mixed list (playlist, Starred, search) names its artist");
+    check(navidrome::singleColumnLabel(*csn, &albumParent) == "1. Thunderstruck" &&
+          navidrome::singleColumnLabel(*csn, &topSongs) == "1. Thunderstruck",
+          "a song row under its album or its artist's Top Songs leaves the artist out");
+    check(csn->displayName == "Thunderstruck", "the artist never reaches the song's playlist title");
 }
 }
