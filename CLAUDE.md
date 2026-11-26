@@ -58,7 +58,9 @@ installed.
   (`libraryClient().search()`, i.e. `search3` over the active music folders; `library_search_sink` gets
   artists, albums with their `created` date, and songs as hinted `metadb_handle`s, made by the same
   `track_handle` helper as `list_tracks`). `list_albums`/`fetch_cover`/`list_tracks`/`artist_info`/`search`
-  block — worker thread only. Consumers: foo_ui_panels' album grid (`src/panels/album_list.cpp`) and foo_js_panel's
+  block — worker thread only. Consumers: foo_ui_panels' album grid (`src/panels/album_list.cpp`), `library_tree`
+  (v3 `list_tracks` for the tracks under each album), `quick_search` (v4 `search`) and `biography` (v3 `artist_info`),
+  and foo_js_panel's
   `navidrome` script object (`src/core/panel.cpp`: albums/artists on a worker thread, play/add,
   `GetArtistInfoAsync`), `fb.GetLibraryItems()` (v3 `list_tracks`) and `navidrome.SearchAsync` (v4).
   Vendored copies: `foo_ui_panels/src/core/navidrome_library_api.h`,
@@ -69,7 +71,8 @@ installed.
   line by line through a caller-implemented `lyrics_sink` (`on_begin(synced, count)` then
   `on_line(startMs, text)`, `startMs` = -1 when unsynced). `get_lyrics` blocks on a cache miss, so call it from a
   worker thread only. Shares the session `lyricsCache()` with the macOS lyrics panel. Consumer:
-  foo_ui_panels' `lyrics_panel` (vendored copy: `foo_ui_panels/src/core/navidrome_lyrics_api.h`).
+  foo_ui_panels' `lyrics_panel` and foo_js_panel's `navidrome.GetLyricsAsync` (vendored copies:
+  `foo_ui_panels/src/core/navidrome_lyrics_api.h`, `foo_js_panel/src/core/navidrome_lyrics_api.h`, identical).
 
 - **`js_panel_notify_api`** (not this repo's: foo_js_panel's `src/core/js_panel_api.h`, vendored in
   foo_ui_panels) — Panels UI skins → JS Panel scripts (`JSPANEL:` actions, skin variable changes).
@@ -104,8 +107,9 @@ anything repo-specific stays in the repo's own sections.
   interface, its consumers and its vendored copies.
 - **Current links:** `navidrome_rating_api` drives Panels UI's star ratings on `navidrome://`
   tracks, which also read the `NAVIDROME_RATING` field. `navidrome_library_api` feeds the
-  Panels UI album grid (`album_list`) and `library_tree`, and JS Panel's `navidrome` script
-  object. `navidrome_lyrics_api` feeds Panels UI's `lyrics_panel`.
+  Panels UI album grid (`album_list`), `library_tree` (its tracks too), `quick_search` (the
+  server's search) and `biography` (`artist_info`), and JS Panel's `navidrome` script object.
+  `navidrome_lyrics_api` feeds Panels UI's `lyrics_panel` and JS Panel's `navidrome.GetLyricsAsync`.
 - **Shared source:** foo_js_panel compiles foo_ui_panels' `src/gfx/canvas.h` and its backends
   (`src/platform/win/gdi_canvas.*`, `src/platform/mac/mac_canvas.*`) from the sibling checkout
   (`PANELS_UI_SRC`); its CI checks foo_ui_panels out next to it. A change to those files is
@@ -119,8 +123,10 @@ anything repo-specific stays in the repo's own sections.
   UI calls `notify(name, info)` for a `JSPANEL:<name>[:<info>]` action and
   `variable_changed(name, value)` from `save_pvars` for each changed skin variable (not the `_`
   ones); JS Panel hands them to every panel as `on_notify_data` / `on_panelsui_variable_changed`.
-  `js_panel_notify_api_v2::state_changed(name, value)` (`mini_mode`, `zoom`; sent after a render
-  that changed them) becomes `on_panelsui_mini_mode` / `on_panelsui_zoom`.
+  `js_panel_notify_api_v2::state_changed(name, value)` (`mini_mode`, `zoom`, `panel.<name>` =
+  `x,y,w,h` or empty when hidden; sent after a render that changed them; a receiver ignores names it
+  doesn't know, so a new state needs no new interface) becomes `on_panelsui_mini_mode` /
+  `on_panelsui_zoom` / `on_panelsui_panel_changed`.
 - **Windowless panels:** `js_panel_windowless_api` (same header, published by JS Panel) creates a
   JS Panel with no window of its own for a `panel.<name>.windowless = 1` skin panel. Panels UI
   calls `paint(pargb, w, h, scale)` at the `$panel` call's place in the frame, with the skin drawn
